@@ -1,75 +1,60 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, Optional
+from typing import Any, Dict, Optional, Iterable, Union, Sequence
+from pathbench.core.models.base import ModelBase
+import torch
+import torch.nn as nn
 
 
-class ModelBase(ABC):
+class MILModelBase(ModelBase, nn.Module):
     """
-    Generic model abstraction (ML / DL / etc.).
-
-    This is the root for all models in PathBench: classical ML models,
-    CNNs, transformers, MIL models, etc.
+    Base class for Deep MIL models.
+    Expects input: (Batch, Bags, Dim).
     """
     
-    input_dim: int
-    output_dim: int
-    
-    # --- required methods ---
-    @abstractmethod
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        """
-        Perform a forward pass. Signature is intentionally loose so that
-        non-DL models or classical ML models can choose an appropriate API.
-        """
-        ...
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        # Common pattern to make models callable.
-        return self.forward(*args, **kwargs)
-    
-    @abstractmethod
-    def initialize(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """Initialize the model with optional configuration."""
-        pass
-    
-    @abstractmethod
-    def parameters(self) -> Iterable[Any]:
-        """Return an iterable of the model's parameters."""
-        pass
-    
-    @abstractmethod
-    def save(self, path: str) -> None:
-        """Save the model to the specified path."""
-        pass
-
-
-class MILModelBase(ModelBase):
-    """MIL-specific model."""
+    def __init__(self, **kwargs):
+        super().__init__()
 
     @property
     @abstractmethod
     def bag_size(self) -> int | None:
-        """None for variable-size bags, or an int for fixed-size."""
+        """Returns fixed bag size (int) or None for variable sizes."""
         ...
 
     @abstractmethod
-    def forward_bag(self, bag: Any) -> Any:
+    def forward_bag(self, 
+                    bag: torch.Tensor, 
+                    mask: Optional[torch.Tensor] = None, 
+                    coords: Optional[torch.Tensor] = None,
+                    label: Optional[torch.Tensor] = None,
+                    loss_fn: Optional[nn.Module] = None) -> Union[torch.Tensor, Dict[str, Any]]:
+        """
+        Core MIL logic.
+        
+        Args:
+            bag: (B, N, D) features.
+            mask: (B, N) mask.
+            coords: (B, N, 2) spatial coordinates.
+            label: (B,) Ground truth labels (optional, for internal loss calc).
+            loss_fn: Loss function module (optional, for internal loss calc).
+            
+        Returns:
+            logits (Tensor) OR Dict containing 'logits' and 'loss'.
+        """
         ...
 
-    def forward(self, bag: Any, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
-        return self.forward_bag(bag)
-    
-    @abstractmethod
-    def return_attention_weights(self, bag: Iterable[Any]) -> Any:
-        """Return attention weights for the instances in the bag."""
-        pass
-    
-    @abstractmethod
-    def extract_slide_embeddings(self, bag: Iterable[Any]) -> Any:
-        """Extract slide-level embeddings from the bag of instances."""
-        pass
-    
-    
+    def forward(self, bag: torch.Tensor, *args, **kwargs) -> Union[torch.Tensor, Dict[str, Any]]:
+        return self.forward_bag(bag, *args, **kwargs)
 
+    # --- PyTorch Implementation of ModelBase ---
+    def initialize(self, config: Optional[Dict[str, Any]] = None) -> None:
+        pass
 
-    
+    def save(self, path: str) -> None:
+        torch.save(self.state_dict(), path)
+
+    def load(self, path: str) -> None:
+        self.load_state_dict(torch.load(path, map_location='cpu'))
+
+    def get_learnable_parameters(self) -> Iterable[torch.nn.Parameter]:
+        return (p for p in self.parameters() if p.requires_grad)

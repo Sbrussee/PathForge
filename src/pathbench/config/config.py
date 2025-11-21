@@ -1,224 +1,235 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Literal, Mapping, Sequence
-
+from typing import Any, Literal, List, Optional, Dict, Union
 import yaml
+import torch
+import inspect
 
-from pathbench.config.base import ConfigBase
+# Pydantic Imports
+from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
+
+# Internal Imports
 from pathbench.utils.constants import TASK_TYPES, MODE_TYPES
-
+from pathbench.utils.registries import MODELS, FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES
+from pathbench.core.models.mil_base import MILModelBase
 
 TaskType = Literal[tuple(TASK_TYPES)]
 ModeType = Literal[tuple(MODE_TYPES)]
 
 # ---------------------------------------------------------------------------
-# 1) Split configs
+# Config Sections
 # ---------------------------------------------------------------------------
 
-@dataclass(slots=True)
-class ExperimentConfig:
-    """
-    General, universal experiment settings (independent of MIL details).
-    """
-
+class ExperimentConfig(BaseModel):
+    """Universal experiment settings."""
     project_name: str
     annotation_file: str
-
-    # execution / data split
-    num_workers: int = 0
+    
+    # Execution
+    num_workers: int = Field(0, ge=0)
     split_technique: Literal["k-fold", "k-fold-stratified", "fixed"] = "k-fold"
-    val_fraction: float = 0.1
+    val_fraction: float = Field(0.1, gt=0, lt=1)
 
-    # task + mode
+    # Task + Mode
     task: TaskType = "classification"
     mode: ModeType = "benchmark"
     aggregation_level: Literal["slide", "patient"] = "slide"
 
-    # global behaviour
+    # Global behavior
     report: bool = False
     mixed_precision: bool = False
+    
+    visualization: List[str] = Field(default_factory=list)
+    evaluation: List[str] = Field(default_factory=list)
+    custom_metrics: List[str] = Field(default_factory=list)
 
-    # optional evaluation / logging knobs
-    visualization: list[str] = field(default_factory=list)
-    evaluation: list[str] = field(default_factory=list)
-    custom_metrics: list[str] = field(default_factory=list)
 
+class MILConfig(BaseModel):
+    """MIL Model specific settings."""
+    # Training Loop
+    epochs: int = Field(20, gt=0)
+    batch_size: int = Field(1, gt=0)
+    best_epoch_based_on: str = "val_loss"
+    patience: int = Field(10, ge=1)
+    accumulate_grad_batches: int = Field(1, ge=1)
+    gradient_clip_val: float = Field(0.0, ge=0.0)
 
-@dataclass(slots=True)
-class MILConfig:
-    """
-    Settings related to MIL models and training.
-    """
+    # Optimization
+    lr: float = Field(1e-4, gt=0)
+    weight_decay: float = Field(1e-5, ge=0)
+    scheduler: Literal["none", "reduce_on_plateau", "cosine"] = "none"
+    scheduler_monitor: str = "val_loss"
 
-    # data balancing / weighting
-    balancing: str | None = None
+    # Data
+    balancing: Optional[str] = None
     class_weighting: bool = False
 
-    # training loop
-    epochs: int = 5
-    best_epoch_based_on: str = "val_loss"
-    batch_size: int = 32
-
-    # MIL architecture hyperparameters
+    # Architecture (General)
     bag_size: int = 512
     encoder_layers: int = 1
     z_dim: int = 256
-    dropout_p: float = 0.1
-    k: int = 2  # for top-k / attention pooling etc.
+    dropout_p: float = Field(0.1, ge=0.0, le=1.0)
+    k: int = 2 
 
-    # pipeline flags
     skip_extracted: bool = True
     skip_feature_extraction: bool = True
 
 
-@dataclass(slots=True)
-class SlideProcessingConfig:
-    """
-    Settings for slide/tile processing before MIL training.
-    """
-    
-    # Backend framework
-    backend: Literal["lazyslide"] = "lazyslide"
-
-    # whether to persist generated tiles on disk
+class SlideProcessingConfig(BaseModel):
+    """Settings for slide processing backends."""
+    backend: Literal["lazyslide", "openslide", "cucim"] = "lazyslide"
     save_tiles: bool = False
-
-    # QC / filtering
-    qc: list[str] = field(default_factory=list)
-    qc_filters: list[dict[str, Any]] = field(default_factory=list)
+    qc: List[str] = Field(default_factory=list)
+    qc_filters: List[Dict[str, Any]] = Field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
-# 2) Existing “split” configs
-# ---------------------------------------------------------------------------
-
-@dataclass(slots=True)
-class OptimizationConfig:
+class OptimizationConfig(BaseModel):
+    """Optuna Optimization settings."""
     study_name: str = "study"
     load_study: bool = False
     objective_metric: str = "balanced_accuracy"
     objective_mode: Literal["max", "min"] = "max"
     objective_dataset: Literal["val", "test"] = "val"
+    
     sampler: str = "TPESampler"
-    trials: int = 100
-    pruner: str | None = "HyperbandPruner"
+    trials: int = Field(100, gt=0)
+    pruner: Optional[str] = "HyperbandPruner"
 
 
-@dataclass(slots=True)
-class DatasetEntry:
+class DatasetEntry(BaseModel):
+    """Definition of a dataset source."""
     name: str
     slide_path: str
-    tfrecord_path: str
-    tile_path: str
-    used_for: Literal["training", "testing", "validation"]
+    tfrecord_path: Optional[str] = None
+    tile_path: Optional[str] = None
+    used_for: Literal["training", "testing", "validation", "ignore", "all"]
 
 
-@dataclass(slots=True)
-class BenchmarkParameters:
-    tile_px: list[int] = field(default_factory=lambda: [256])
-    tile_um: list[str] = field(default_factory=lambda: ["20x"])
-    feature_extraction: list[str] = field(default_factory=list)
-    mil: list[str] = field(default_factory=list)
-    loss: list[str] = field(default_factory=list)
-    activation_function: list[str] = field(default_factory=list)
-    optimizer: list[str] = field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
-# 3) Top-level Config implementing ConfigBase
-# ---------------------------------------------------------------------------
-
-@dataclass(slots=True)
-class Config(ConfigBase):
+class BenchmarkParameters(BaseModel):
     """
-    Top-level configuration object used by the rest of the framework.
-
-    Layout in YAML (new style) is expected to look roughly like:
-
-    experiment:
-      project_name: ...
-      annotation_file: ...
-      ...
-    mil:
-      epochs: 10
-      ...
-    slide_processing:
-      save_tiles: false
-      ...
-    optimization:
-      ...
-    datasets:
-      - name: cohort1
-        slide_path: ...
-        ...
-    benchmark_parameters:
-      ...
-
-    weights_dir: ./pretrained_weights
-    hf_key: null
+    Grid search parameters. 
+    Pydantic validators enforce logic previously implemented manually.
     """
+    tile_px: List[int] = Field(default_factory=lambda: [256])
+    tile_um: List[float] = Field(default_factory=lambda: [0.5])
+    feature_extraction: List[str] = Field(default_factory=list)
+    mil: List[str] = Field(default_factory=list)
+    loss: List[str] = Field(default_factory=list)
+    activation_function: List[str] = Field(default_factory=list)
+    optimizer: List[str] = Field(default_factory=list)
 
-    experiment: ExperimentConfig
-    mil: MILConfig = field(default_factory=MILConfig)
-    slide_processing: SlideProcessingConfig = field(default_factory=SlideProcessingConfig)
-    optimization: OptimizationConfig = field(default_factory=OptimizationConfig)
-    datasets: list[DatasetEntry] = field(default_factory=list)
-    benchmark_parameters: BenchmarkParameters = field(default_factory=BenchmarkParameters)
-    weights_dir: str = "./pretrained_weights"
-    hf_key: str | None = None
-
-    # ---- ConfigBase implementation --------------------------------------
-
+    @field_validator('tile_px')
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "Config":
-        """Create a Config from a nested dict (e.g. YAML-loaded)."""
-        experiment = ExperimentConfig(**data["experiment"])
+    def validate_tile_px(cls, v: List[int]) -> List[int]:
+        for px in v:
+            if px % 2 != 0:
+                raise ValueError(f"Invalid tile_px: {px}. Must be divisible by 2.")
+        return v
 
-        mil = MILConfig(**data.get("mil", {}))
-        slide_processing = SlideProcessingConfig(**data.get("slide_processing", {}))
-        optimization = OptimizationConfig(**data.get("optimization", {}))
+    @field_validator('tile_um')
+    @classmethod
+    def validate_tile_um(cls, v: List[float]) -> List[float]:
+        for um in v:
+            if um <= 0:
+                raise ValueError(f"Invalid tile_um: {um}. Must be > 0.")
+        return v
 
-        datasets = [DatasetEntry(**d) for d in data.get("datasets", [])]
+    @field_validator('feature_extraction')
+    @classmethod
+    def validate_feature_extractors(cls, v: List[str]) -> List[str]:
+        for fe in v:
+            if not FEATURE_EXTRACTORS.is_available(fe):
+                raise ValueError(f"Feature extractor '{fe}' is not registered in timm/lazyslide.")
+        return v
 
-        benchmark_parameters = BenchmarkParameters(
-            **data.get("benchmark_parameters", {})
-        )
+    @field_validator('mil')
+    @classmethod
+    def validate_mil_models(cls, v: List[str]) -> List[str]:
+        for model_name in v:
+            if not MODELS.is_available(model_name):
+                raise ValueError(f"MIL model '{model_name}' not found in registry.")
+            
+            # Check Inheritance
+            model_cls = MODELS.get(model_name)
+            # If the registry returns a class, we check subclass
+            if isinstance(model_cls, type):
+                if not issubclass(model_cls, MILModelBase):
+                    raise ValueError(f"Model '{model_name}' does not inherit from MILModelBase.")
+        return v
 
-        return cls(
-            experiment=experiment,
-            mil=mil,
-            slide_processing=slide_processing,
-            optimization=optimization,
-            datasets=datasets,
-            benchmark_parameters=benchmark_parameters,
-            weights_dir=data.get("weights_dir", "./pretrained_weights"),
-            hf_key=data.get("hf_key", None),
-        )
+    @field_validator('activation_function')
+    @classmethod
+    def validate_activations(cls, v: List[str]) -> List[str]:
+        valid_activations = {name for name, _ in inspect.getmembers(torch.nn.modules.activation, inspect.isclass)}
+        for act in v:
+            if act not in valid_activations and not hasattr(torch.nn, act):
+                raise ValueError(f"Activation '{act}' not found in torch.nn.")
+        return v
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert Config (and sub-configs) to a YAML-friendly dict."""
-        return {
-            "experiment": asdict(self.experiment),
-            "mil": asdict(self.mil),
-            "slide_processing": asdict(self.slide_processing),
-            "optimization": asdict(self.optimization),
-            "datasets": [asdict(d) for d in self.datasets],
-            "benchmark_parameters": asdict(self.benchmark_parameters),
-            "weights_dir": self.weights_dir,
-            "hf_key": self.hf_key,
-        }
+    @field_validator('optimizer')
+    @classmethod
+    def validate_optimizers(cls, v: List[str]) -> List[str]:
+        valid_optimizers = {name for name, _ in inspect.getmembers(torch.optim, inspect.isclass) if name != "Optimizer"}
+        for opt in v:
+            if opt not in valid_optimizers:
+                raise ValueError(f"Optimizer '{opt}' not found in torch.optim.")
+        return v
 
-    # Convenience aliases if you prefer the old name
+
+# ---------------------------------------------------------------------------
+# Top-Level Config
+# ---------------------------------------------------------------------------
+
+class Config(BaseModel):
+    """
+    Top-level configuration object. 
+    """
+    experiment: ExperimentConfig
+    mil: MILConfig = Field(default_factory=MILConfig)
+    slide_processing: SlideProcessingConfig = Field(default_factory=SlideProcessingConfig)
+    optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
+    datasets: List[DatasetEntry] = Field(default_factory=list)
+    benchmark_parameters: BenchmarkParameters = Field(default_factory=BenchmarkParameters)
+    
+    weights_dir: str = "./pretrained_weights"
+    hf_key: Optional[str] = None
+
+    @model_validator(mode='after')
+    def validate_backend_constraints(self) -> "Config":
+        """
+        Ensures that if a Lazyslide-specific model is selected, 
+        the backend is set to 'lazyslide'.
+        """
+        backend = self.slide_processing.backend
+        fe_list = self.benchmark_parameters.feature_extraction
+        
+        for fe in fe_list:
+            if fe in LAZYSLIDE_MODEL_NAMES and backend != "lazyslide":
+                raise ValueError(
+                    f"Feature extractor '{fe}' requires 'lazyslide' backend. "
+                    f"Current backend: '{backend}'."
+                )
+        
+        if self.experiment.mode == "benchmark" and not self.benchmark_parameters.mil:
+             raise ValueError("Mode is 'benchmark' but no MIL models specified in benchmark_parameters.")
+             
+        return self
+
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
-        """Shortcut alias around ConfigBase.load_yaml with correct type."""
-        from pathlib import Path as _Path
-        path = _Path(path)
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Config file not found: {path}")
+            
         with path.open("r") as f:
             data = yaml.safe_load(f) or {}
-        cfg = cls.from_dict(data)
+            
+        return cls.model_validate(data)
 
-        assert cfg.experiment.mode in {"benchmark", "optimization", "feature_extraction"}
-        return cfg
+    def save_yaml(self, path: str | Path) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w") as f:
+            # model_dump is Pydantic v2 for to_dict
+            yaml.safe_dump(self.model_dump(), f, sort_keys=False)

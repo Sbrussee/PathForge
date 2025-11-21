@@ -1,71 +1,75 @@
 experiment:
-project_name: Example_Project
-annotation_file: /path/to/your/annotation_file.csv
-balancing: category
-class_weighting: false
-num_workers: 0
-split_technique: k-fold
-epochs: 5
-best_epoch_based_on: val_loss
-batch_size: 32
-bag_size: 512
-encoder_layers: 1
-z_dim: 256
-dropout_p: 0.1
-k: 2
-val_fraction: 0.1
-aggregation_level: slide
-task: classification
-mode: benchmark
-mixed_precision: false
-report: false
-skip_extracted: true
-skip_feature_extraction: true
-save_tiles: false
-visualization: [learning_curve, confusion_matrix, roc_curve]
-evaluation: [balanced_accuracy, auc]
-custom_metrics: []
-qc: [GaussianV2, Otsu-CLAHE]
-qc_filters:
-- {grayspace_threshold: 0.05}
-- {grayspace_fraction: 0.6}
-- {whitespace_threshold: 230}
-- {whitespace_fraction: 1.0}
+  project_name: "PathBench_Study_v2"
+  annotation_file: "/data/annotations/dataset.csv"
+  # Execution details
+  num_workers: 4
+  split_technique: "k-fold"
+  val_fraction: 0.2
+  # Task definition
+  task: "classification"
+  mode: "benchmark"
+  aggregation_level: "slide"
+  # Flags
+  report: true
+  mixed_precision: true
+  # Evaluation
+  visualization: ["confusion_matrix", "roc_curve", "attention_map"]
+  evaluation: ["balanced_accuracy", "auc", "f1"]
+  custom_metrics: []
 
+mil:
+  balancing: "weighted"
+  class_weighting: true
+  epochs: 20
+  best_epoch_based_on: "val_loss"
+  batch_size: 1  # Bag size usually 1 for slide-level MIL
+  bag_size: 1000 # Max instances per bag if using sampling
+  encoder_layers: 2
+  z_dim: 256
+  dropout_p: 0.25
+  k: 10
+  skip_extracted: false
+  skip_feature_extraction: false
+
+slide_processing:
+  backend: "lazyslide"
+  save_tiles: false
+  qc: ["Otsu"]
+  qc_filters:
+    - {name: "grayspace", threshold: 0.1}
 
 optimization:
-study_name: Exp1
-load_study: true
-objective_metric: balanced_accuracy
-objective_mode: max
-objective_dataset: test
-sampler: TPESampler
-trials: 100
-pruner: HyperbandPruner
-
+  study_name: "HyperParam_Optimization"
+  load_study: false
+  objective_metric: "balanced_accuracy"
+  objective_mode: "max"
+  objective_dataset: "val"
+  sampler: "TPESampler"
+  trials: 50
+  pruner: "MedianPruner"
 
 datasets:
-- name: dataset_1
-slide_path: /path/to/your/dataset_1/slides
-tfrecord_path: /path/to/your/dataset_1/tfrecords
-tile_path: /path/to/your/dataset_1/tiles
-used_for: training
-- name: dataset_2
-slide_path: /path/to/your/dataset_2/slides
-tfrecord_path: /path/to/your/dataset_2/tfrecords
-tile_path: /path/to/your/dataset_2/tiles
-used_for: testing
-
+  - name: "TCGA-BRCA"
+    slide_path: "/data/wsi/brca"
+    tfrecord_path: ""
+    tile_path: "/data/features/brca_resnet50.pt"
+    used_for: "training"
+  
+  - name: "TCGA-LUNG"
+    slide_path: "/data/wsi/lung"
+    tfrecord_path: ""
+    tile_path: "/data/features/lung_resnet50.pt"
+    used_for: "testing"
 
 benchmark_parameters:
-tile_px: [256]
-tile_um: ["20x"]
-feature_extraction: [resnet50_imagenet, hibou_b]
-mil: [Attention_MIL, dsmil]
-loss: [CrossEntropyLoss]
-activation_function: [ReLU]
-optimizer: [Adam]
+  # Grid search parameters for BenchmarkingPolicy
+  tile_px: [256, 512]
+  tile_um: ["20x"]
+  feature_extraction: ["resnet50", "ctranspath"]
+  mil: ["AttentionMIL", "TransMIL", "DSMIL"]
+  loss: ["CrossEntropyLoss"]
+  activation_function: ["ReLU"]
+  optimizer: ["Adam", "AdamW"]
 
-
-weights_dir: ./pretrained_weights
-hf_key: YOUR_HUGGINGFACE_TOKEN
+weights_dir: "./artifacts/weights"
+hf_key: null
