@@ -1,0 +1,36 @@
+# pyproject.toml
+[project]
+name = "pathbench"
+version = "0.1.0"
+description = "PathBench 2.0"
+authors = [{name = "Siemen Brussee"}]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+"numpy",
+"scikit-learn",
+"torch",
+"pytorch-lightning", # Training
+"optuna, # Optimization
+"sksurv", # survival
+"pyYAML",
+"lazyslide",
+]
+
+
+[project.optional-dependencies]
+# Opt-in heavy deps
+gnn = ["torch-geometric>=2.5"]
+hf = ["huggingface_hub>=0.25"]
+docs = ["mkdocs-material>=9.5"]
+
+
+[project.scripts]
+pathbench-benchmark = "pathbench.cli.benchmark:main"
+pathbench-optimize = "pathbench.cli.optimize:main"
+pathbench-features = "pathbench.cli.feature_extract:main"
+pathbench-infer = "pathbench.cli.inference:main"
+
+
+[tool.uv]
+resolver = "lowest-compatible"

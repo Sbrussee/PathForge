@@ -1,0 +1,3 @@
+Example usage:
+docker build -t pathbench:latest -f docker/Dockerfile .
+docker run --rm -it pathbench:latest pathbench-benchmark --config /app/configs/config.example.json

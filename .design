@@ -1,0 +1,13 @@
+Layering rule (unidirectional deps):
+
+utils → (nobody depends on it)
+
+io → may import utils
+
+core/* → may import utils, io
+
+training, optimization → may import core/*, utils
+
+cli/* → may import everything above, never the other way around
+
+Enforce by keeping imports one‑way and adding a simple import linter in CI later.

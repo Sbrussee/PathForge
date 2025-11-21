@@ -1,0 +1,4 @@
+{
+  "lr": {"type": "float", "low": 1e-5, "high": 1e-2, "log": true},
+  "embed_dim": {"type": "categorical", "choices": [128, 256, 512]}
+}
