@@ -11,8 +11,8 @@ dependencies = [
 "scikit-learn",
 "torch",
 "pytorch-lightning", # Training
-"optuna, # Optimization
-"sksurv", # survival
+"optuna",            # Optimization
+"sksurv",            # survival
 "pyYAML",
 "lazyslide",
 ]
