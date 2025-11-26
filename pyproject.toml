@@ -12,7 +12,6 @@ dependencies = [
 "torch",
 "pytorch-lightning", # Training
 "optuna",            # Optimization
-"sksurv",            # survival
 "pyYAML",
 "lazyslide",
 ]
@@ -20,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Opt-in heavy deps
+survival = ["scikit-survival"]
 gnn = ["torch-geometric>=2.5"]
 hf = ["huggingface_hub>=0.25"]
 docs = ["mkdocs-material>=9.5"]
@@ -32,5 +32,5 @@ pathbench-features = "pathbench.cli.feature_extract:main"
 pathbench-infer = "pathbench.cli.inference:main"
 
 
-[tool.uv]
-resolver = "lowest-compatible"
+#[tool.uv]
+#resolver = "lowest-compatible"
