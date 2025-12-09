@@ -7,13 +7,14 @@ authors = [{name = "Siemen Brussee"}]
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-"numpy",
-"scikit-learn",
-"torch",
-"pytorch-lightning", # Training
-"optuna",            # Optimization
-"pyYAML",
-"lazyslide",
+    "numpy",
+    "scikit-learn",
+    "torch",
+    "pytorch-lightning", # Training
+    "optuna",            # Optimization
+    "pyYAML",
+    "lazyslide",
+    "pydantic>=2.5,<3.0",
 ]
 
 

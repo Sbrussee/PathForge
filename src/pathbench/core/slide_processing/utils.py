@@ -5,7 +5,6 @@ import timm
 import lazyslide as zs
 from wsidata import open_wsi
 
-
 def segment_tissue(config: Config, slide: zs.WSIData, method: str = "otsu") -> None:
     """
     Segment tissue regions in a Whole Slide Image (WSI).
@@ -80,8 +79,6 @@ def aggregate_features(config: Config, slide: zs.WSIData,
         None
     """
     zs.tl.feature_aggregation(wsi=slide, encoder=encoder, by=by, **config.slide_processing.feature_aggregation)
-
-
 
 def load_slide(path: str) -> zs.WSIData:
     """
