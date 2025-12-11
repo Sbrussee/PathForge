@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Literal, List, Optional, Dict, Union
 import yaml
@@ -10,7 +11,7 @@ import inspect
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
 
 # Internal Imports
-from pathbench.utils.constants import TASK_TYPES, MODE_TYPES
+from pathbench.utils.constants import TASK_TYPES, MODE_TYPES, EXPERIMENTS_DIR
 from pathbench.utils.registries import MODELS, FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES
 from pathbench.core.models.mil_base import MILModelBase
 
@@ -25,6 +26,7 @@ class ExperimentConfig(BaseModel):
     """Universal experiment settings."""
     project_name: str
     annotation_file: str
+    project_root: str | None = None
     
     # Execution
     num_workers: int = Field(0, ge=0)
@@ -32,7 +34,7 @@ class ExperimentConfig(BaseModel):
     val_fraction: float = Field(0.1, gt=0, lt=1)
 
     # Task + Mode
-    task: TaskType = "classification"
+    task: Optional[TaskType] = None
     mode: ModeType = "benchmark"
     aggregation_level: Literal["slide", "patient"] = "slide"
 
@@ -44,6 +46,23 @@ class ExperimentConfig(BaseModel):
     evaluation: List[str] = Field(default_factory=list)
     custom_metrics: List[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def set_default_project_root(self):
+        if self.project_root is None:
+            self.project_root = os.path.join(EXPERIMENTS_DIR, self.project_name)
+        return self
+    
+    @model_validator(mode="after")
+    def validate_task_for_mode(self) -> "ExperimentConfig":
+        """
+        `task` may be omitted ONLY when mode == 'feature_extraction'.
+        For all other modes, `task` is required.
+        """
+        if self.mode != "feature_extraction" and self.task is None:
+            raise ValueError(
+                "experiment.task is required unless mode == 'feature_extraction'."
+            )
+        return self
 
 class MILConfig(BaseModel):
     """MIL Model specific settings."""
@@ -112,7 +131,7 @@ class BenchmarkParameters(BaseModel):
     Pydantic validators enforce logic previously implemented manually.
     """
     tile_px: List[int] = Field(default_factory=lambda: [256])
-    tile_um: List[float] = Field(default_factory=lambda: [0.5])
+    tile_mpp: List[float] = Field(default_factory=lambda: [0.5])
     feature_extraction: List[str] = Field(default_factory=list)
     mil: List[str] = Field(default_factory=list)
     loss: List[str] = Field(default_factory=list)
@@ -127,12 +146,12 @@ class BenchmarkParameters(BaseModel):
                 raise ValueError(f"Invalid tile_px: {px}. Must be divisible by 2.")
         return v
 
-    @field_validator('tile_um')
+    @field_validator('tile_mpp')
     @classmethod
-    def validate_tile_um(cls, v: List[float]) -> List[float]:
-        for um in v:
-            if um <= 0:
-                raise ValueError(f"Invalid tile_um: {um}. Must be > 0.")
+    def validate_tile_mpp(cls, v: List[float]) -> List[float]:
+        for mpp in v:
+            if mpp <= 0:
+                raise ValueError(f"Invalid tile_mpp: {mpp}. Must be > 0.")
         return v
 
     @field_validator('feature_extraction')

@@ -1,6 +1,7 @@
 # src/core/datasets/base.py
 from __future__ import annotations
 from typing import Protocol, Iterable, Iterator, Sequence, Tuple, Any
+from abc import ABC, abstractmethod
 
 class DatasetBase(ABC):
     """

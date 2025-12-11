@@ -17,3 +17,5 @@ REGISTRY_AUGMENTATION_METHODS = "augmentation_methods"
 
 EXPERIMENTS_DIR = "experiments"
 LOGS_DIR = "logs"
+
+SLIDE_FILE_FORMATS = [".svs", ".ndpi", ".tiff", ".tif", ".mrxs"] #TODO: Base on backends? 
