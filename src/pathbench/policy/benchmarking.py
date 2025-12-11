@@ -24,7 +24,6 @@ class BenchmarkingPolicy(PolicyBase):
         self.logger = logging.getLogger("pathbench.benchmark")
 
     def _generate_configs(self) -> List[Config]:
-        # ... (Same as previous implementation) ...
         bp = self.config.benchmark_parameters
         grid = {
             "mil_model": bp.mil,

@@ -6,7 +6,6 @@ from pathbench.core.models.layers import NystromAttention
 from pathbench.core.registry import MODELS
 
 @MODELS.register("ILRA_MIL")
-@MODELS.register("ILRA_MIL")
 class ILRA_MIL(MILModelBase):
     """Implicit Low-Rank Attention MIL."""
     def __init__(self, input_dim=1024, hidden_dim=256, output_dim=2, dropout=0.1):

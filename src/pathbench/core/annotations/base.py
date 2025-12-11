@@ -23,3 +23,8 @@ class AnnotationsBase(ABC):
     def validate_annotations(self, annotations: Any) -> bool:
         """Validate the given annotations."""
         pass
+    
+    @abstractmethod
+    def inspect_annotations(self, annotations: Any) -> None:
+        """Print a summary of the annotations."""
+        pass

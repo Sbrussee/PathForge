@@ -59,7 +59,7 @@ class ComboConfig:
 @dataclass(slots=True)
 class Experiment:
     """
-    Base experiment.
+    Experiment class, which manages project structure and metadata.
 
     Responsibilities:
     - Determine project_root.
@@ -151,7 +151,7 @@ class Experiment:
         annotations_target = os.path.join(root, "annotations.csv")
         if not os.path.exists(annotations_target):
             self._copy_annotations(annotations_target)
-
+            
         # 3) datasets.json
         datasets_json_path = os.path.join(root, "datasets.json")
         if os.path.exists(datasets_json_path):
@@ -217,8 +217,32 @@ class Experiment:
 
         logger.info("Copying annotations from %s to %s", src, target)
         shutil.copy2(src, target)
+        
+    def load_annotations(self) -> pd.DataFrame:
+        """
+        Load annotations CSV from project_root/annotations.csv.
+
+        Returns:
+            DataFrame with annotations.
+        """
+        if self.project_root is None:
+            raise RuntimeError("project_root is not set.")
+        
+        ann_path = os.path.join(self.project_root, "annotations.csv")
+        if not os.path.isfile(ann_path):
+            raise FileNotFoundError(f"Annotations file not found: {ann_path}")
+        
+        df = pd.read_csv(ann_path)
+        return df
     
-    def _compute_combinations(self, keys: List[str]) -> List[ComboConfig]:
+    def build_combinations(self, keys: List[str]) -> List[ComboConfig]:
+        """
+        Build all combinations of benchmark parameters for the given keys.
+        Args:
+            keys: List of field names in cfg.benchmark_parameters to build combinations for.
+        Returns:
+            List of ComboConfig instances representing all combinations.
+        """
         bp = self.cfg.benchmark_parameters
 
         value_lists: List[list[Any]] = []
@@ -237,77 +261,20 @@ class Experiment:
 
         return combos
     
-    def _build_slide_datasets(self, annotations: pd.DataFrame) -> list[SlideDataset]:
+    def build_datasets(self) -> list[SlideDataset]:
+        """
+        Build SlideDataset instances for all datasets in cfg.datasets.
+        Returns:
+            List of SlideDataset instances.
+        """
+        if self.project_root is None:
+            raise RuntimeError("project_root is not set.")
+        
+        annotations = self.load_annotations()
+        
         datasets = []
         for ds in self.cfg.datasets:
             if ds.used_for == "ignore":
                 continue
             datasets.append(SlideDataset(ds, annotations))
         return datasets
-
-    def run(self) -> dict[str, Any]:
-        raise NotImplementedError
-
-class FeatureExtractionExperiment(Experiment):
-    
-    def run(self) -> dict[str, Any]:
-        from pathbench.policy.feature_extraction import FeatureExtractionPolicy
-
-        if self.project_root is None:
-            raise RuntimeError("project_root is not set. Was Experiment.__post_init__ run?")
-
-        # 1) Load annotations from the *project-local* copy
-        ann_path = os.path.join(self.project_root, "annotations.csv")
-        logger.info("[FE] Loading annotations from %s", ann_path)
-        annotations = pd.read_csv(ann_path)
-
-        # 2) Build SlideDataset objects from cfg.datasets + annotations
-        datasets = self._build_slide_datasets(annotations)
-        # (optional) keep for later access
-        self.datasets = datasets  # type: ignore[attr-defined]
-
-        logger.info("[FE] Built %d SlideDatasets", len(datasets))
-        for ds in datasets:
-            logger.info(
-                "[FE] Dataset '%s' (used_for=%s) -> %d slides",
-                ds.name,
-                ds.used_for,
-                len(ds),
-            )
-
-        # 3) Compute benchmark parameter combinations
-        bp_combos = self._compute_combinations(
-            ["feature_extraction", "tile_px", "tile_mpp"]
-        )
-        logger.info("[FE] Number of benchmark parameter combos: %d", len(bp_combos))
-        for i, combo in enumerate(bp_combos):
-            logger.debug("[FE] Combo %d: %s", i, combo.to_dict())
-
-        # 4) Run the feature extraction policy for each combo
-        policy = FeatureExtractionPolicy(
-            config=self.cfg,
-            datasets=datasets,
-        )
-
-        for i, combo_cfg in enumerate(bp_combos):
-            logger.info(
-                "[FE] === Running combo %d/%d: %s ===",
-                i + 1,
-                len(bp_combos),
-                combo_cfg.to_dict(),
-            )
-            policy.execute(combo_cfg)
-
-        logger.info("[FE] Feature extraction DONE.")
-
-        return {"status": "feature_extraction_done"}
-
-class BenchmarkingExperiment(Experiment):
-    def run(self):
-        # prepare data splits, train/eval, aggregate reports
-        return {"status": "benchmark_done"}
-
-class OptimizationExperiment(Experiment):
-    def run(self):
-        # build optuna study based on cfg.search_space_path
-        return {"status": "optimize_done"}

@@ -47,6 +47,7 @@ class MILModelBase(ModelBase, nn.Module):
         return self.forward_bag(bag, *args, **kwargs)
 
     # --- PyTorch Implementation of ModelBase ---
+    #TODO: PUT ACTUAL INTIALIZE LOGIC IN HERE
     def initialize(self, config: Optional[Dict[str, Any]] = None) -> None:
         pass
 

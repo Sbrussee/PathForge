@@ -1,0 +1,43 @@
+experiment:
+  project_name: cbir_lumc_tissue     # Updated project name for clarity
+  annotation_file: /exports/path-pulmogroep-hpc/Jurre/SalvDataset/LUMC_cohort/annotations_key_diag_test.csv
+  task: null                         # Changed task to image retrieval
+  mode: feature_extraction           # Benchmark mode for 
+  report: True                       # Whether to generate a tile extraction report
+  mixed_precision: True              # Whether to use mixed precision feature extraction
+  num_workers: 8                     # Retained for efficient data loading (if applicable)
+  
+  qc: null                           # Quality control methods (keep if needed for tile filtering)
+
+  qc_filters: #Tile-level filters for discarding tiles
+    grayspace_threshold : 0.05 #Pixels below this value (ranged 0-1) are considered gray.
+    grayspace_fraction: 0.6 # Image tiles with grayspace above this fraction are discarded.
+    whitespace_threshold: 230 #Pixel intensities (0-255) above this value are considered white.
+    whitespace_fraction: 1.0 # Image tiles with whitespace above this fraction are discarded.
+
+  cell_segmentation:
+    model: "histoplus"
+    cell_type_classification: True
+    
+    
+datasets:
+  - name: Salv-LUMC
+    slide_path: /exports/path-pulmogroep-hpc/Jurre/SalvDataset/LUMC_cohort/slides
+    tile_path: /exports/path-pulmogroep-hpc/Jurre/SalvDataset/LUMC_cohort/tiles
+    used_for: testing
+
+benchmark_parameters:
+  tile_px:          # Tile sizes in pixels
+    - 256 
+    
+  tile_um:          # Magnification levels
+    - 128
+    
+  normalization:    # Normalization methods
+    - reinhard
+
+  feature_extraction:  # Feature extraction methods for image retrieval
+    - resnet50
+    
+weights_dir: ./pretrained_weights   # Path to pretrained weights
+hf_key: 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                        # Hugging Face token (if needed)

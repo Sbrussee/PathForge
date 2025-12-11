@@ -7,8 +7,8 @@ import logging
 import dask
 
 from ..config.config import Config
-from ..core.experiments.base import FeatureExtractionExperiment
-import pathbench.core.slide_processing
+from ..core.experiments.base import Experiment
+from ..policy.feature_extraction import FeatureExtractionPolicy
 
 
 def main(argv=None) -> int:
@@ -28,11 +28,12 @@ def main(argv=None) -> int:
     logger.info(f"Using config: {args.config}")
 
     dask.config.set({"dataframe.query-planning": True})
-
+    
     cfg = Config.from_yaml(Path(args.config))
-    out = FeatureExtractionExperiment(cfg).run()
+    experiment = Experiment(cfg)
+    policy = FeatureExtractionPolicy(experiment)
+    out = policy.execute()
     logger.info(f"Experiment finished with status: {out}")
-
     return 0
 
 if __name__ == "__main__":
