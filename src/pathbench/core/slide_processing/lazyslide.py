@@ -102,7 +102,7 @@ class LazySlideProcessor(SlideProcessorBase):
         zs.pp.tile_tissues(wsi=slide_obj, **params)
         return slide_obj
     
-    def _save_features_pt(
+    def _save_features(
         self,
         slide_obj: zs.WSIData,
         model_name: str,

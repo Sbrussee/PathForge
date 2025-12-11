@@ -23,10 +23,20 @@ class SlideProcessorBase(ABC):
     def extract_patches(self, slide_obj: Any, config: Optional[Dict[str, Any]] = None) -> Any:
         """Extract patches from the slide object."""
         ...
+
+    @abstractmethod
+    def save_patches(self, slide_obj: Any, config: Optional[Dict[str, Any]] = None) -> Any:
+        """Save patches from the slide object."""
+        ...
         
     @abstractmethod
     def extract_features(self, slide_obj: Any, config: Optional[Dict[str, Any]] = None) -> Any:
         """Extract features from the slide object."""
+        ...
+
+    @abstractmethod
+    def save_features(self, slide_obj: Any, config: Optional[Dict[str, Any]] = None) -> Any:
+        """Save features from the slide object."""
         ...
     
     @abstractmethod

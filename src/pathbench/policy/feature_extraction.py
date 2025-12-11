@@ -72,7 +72,10 @@ class FeatureExtractionPolicy(PolicyBase):
                     wsi = processor.load_slide(str(slide.wsi_path))
                     wsi = processor.segment_tissue(wsi, config=seg_config)
                     wsi = processor.extract_patches(wsi, config=tile_config)
+
+                    # Extract features
                     wsi = processor.extract_features(wsi, config=feat_config)
+                    processor.save_features()
 
                     # later: verify/save features here
 

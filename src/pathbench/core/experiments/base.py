@@ -58,171 +58,165 @@ class ComboConfig:
 
 @dataclass(slots=True)
 class Experiment:
+    """
+    Base experiment.
+
+    Responsibilities:
+    - Determine project_root.
+    - Ensure project structure exists:
+        * project.json
+        * annotations.csv (copied into project_root)
+        * datasets.json with absolute features_dir / tile_records_dir
+    - Provide utilities to compute benchmark parameter combinations.
+    """
+
     cfg: Config
+    project_root: str | None = None
 
-    def initialize_project(self) -> tuple[str, pd.DataFrame, list[SlideDataset]]:
+    def __post_init__(self) -> None:
         """
-        Standard entry point for all experiments.
-
-        - Determine project_root.
-        - If dataset_config.json exists:
-            * Load annotations from the copied CSV in project_root.
-            * Rebuild SlideDatasets from dataset_config.json.
-        - Else:
-            * Load annotations from cfg.experiment.annotation_file.
-            * Copy annotations into project_root.
-            * Build SlideDatasets via _build_slide_datasets.
-            * Write dataset_config.json.
+        After construction:
+        - decide project_root
+        - ensure project metadata & dataset config exist
         """
-        project_root = self.get_project_root()
-        ds_cfg_path = os.path.join(project_root, "dataset_config.json")
+        self.project_root = self._determine_project_root()
+        self._prepare_project()
 
-        # ---- reuse existing project ----
-        if os.path.exists(ds_cfg_path):
-            logger.info("[EXP] Found existing dataset_config.json at %s, reusing it", ds_cfg_path)
-            with open(ds_cfg_path, "r") as f:
-                meta = json.load(f)
-
-            ann_file = meta.get("annotations_file")
-            if ann_file:
-                ann_path = os.path.join(project_root, ann_file)
-                if os.path.exists(ann_path):
-                    logger.info("[EXP] Loading annotations from %s", ann_path)
-                    annotations = pd.read_csv(ann_path)
-                else:
-                    logger.warning(
-                        "[EXP] Copied annotations file missing (%s), "
-                        "falling back to original path %s",
-                        ann_path,
-                        self.cfg.experiment.annotation_file,
-                    )
-                    annotations = pd.read_csv(self.cfg.experiment.annotation_file)
-            else:
-                logger.warning(
-                    "[EXP] 'annotations_file' missing in dataset_config.json, "
-                    "falling back to original path %s",
-                    self.cfg.experiment.annotation_file,
-                )
-                annotations = pd.read_csv(self.cfg.experiment.annotation_file)
-
-            # rebuild slide datasets from meta
-            name_to_ds_cfg = {d.name: d for d in self.cfg.datasets}
-            datasets: list[SlideDataset] = []
-
-            for ds_entry in meta.get("datasets", []):
-                name = ds_entry["name"]
-                ds_cfg = name_to_ds_cfg.get(name)
-                if ds_cfg is None:
-                    logger.warning(
-                        "[EXP] Dataset '%s' in dataset_config.json not found in current cfg.datasets; skipping",
-                        name,
-                    )
-                    continue
-                samples_data = ds_entry.get("samples", [])
-                ds = SlideDataset.from_samples(ds_cfg, samples_data)
-                datasets.append(ds)
-
-            return project_root, annotations, datasets
-
-        # ---- first run: build from scratch ----
-        logger.info("[EXP] No dataset_config.json found; initializing project from scratch")
-        annotations = pd.read_csv(self.cfg.experiment.annotation_file)
-        ann_dst = self._copy_annotations_to_project_root(project_root)
-        ann_filename = os.path.basename(ann_dst)
-
-        datasets = self._build_slide_datasets(annotations)
-        self._write_dataset_config(project_root, datasets, ann_filename)
-        return project_root, annotations, datasets
-
-    def get_project_root(self) -> str:
+    def _determine_project_root(self) -> str:
         """
-        Return the root folder for this project/experiment.
+        Determine absolute path to the project root.
 
-        Default:
-            <repo-root>/experiments/{project_name}
-
-        If cfg.experiment.project_root exists and is non-empty,
-        that is used instead.
+        Rules:
+        - cfg.experiment.project_name must be a non-empty string.
+        - If cfg.experiment.project_root exists and is not None:
+            * it MUST be an absolute path; otherwise error.
+        - Else: use <cwd>/experiments/{project_name}.
         """
         exp_cfg = self.cfg.experiment
 
-        repo_root = os.path.abspath(os.path.join(os.getcwd(), ".."))
-        root = os.path.join(repo_root, EXPERIMENTS_DIR, exp_cfg.project_name)
+        project_name = getattr(exp_cfg, "project_name", None)
+        if not project_name or not isinstance(project_name, str):
+            raise ValueError(
+                "cfg.experiment.project_name must be a non-empty string."
+            )
 
-        os.makedirs(root, exist_ok=True)
-        logger.info("[EXP] Using project_root=%s", root)
+        # Optional: explicit project_root in config
+        project_root = getattr(exp_cfg, "project_root", None)
 
-        return root
-    
-    def _copy_annotations_to_project_root(self, project_root: str) -> str:
-        """
-        Copy the annotations CSV into the project folder.
-
-        Returns the destination path (inside project_root).
-        """
-        src = self.cfg.experiment.annotation_file
-        dst = os.path.join(project_root, os.path.basename(src))
-
-        if not os.path.isfile(src):
-            logger.warning("[EXP] Annotation file does not exist: %s", src)
-            return dst
-
-        # Avoid copying onto itself if already in project_root
-        if os.path.abspath(src) != os.path.abspath(dst):
-            shutil.copy2(src, dst)
-            logger.info("[EXP] Copied annotations: %s -> %s", src, dst)
+        if project_root is not None:
+            # Strict: must be absolute, no clever guessing
+            if not os.path.isabs(project_root):
+                raise ValueError(
+                    "cfg.experiment.project_root must be an absolute path "
+                    f"(got: {project_root!r})."
+                )
+            root = project_root
         else:
-            logger.info("[EXP] Annotation file already in project_root: %s", dst)
+            base = os.path.join(os.getcwd(), "experiments")
+            root = os.path.join(base, project_name)
 
-        return dst
+        root_abs = os.path.abspath(root)
+        logger.info("Using project_root: %s", root_abs)
+        return root_abs
+
+    def _prepare_project(self) -> None:
+        """
+        Ensure the project structure exists and is consistent.
+
+        Steps (idempotent):
+        1. Create project_root directory if it does not exist.
+        2. Ensure project.json exists (create if missing).
+        3. Ensure annotations.csv exists in project_root
+           (copy from cfg.experiment.annotation_file if missing).
+        4. Ensure datasets.json exists:
+           - if present: load it and sync cfg.datasets from it.
+           - if absent: create it from cfg.datasets and write absolute
+             features_dir / tile_records_dir paths.
+        """
+        if self.project_root is None:
+            raise RuntimeError("project_root is not set.")
+
+        root = self.project_root
+        os.makedirs(root, exist_ok=True)
+
+        # 1) project.json
+        project_json_path = os.path.join(root, "project.json")
+        if not os.path.exists(project_json_path):
+            self._write_project_json(project_json_path)
+        else:
+            # We only sanity-check; not using these values for logic yet.
+            self._load_project_json(project_json_path)
+
+        # 2) annotations.csv
+        annotations_target = os.path.join(root, "annotations.csv")
+        if not os.path.exists(annotations_target):
+            self._copy_annotations(annotations_target)
+
+        # 3) datasets.json
+        datasets_json_path = os.path.join(root, "datasets.json")
+        if os.path.exists(datasets_json_path):
+            self._load_datasets_json(datasets_json_path)
+        else:
+            self._create_datasets_json(datasets_json_path)
     
-    def _write_dataset_config(
-        self,
-        project_root: str,
-        datasets: list["SlideDataset"],
-        annotations_filename: str,
-    ) -> str:
+    def _write_project_json(self, path: str) -> None:
         """
-        Create dataset_config.json in the project folder.
+        Create a minimal project.json with basic metadata.
 
-        Contains basic info so we can later reconstruct datasets
-        without globbing from scratch.
+        Raises:
+            FileNotFoundError if the configured annotation_file does not exist.
         """
-        cfg = {
+        ann_src = self.cfg.experiment.annotation_file
+        if not os.path.isfile(ann_src):
+            raise FileNotFoundError(
+                f"experiment.annotation_file does not exist: {ann_src}"
+            )
+
+        data = {
             "project_name": self.cfg.experiment.project_name,
             "created_at": datetime.now().isoformat(timespec="seconds"),
-            "annotations_file": annotations_filename,
-            "datasets": [],
+            "annotation_source": os.path.abspath(ann_src),
         }
 
-        for ds in datasets:
-            ds_entry = {
-                "name": ds.name,
-                "used_for": ds.used_for,
-                "slide_path": ds.config.slide_path,
-                "num_samples": len(ds),
-                "samples": [],
-            }
+        logger.info("Creating project.json at %s", path)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
 
-            for sample in ds.samples:
-                ds_entry["samples"].append(
-                    {
-                        "slide": sample.slide,
-                        "patient": sample.patient,
-                        "category": sample.category,
-                        "wsi_path": sample.wsi_path,
-                    }
-                )
+    def _load_project_json(self, path: str) -> None:
+        """
+        Load and lightly validate project.json.
 
-            cfg["datasets"].append(ds_entry)
+        Currently only checks that project_name matches cfg.experiment.project_name.
+        """
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-        out_path = os.path.join(project_root, "dataset_config.json")
-        with open(out_path, "w") as f:
-            json.dump(cfg, f, indent=2)
+        pj_name = data.get("project_name")
+        cfg_name = self.cfg.experiment.project_name
+        if pj_name != cfg_name:
+            raise ValueError(
+                f"project.json project_name={pj_name!r} does not match "
+                f"cfg.experiment.project_name={cfg_name!r}."
+            )
 
-        logger.info("[EXP] Wrote dataset_config.json to %s", out_path)
+        # Could add more checks later if needed.
+        logger.debug("Loaded project.json from %s", path)
 
-        return out_path
+    def _copy_annotations(self, target: str) -> None:
+        """
+        Copy annotations CSV from cfg.experiment.annotation_file into project_root.
+
+        Raises:
+            FileNotFoundError if the source annotation file does not exist.
+        """
+        src = self.cfg.experiment.annotation_file
+        if not os.path.isfile(src):
+            raise FileNotFoundError(
+                f"experiment.annotation_file does not exist: {src}"
+            )
+
+        logger.info("Copying annotations from %s to %s", src, target)
+        shutil.copy2(src, target)
     
     def _compute_combinations(self, keys: List[str]) -> List[ComboConfig]:
         bp = self.cfg.benchmark_parameters
@@ -258,12 +252,22 @@ class FeatureExtractionExperiment(Experiment):
     
     def run(self) -> dict[str, Any]:
         from pathbench.policy.feature_extraction import FeatureExtractionPolicy
-        
-        # 1) Create-or-load project root, annotations, and datasets
-        self.project_root, self.annotations, self.datasets = self.initialize_project()
-        logger.info("[FE] Project root: %s", self.project_root)
-        logger.info("[FE] Built %d SlideDatasets", len(self.datasets))
-        for ds in self.datasets:
+
+        if self.project_root is None:
+            raise RuntimeError("project_root is not set. Was Experiment.__post_init__ run?")
+
+        # 1) Load annotations from the *project-local* copy
+        ann_path = os.path.join(self.project_root, "annotations.csv")
+        logger.info("[FE] Loading annotations from %s", ann_path)
+        annotations = pd.read_csv(ann_path)
+
+        # 2) Build SlideDataset objects from cfg.datasets + annotations
+        datasets = self._build_slide_datasets(annotations)
+        # (optional) keep for later access
+        self.datasets = datasets  # type: ignore[attr-defined]
+
+        logger.info("[FE] Built %d SlideDatasets", len(datasets))
+        for ds in datasets:
             logger.info(
                 "[FE] Dataset '%s' (used_for=%s) -> %d slides",
                 ds.name,
@@ -271,16 +275,18 @@ class FeatureExtractionExperiment(Experiment):
                 len(ds),
             )
 
-        # 2) Compute benchmark parameter combinations
-        bp_combos = self._compute_combinations(["feature_extraction", "tile_px", "tile_mpp"])
+        # 3) Compute benchmark parameter combinations
+        bp_combos = self._compute_combinations(
+            ["feature_extraction", "tile_px", "tile_mpp"]
+        )
         logger.info("[FE] Number of benchmark parameter combos: %d", len(bp_combos))
         for i, combo in enumerate(bp_combos):
             logger.debug("[FE] Combo %d: %s", i, combo.to_dict())
 
-        # 3) Run policy
+        # 4) Run the feature extraction policy for each combo
         policy = FeatureExtractionPolicy(
             config=self.cfg,
-            datasets=self.datasets,
+            datasets=datasets,
         )
 
         for i, combo_cfg in enumerate(bp_combos):
@@ -291,7 +297,7 @@ class FeatureExtractionExperiment(Experiment):
                 combo_cfg.to_dict(),
             )
             policy.execute(combo_cfg)
-        
+
         logger.info("[FE] Feature extraction DONE.")
 
         return {"status": "feature_extraction_done"}

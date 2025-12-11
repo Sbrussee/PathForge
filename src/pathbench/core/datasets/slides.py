@@ -1,11 +1,10 @@
 # src/pathbench/core/datasets/slides.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import List
+from typing import Any, Tuple, List
 import os
 import glob
 import logging
-
 import pandas as pd
 
 from pathbench.core.datasets.base import DatasetBase
@@ -31,7 +30,7 @@ class SlideDataset(DatasetBase):
 
     def __init__(self, ds_cfg: DatasetEntry, annotations_df: pd.DataFrame):
         self._name = ds_cfg.name
-        self.config = ds_cfg
+        self.config = ds_cfg  # carries slide_path, features_dir, tile_records_dir, used_for, ...
 
         logger.info(
             "Initializing SlideDataset for dataset '%s' with slide_dir='%s'",
@@ -53,26 +52,6 @@ class SlideDataset(DatasetBase):
             self.config.used_for,
         )
 
-    @classmethod
-    def from_samples(cls, ds_cfg: DatasetEntry, samples_data: List[dict]) -> "SlideDataset":
-        """
-        Construct a SlideDataset directly from a list of saved samples
-        (e.g. loaded from dataset_config.json), without re-globbing files.
-        """
-        obj = cls.__new__(cls)  # bypass __init__
-        obj._name = ds_cfg.name
-        obj.config = ds_cfg
-        obj.samples = [
-            SlideSample(
-                slide=s["slide"],
-                patient=s["patient"],
-                category=s["category"],
-                wsi_path=s["wsi_path"],
-            )
-            for s in samples_data
-        ]
-        return obj
-
     # ---- DatasetBase API -------------------------------------------------
 
     @property
@@ -87,8 +66,36 @@ class SlideDataset(DatasetBase):
     def num_samples(self) -> int:
         return len(self.samples)
 
+    def __len__(self) -> int:
+        return self.num_samples
+
     def __getitem__(self, idx: int) -> SlideSample:
         return self.samples[idx]
+
+    # ---- New convenience properties for paths ----------------------------
+
+    @property
+    def slide_dir(self) -> str:
+        """Absolute path to the directory containing WSIs for this dataset."""
+        return self.config.slide_path
+
+    @property
+    def features_dir(self) -> str:
+        """
+        Absolute path where feature bags (.pt) for this dataset should be stored.
+        Assumes Experiment/_normalise_dataset_paths has already made this absolute
+        and created the directory.
+        """
+        return self.config.features_dir  # type: ignore[attr-defined]
+
+    @property
+    def tile_records_dir(self) -> str:
+        """
+        Absolute path where tile index / npz records for this dataset should be stored.
+        Assumes Experiment/_normalise_dataset_paths has already made this absolute
+        and created the directory.
+        """
+        return self.config.tile_records_dir  # type: ignore[attr-defined]
 
     # ---- internal helpers ------------------------------------------------
 
