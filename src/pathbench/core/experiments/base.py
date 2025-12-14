@@ -151,13 +151,6 @@ class Experiment:
         annotations_target = os.path.join(root, "annotations.csv")
         if not os.path.exists(annotations_target):
             self._copy_annotations(annotations_target)
-            
-        # 3) datasets.json
-        datasets_json_path = os.path.join(root, "datasets.json")
-        if os.path.exists(datasets_json_path):
-            self._load_datasets_json(datasets_json_path)
-        else:
-            self._create_datasets_json(datasets_json_path)
     
     def _write_project_json(self, path: str) -> None:
         """
