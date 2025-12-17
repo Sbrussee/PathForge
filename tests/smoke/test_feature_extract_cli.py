@@ -1,0 +1,1 @@
+from pathbench.utils.test_samples import download_sample_slide

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Literal, List, Optional, Dict, Union
+from typing import Any, Literal, List, Optional, Dict, Union, Mapping
 import yaml
 import torch
 import inspect
@@ -32,11 +32,16 @@ class ExperimentConfig(BaseModel):
     num_workers: int = Field(0, ge=0)
     split_technique: Literal["k-fold", "k-fold-stratified", "fixed"] = "k-fold"
     val_fraction: float = Field(0.1, gt=0, lt=1)
+    stratify_by: Literal["label", "center", "patient", "none"] = "label"
+    label_column: str = "category"
+    patient_column: str = "patient"
+    center_column: str | None = "center"
+    split_seed: int = 42
 
     # Task + Mode
     task: Optional[TaskType] = None
     mode: ModeType = "benchmark"
-    aggregation_level: Literal["slide", "patient"] = "slide"
+    aggregation_level: Literal["slide", "patient", "tissue"] = "slide"
 
     # Global behavior
     report: bool = False
@@ -120,8 +125,10 @@ class DatasetEntry(BaseModel):
     """Definition of a dataset source."""
     name: str
     slide_path: str
-    tfrecord_path: Optional[str] = None
-    tile_path: Optional[str] = None
+    tfrecord_dir: Optional[str] = None
+    tile_records_dir: Optional[str] = None
+    features_dir: Optional[str] = None
+    results_dir: Optional[str] = None
     used_for: Literal["training", "testing", "validation", "ignore", "all"]
 
 
@@ -235,6 +242,11 @@ class Config(BaseModel):
              
         return self
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "Config":
+        """Create Config from dictionary."""
+        return cls.model_validate(data)
+    
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
         path = Path(path)

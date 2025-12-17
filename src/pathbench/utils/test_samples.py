@@ -4,9 +4,8 @@ import lazyslide as ls
 import anndata as ad
 import pandas as pd
 
-
+"""
 def download_gtex_slides():
-    """Download a GTEx slide from the HuggingFace hub."""
     slide_annotation_path = hf_hub_download(
         "rendeirolab/lazyslide-data",
         "GTEx_artery_dataset.csv.gz",
@@ -14,9 +13,19 @@ def download_gtex_slides():
     )
     slide_annotation = pd.read_csv(slide_annotation_path)
     return slide_annotation
-
+"""
+def download_sample_slide() -> str:
+    """Download a sample slide from the HuggingFace hub and return its path."""
+    slide = hf_hub_download(
+        "rendeirolab/lazyslide-data",
+        "GTEX-1117-0526.svs",
+        repo_type="dataset",
+        cache_dir=".",
+    )
+    return slide
 
 def download_tcga_read_titan_features() -> ad.AnnData:
+    """Download TCGA-READ TITAN features from the HuggingFace hub and return as AnnData."""
     titan_features = hf_hub_download(
         "rendeirolab/lazyslide-data",
         "TCGA_READ_subset_TITAN.h5ad",

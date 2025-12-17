@@ -1,130 +1,155 @@
 from __future__ import annotations
-from typing import Any, Dict, Optional
+"""Optimization policy that samples the configuration space using Optuna."""
+
+from pathlib import Path
+from typing import Any, Dict, Sequence, Mapping
+import inspect
+
 import optuna
-import pandas as pd
-from pathbench.policy.base import PolicyBase
+
 from pathbench.config.config import Config
-from pathbench.utils.registries import MODELS, LOSSES, TRAINERS
 from pathbench.core.datasets.bag_dataset import BagDataset
-from pathbench.training.base import TrainerBase
+from pathbench.core.experiments.base import ComboConfig, Experiment
+from pathbench.core.losses.base import Loss
+from pathbench.core.models.mil_base import MILModelBase
+from pathbench.policy.base import PolicyBase
+from pathbench.policy.feature_extraction import FeatureExtractionPolicy
+from pathbench.utils.splitting import build_patient_splits
+from pathbench.utils.registries import LOSSES, MODELS, TRAINERS
 
 class OptimizationPolicy(PolicyBase):
-    """
-    Optimization Policy that dynamically configures Optuna based on Config.
-    """
+   """Optuna-driven search over the MIL configuration space."""
+
+    def __init__(self, experiment: Experiment) -> None:
+        super().__init__(experiment)
+        self.config: Config = experiment.cfg
+        self.datasets = experiment.build_datasets()
+        self.annotations = experiment.load_annotations()
+        self.feature_policy = FeatureExtractionPolicy(experiment)
+        self.project_root = Path(experiment.project_root or ".")
+        self.best_trial: optuna.trial.FrozenTrial | None = None
+        self.best_model: MILModelBase | None = None
+        self.best_combo: ComboConfig | None = None
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
     
-    def __init__(self, config: Config) -> None:
-        self.config = config
-        
-    def _get_sampler(self) -> optuna.samplers.BaseSampler:
-        """Factory method for Optuna Samplers based on config."""
-        name = self.config.optimization.sampler
-        seed = 42 # Could be exposed in config
-        
-        if name == "TPESampler":
-            return optuna.samplers.TPESampler(seed=seed)
-        elif name == "RandomSampler":
-            return optuna.samplers.RandomSampler(seed=seed)
-        elif name == "CmaEsSampler":
-            return optuna.samplers.CmaEsSampler(seed=seed)
-        elif name == "GridSampler":
-            # GridSampler requires search space to be known at init, 
-            # which is complex for this dynamic setup. defaulting to TPE.
-            print("Warning: GridSampler not fully supported in dynamic mode. Using TPE.")
-            return optuna.samplers.TPESampler(seed=seed)
-        else:
-            raise ValueError(f"Unsupported sampler: {name}")
-
-    def _get_pruner(self) -> Optional[optuna.pruners.BasePruner]:
-        """Factory method for Optuna Pruners based on config."""
-        name = self.config.optimization.pruner
-        
-        if not name or name == "None" or name == "NopPruner":
-            return optuna.pruners.NopPruner()
-        elif name == "MedianPruner":
-            return optuna.pruners.MedianPruner()
-        elif name == "HyperbandPruner":
-            return optuna.pruners.HyperbandPruner()
-        else:
-            print(f"Warning: Pruner {name} not found, defaulting to NopPruner.")
-            return optuna.pruners.NopPruner()
-
-    def _get_direction(self) -> str:
-        """Maps 'max'/'min' to 'maximize'/'minimize'."""
-        mode = self.config.optimization.objective_mode
-        if mode == "max":
-            return "maximize"
-        elif mode == "min":
-            return "minimize"
-        else:
-            # Fallback based on metric name convention
-            metric = self.config.optimization.objective_metric
-            if "loss" in metric or "error" in metric:
-                return "minimize"
-            return "maximize"
-
-    def objective(self, trial: optuna.Trial) -> float:
-        # 1. Suggest Params (This logic ideally reads from a search space file, 
-        # but here we demonstrate modifying the config objects)
-        lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
-        dropout = trial.suggest_float("dropout", 0.1, 0.5)
-        model_name = trial.suggest_categorical("model", ["AttentionMIL", "TransMIL"])
-        
-        # Apply to Config (Temporary for this trial)
-        self.config.mil.lr = lr
-        self.config.mil.dropout_p = dropout
-        self.config.mil.best_epoch_based_on = self.config.optimization.objective_metric
-        
-        # 2. Instantiate Components
-        # Use the registries and abstract factories
-        TrainerClass = TRAINERS.get("lightning")
-        ModelClass = MODELS.get(model_name)
-        LossClass = LOSSES.get("CrossEntropyLoss") # parameterized if needed
-        
-        model = ModelClass(input_dim=1024, dropout=dropout, output_dim=2)
-        loss_fn = LossClass()
-        
-        # 3. Data Loading (Mocking paths from config)
-        # In production, ensure these paths are valid or passed via config
-        ds_train = BagDataset("train", self.config.datasets[0].tile_path, self.config.experiment.annotation_file, "label")
-        ds_val = BagDataset("val", self.config.datasets[1].tile_path, self.config.experiment.annotation_file, "label")
-        
-        # 4. Training
-        # We can optionally pass an Optuna Pruning Callback here if the Trainer supports it
-        from optuna.integration import PyTorchLightningPruningCallback
-        pruning_callback = PyTorchLightningPruningCallback(trial, monitor=self.config.optimization.objective_metric)
-        
-        trainer: TrainerBase = TrainerClass(self.config, extra_callbacks=[pruning_callback])
-        
-        try:
-            best_path, best_score = trainer.fit(model, ds_train, ds_val, loss_fn)
-            return best_score
-        except Exception as e:
-            # Handle pruning or NaN errors
-            print(f"Trial failed: {e}")
-            # Return worst possible score depending on direction
-            return float('inf') if self._get_direction() == "minimize" else float('-inf')
-
-    def execute(self) -> None:
-        print(f"Starting Optimization Study: {self.config.optimization.study_name}")
+    def execute(self) -> Dict[str, Any]:
+        self.feature_policy.execute()
         
         sampler = self._get_sampler()
         pruner = self._get_pruner()
-        direction = self._get_direction()
+        
+        direction = "maximize" if self.config.optimization.objective_mode == "max" else "minimize"
         
         study = optuna.create_study(
             direction=direction,
             sampler=sampler,
             pruner=pruner,
             study_name=self.config.optimization.study_name,
-            load_if_exists=self.config.optimization.load_study
+            load_if_exists=self.config.optimization.load_study,
         )
+
+        study.optimize(self._objective, n_trials=self.config.optimization.trials)
+
+        self.best_trial = study.best_trial
+        results_path = self.project_root / f"{self.config.optimization.study_name}_results.csv"
+        study.trials_dataframe().to_csv(results_path, index=False)
+
+        return {
+            "best_params": study.best_params,
+            "best_value": study.best_value,
+            "best_model": self.best_model,
+            "best_configuration": self.best_combo.to_dict() if self.best_combo else None,
+            "study": study,
+        }
         
-        study.optimize(self.objective, n_trials=self.config.optimization.trials)
-        
-        print(f"Best Params: {study.best_params}")
-        print(f"Best Value ({self.config.optimization.objective_metric}): {study.best_value}")
-        
-        # Save results
-        df = study.trials_dataframe()
-        df.to_csv(f"{self.config.optimization.study_name}_results.csv")
+    # ------------------------------------------------------------------
+    # Objective + helpers
+    # ------------------------------------------------------------------
+    def _objective(self, trial: optuna.Trial) -> float:
+        combo = self._sample_combo(trial)
+        model_cls = MODELS.get(combo.mil)
+        loss_cls = LOSSES.get(combo.loss)
+        trainer_cls = TRAINERS.get("lightning")
+
+        if model_cls is None or loss_cls is None or trainer_cls is None:
+            raise RuntimeError("Missing model, loss, or trainer registration for optimization.")
+
+        annotation_splits = build_patient_splits(self.annotations, self.config, self.datasets)
+
+        train_ds = self._build_split_dataset("training", annotation_splits)
+        val_ds = self._build_split_dataset("validation", annotation_splits)
+
+        model: MILModelBase = model_cls(**self._model_kwargs(model_cls))
+        loss_fn: Loss = loss_cls()
+        trainer = trainer_cls(self.config)
+
+        best_path, best_score = trainer.fit(model, train_ds, val_ds, loss_fn)
+        metric_value = float(best_score)
+
+        # Track best overall
+        if self.best_trial is None or self._is_better(metric_value, self.best_trial.value):
+            self.best_trial = trial.freeze()
+            self.best_model = model
+            self.best_combo = combo
+
+        return metric_value
+
+    def _sample_combo(self, trial: optuna.Trial) -> ComboConfig:
+        bp = self.config.benchmark_parameters.model_dump()
+
+        sampled: Dict[str, Any] = {}
+        for key, values in bp.items():
+            if isinstance(values, Sequence) and values:
+                sampled[key] = trial.suggest_categorical(key, values)
+
+        # fallbacks
+        sampled.setdefault("mil", "AttentionMIL")
+        sampled.setdefault("loss", "CrossEntropyLoss")
+
+        return ComboConfig(**sampled)
+
+    def _build_split_dataset(self, usage: str, splits: Mapping[str, pd.DataFrame]) -> BagDataset:
+        feature_dir = self.project_root / "features"
+        coord_dir = (self.project_root / "tile_coords") if (self.project_root / "tile_coords").exists() else None
+
+        return BagDataset(
+            name=usage,
+            annotations=splits[usage],
+            feature_dir=feature_dir,
+            coord_dir=coord_dir,
+            label_column=self.config.experiment.label_column,
+            bag_level=self.config.experiment.aggregation_level,
+            patient_column=self.config.experiment.patient_column,
+        )
+
+    def _model_kwargs(self, model_cls: type) -> Dict[str, Any]:
+        mil_options = self.config.mil.model_dump()
+        signature = inspect.signature(model_cls)
+        return {k: v for k, v in mil_options.items() if k in signature.parameters}
+
+    def _get_sampler(self) -> optuna.samplers.BaseSampler:
+        name = self.config.optimization.sampler
+        seed = 42
+        if name == "TPESampler":
+            return optuna.samplers.TPESampler(seed=seed)
+        if name == "RandomSampler":
+            return optuna.samplers.RandomSampler(seed=seed)
+        if name == "CmaEsSampler":
+            return optuna.samplers.CmaEsSampler(seed=seed)
+        return optuna.samplers.TPESampler(seed=seed)
+
+    def _get_pruner(self) -> optuna.pruners.BasePruner:
+        name = self.config.optimization.pruner or "NopPruner"
+        if name == "MedianPruner":
+            return optuna.pruners.MedianPruner()
+        if name == "HyperbandPruner":
+            return optuna.pruners.HyperbandPruner()
+        return optuna.pruners.NopPruner()
+
+    def _is_better(self, candidate: float, best: float) -> bool:
+        if self.config.optimization.objective_mode == "min":
+            return candidate < best
+        return candidate > best

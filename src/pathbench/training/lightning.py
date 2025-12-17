@@ -37,20 +37,22 @@ class LightningModuleAdapter(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         bag, target = batch
-        logits = self.model(bag)
+        bag_input = bag['features'] if isinstance(bag, Dict) else bag
+        logits = self.model(bag_input)
         loss = self.loss_fn(logits, target)
         
         # Log with batch_size=1 assumption for MIL, or actual batch size
-        batch_size = bag.shape[0]
+        batch_size = bag_input.shape[0]
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
         return loss
 
     def validation_step(self, batch, batch_idx):
         bag, target = batch
-        logits = self.model(bag)
+        bag_input = bag['features'] if isinstance(bag, Dict) else bag
+        logits = self.model(bag_input)
         loss = self.loss_fn(logits, target)
         
-        batch_size = bag.shape[0]
+        batch_size = bag_input.shape[0]
         self.log("val_loss", loss, on_epoch=True, prog_bar=True, batch_size=batch_size)
         
         # If classification, could add accuracy here (or use TorchMetrics)
@@ -62,7 +64,8 @@ class LightningModuleAdapter(pl.LightningModule):
         
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         bag, _ = batch
-        return self.model(bag)
+        bag_input = bag['features'] if isinstance(bag, Dict) else bag
+        return self.model(bag_input)
 
     def configure_optimizers(self):
         """
@@ -116,7 +119,8 @@ class LightningTrainer(TrainerBase):
     - mil.gradient_clip_val
     - experiment.num_workers
     """
-def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None):
+    def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None):
+        super().__init__()
         self.config = config
         self.extra_callbacks = extra_callbacks or []
         
@@ -214,6 +218,39 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
             best_score = best_score.item()
 
         return best_path, best_score
+    
+    def test(
+        self,
+        model: MILModelBase,
+        dataset_test: Dataset,
+        loss_func: Loss,
+    ) -> Dict[str, float]:
+        """
+        Evaluate the model on the test dataset.
+        Returns a dictionary of metrics.
+        """
+        test_loader = DataLoader(
+            dataset_test, 
+            batch_size=self.config.mil.batch_size, 
+            shuffle=False, 
+            num_workers=self.config.experiment.num_workers,
+            pin_memory=True if torch.cuda.is_available() else False
+        )
+
+        from pathbench.training.lightning import LightningModuleAdapter
+        pl_module = LightningModuleAdapter(model, loss_func, self.config)
+
+        test_results = self.trainer.test(pl_module, dataloaders=test_loader)
+        
+        # Aggregate results into a single dictionary
+        metrics = {}
+        if test_results and isinstance(test_results, list):
+            for key, value in test_results[0].items():
+                if isinstance(value, torch.Tensor):
+                    metrics[key] = value.item()
+                else:
+                    metrics[key] = value
+        return metrics
 
     def predict(
         self,
