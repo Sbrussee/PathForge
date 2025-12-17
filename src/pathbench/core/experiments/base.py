@@ -84,38 +84,56 @@ class Experiment:
 
     def _determine_project_root(self) -> str:
         """
-        Determine absolute path to the project root.
+        Determine the absolute path to the experiment project root.
 
         Rules:
         - cfg.experiment.project_name must be a non-empty string.
-        - If cfg.experiment.project_root exists and is not None:
-            * it MUST be an absolute path; otherwise error.
-        - Else: use <cwd>/experiments/{project_name}.
+        - If cfg.experiment.project_root is provided:
+            * it must be an absolute path
+            * the final root is <project_root>/<project_name>
+        - Otherwise:
+            * use <repo_root>/experiments/<project_name>, where repo_root is resolved
+            as the parent of the 'src' directory containing this file.
         """
         exp_cfg = self.cfg.experiment
 
         project_name = getattr(exp_cfg, "project_name", None)
         if not project_name or not isinstance(project_name, str):
-            raise ValueError(
-                "cfg.experiment.project_name must be a non-empty string."
-            )
+            raise ValueError("cfg.experiment.project_name must be a non-empty string.")
 
-        # Optional: explicit project_root in config
         project_root = getattr(exp_cfg, "project_root", None)
 
         if project_root is not None:
-            # Strict: must be absolute, no clever guessing
             if not os.path.isabs(project_root):
                 raise ValueError(
                     "cfg.experiment.project_root must be an absolute path "
                     f"(got: {project_root!r})."
                 )
-            root = project_root
+            base = project_root
         else:
-            base = os.path.join(os.getcwd(), "experiments")
-            root = os.path.join(base, project_name)
+            # Resolve repo root robustly (avoid cwd). Assumes repo layout: <repo>/src/pathbench/...
+            this_file = os.path.abspath(__file__)
+            # Walk up until we find the 'src' directory, then take its parent as repo root
+            cur = os.path.dirname(this_file)
+            repo_root = None
+            while True:
+                if os.path.basename(cur) == "src":
+                    repo_root = os.path.dirname(cur)
+                    break
+                parent = os.path.dirname(cur)
+                if parent == cur:
+                    break
+                cur = parent
 
+            if repo_root is None:
+                # Fallback: use current working directory as last resort
+                repo_root = os.getcwd()
+
+            base = os.path.join(repo_root, "experiments")
+
+        root = os.path.join(base, project_name)
         root_abs = os.path.abspath(root)
+
         logger.info("Using project_root: %s", root_abs)
         return root_abs
 

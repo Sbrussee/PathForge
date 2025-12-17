@@ -80,22 +80,25 @@ class SlideDataset(DatasetBase):
         return self.config.slide_path
 
     @property
+    def rois_dir(self) -> str:
+        """
+        Absolute path where ROI geojson for this dataset should be stored.
+        """
+        return self.config.roi_path  # type: ignore[attr-defined]
+    
+    @property
+    def tiles_dir(self) -> str:
+        """
+        Absolute path where tile index / npz records for this dataset should be stored.
+        """
+        return self.config.tiles_path  # type: ignore[attr-defined]
+    
+    @property
     def features_dir(self) -> str:
         """
         Absolute path where feature bags (.pt) for this dataset should be stored.
-        Assumes Experiment/_normalise_dataset_paths has already made this absolute
-        and created the directory.
         """
-        return self.config.features_dir  # type: ignore[attr-defined]
-
-    @property
-    def tile_records_dir(self) -> str:
-        """
-        Absolute path where tile index / npz records for this dataset should be stored.
-        Assumes Experiment/_normalise_dataset_paths has already made this absolute
-        and created the directory.
-        """
-        return self.config.tile_records_dir  # type: ignore[attr-defined]
+        return self.config.features_path  # type: ignore[attr-defined]
 
     # ---- internal helpers ------------------------------------------------
 

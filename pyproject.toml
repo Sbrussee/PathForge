@@ -15,6 +15,7 @@ dependencies = [
     "pyYAML",
     "lazyslide",
     "pydantic>=2.5,<3.0",
+    "anndata>=0.10.9",
 ]
 
 
