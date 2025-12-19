@@ -31,6 +31,7 @@ def main(argv=None) -> int:
     
     cfg = Config.from_yaml(Path(args.config))
     experiment = Experiment(cfg)
+
     policy = FeatureExtractionPolicy(experiment)
     out = policy.execute()
     logger.info(f"Experiment finished with status: {out}")

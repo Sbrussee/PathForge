@@ -45,12 +45,6 @@ class ExperimentConfig(BaseModel):
     visualization: List[str] = Field(default_factory=list)
     evaluation: List[str] = Field(default_factory=list)
     custom_metrics: List[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def set_default_project_root(self):
-        if self.project_root is None:
-            self.project_root = os.path.join(EXPERIMENTS_DIR, self.project_name)
-        return self
     
     @model_validator(mode="after")
     def validate_task_for_mode(self) -> "ExperimentConfig":
@@ -99,7 +93,7 @@ class SlideProcessingConfig(BaseModel):
     """Settings for slide processing backends."""
     backend: Literal["lazyslide", "openslide", "cucim"] = "lazyslide"
     save_tiles: bool = False
-    qc: List[str] = Field(default_factory=list)
+    segmentation_method: str = "otsu"
     qc_filters: List[Dict[str, Any]] = Field(default_factory=list)
 
 
@@ -120,8 +114,9 @@ class DatasetEntry(BaseModel):
     """Definition of a dataset source."""
     name: str
     slide_path: str
-    tfrecord_path: Optional[str] = None
-    tile_path: Optional[str] = None
+    tiles_path: Optional[str] = None
+    roi_path: Optional[str] = None
+    features_path: Optional[str] = None
     used_for: Literal["training", "testing", "validation", "ignore", "all"]
 
 
