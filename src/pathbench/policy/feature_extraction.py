@@ -14,16 +14,15 @@ from pathbench.core.slide_processing.base import SlideProcessorBase
 from pathbench.core.experiments.base import ComboConfig, Experiment
 from pathbench.core.datasets.wsi_dataset import WSI, WSIDataset
 
-from pathbench.policy.utils import (
-    load_features_pt,
-    save_features_pt,
-    load_json, 
-    save_json, 
-    load_tiles_npz, 
-    save_tiles_npz, 
-    load_tissues_geojson, 
-    save_tissues_geojson
-    )
+from pathbench.core.io.features import load_features, save_features
+from pathbench.core.io.tiles import load_tiles, save_tiles
+from pathbench.core.io.tissues import load_tissues, save_tissues
+from pathbench.core.io.utils import load_json, save_json
+
+from pathbench.core.io.base import detect_artifact_path
+from pathbench.core.io.tiles import SUPPORTED_SUFFIXES as TILES_SUFFIXES, DEFAULT_SUFFIX as TILES_DEFAULT
+from pathbench.core.io.features import SUPPORTED_SUFFIXES as FEATS_SUFFIXES, DEFAULT_SUFFIX as FEATS_DEFAULT
+from pathbench.core.io.tissues import SUPPORTED_SUFFIXES as TISSUES_SUFFIXES, DEFAULT_SUFFIX as TISSUES_DEFAULT
 
 logger = logging.getLogger(__name__)
 
@@ -155,18 +154,21 @@ class FeatureExtractionPolicy(PolicyBase):
 
             try:
                 # ---- load cached artifacts (no WSI open required) ----
-                tiles_df, tile_spec = self._load_tiles(tiles_path)
-                feats: Optional[ad.AnnData] = self._load_features(feats_path)
+                tiles_df, tile_spec = load_tiles(tiles_path)
+                feats: Optional[ad.AnnData] = load_features(feats_path)
                 tissues: Optional[list[np.ndarray]] = None
 
                 # If cached tiles exist -> bind tiles path now
                 if tiles_df is not None:
-                    # _load_tiles checks .npz exists, but bind the actual file path you use
-                    wsi.bind_active_tiles(combo_id, tiles_path.with_suffix(".npz"))
+                    p_tiles = detect_artifact_path(tiles_path, allowed_suffixes=TILES_SUFFIXES, kind="tiles", prefer_suffixes=(TILES_DEFAULT,))
+                    if p_tiles is not None:
+                        wsi.bind_active_tiles(combo_id, p_tiles)
 
                 # If cached features exist -> bind features paths now (pt + index)
                 if feats is not None:
-                    wsi.bind_active_features(combo_id, feats_path.with_suffix(".pt"))
+                    p_feats = detect_artifact_path(feats_path, allowed_suffixes=FEATS_SUFFIXES, kind="features", prefer_suffixes=(FEATS_DEFAULT,))
+                    if p_feats is not None:
+                        wsi.bind_active_features(combo_id, p_feats)
                     logger.info("[Policy] Features already exist for slide %s, skipping.", slide_id)
                     continue
 
@@ -180,11 +182,11 @@ class FeatureExtractionPolicy(PolicyBase):
                     if need_tiling:
                         # Try load tissues if roi_root configured and file exists
                         if tissues_path is not None:
-                            tp = tissues_path.with_suffix(".geojson")
-                            if tp.exists():
-                                tissues = self._load_tissues(tissues_path)
+                            p_tissues = detect_artifact_path(tissues_path, allowed_suffixes=TISSUES_SUFFIXES, kind="tissues", prefer_suffixes=(TISSUES_DEFAULT,))
+                            if p_tissues is not None:
+                                tissues = load_tissues(tissues_path)
                                 if tissues is not None:
-                                    wsi.bind_active_tissues(combo_id, tp)
+                                    wsi.bind_active_tissues(combo_id, p_tissues)
 
                         if tissues is None:
                             logger.info("[Policy] Segmenting tissue for slide %s", slide_id)
@@ -192,20 +194,18 @@ class FeatureExtractionPolicy(PolicyBase):
 
                             # Save + bind tissues only if roi_root configured
                             if tissues_path is not None:
-                                self._save_tissues(tissues, tissues_path)
-                                tp = tissues_path.with_suffix(".geojson")
-                                if tp.exists():
-                                    wsi.bind_active_tissues(combo_id, tp)
+                                saved_tissues = save_tissues(tissues, tissues_path)
+                                if saved_tissues.exists():
+                                    wsi.bind_active_tissues(combo_id, saved_tissues)
 
                         logger.info("[Policy] Tiling slide %s", slide_id)
                         tiles_df, tile_spec = processor.extract_patches(wsi, tissues, config=tile_config)
 
-                        self._save_tiles(tiles_df, tile_spec, tiles_path)
+                        saved_tiles = save_tiles(tiles_df, tile_spec, tiles_path)
 
                         # After saving, bind tiles path (only if file exists)
-                        npz = tiles_path.with_suffix(".npz")
-                        if npz.exists():
-                            wsi.bind_active_tiles(combo_id, npz)
+                        if saved_tiles.exists():
+                            wsi.bind_active_tiles(combo_id, saved_tiles)
 
                     logger.info("[Policy] Extracting features for slide %s", slide_id)
                     feats = processor.extract_features(
@@ -216,98 +216,15 @@ class FeatureExtractionPolicy(PolicyBase):
                     processor.close_wsi(wsi)
 
                 feats = self._ensure_features_schema(feats, tiles_df)
-                self._save_features(feats, feats_path)
+                saved_feats = save_features(feats, feats_path)
 
                 # After saving, bind features path(s) only if they exist
-                pt = feats_path.with_suffix(".pt")
-                idx = feats_path.with_suffix(".index.npz")
-                if pt.exists() and idx.exists():
-                    wsi.bind_active_features(combo_id, pt)
+                idx = saved_feats.with_suffix(".index.npz")
+                if saved_feats.exists() and idx.exists():
+                    wsi.bind_active_features(combo_id, saved_feats)
 
             except Exception:
                 logger.exception("[Policy] Error processing slide %s", slide_id)
-
-    def _load_tissues(self, path: Path) -> list[np.ndarray]:
-        """
-        Load tissue polygons from disk.
-
-        Args:
-            path: Path to the tissue file.
-
-        Returns:
-            List of polygons as arrays of shape (N, 2) in pixel coordinates.
-        """
-        p = path if path.suffix else path.with_suffix(".geojson")
-        if not p.exists():
-            return None
-        return load_tissues_geojson(p)
-
-    def _save_tissues(self, tissues: list[np.ndarray], path: Path) -> None:
-        """
-        Save tissue polygons to disk.
-
-        Args:
-            tissues: List of polygons as arrays of shape (N, 2).
-            path: Output path.
-        """
-        save_tissues_geojson(tissues, path)
-
-    def _load_tiles(self, path: Path) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-        """
-        Load tiles + tile_spec from disk.
-
-        Args:
-            path: Base path (directory or file path). If no suffix is provided,
-                '.npz' is assumed.
-
-        Returns:
-            (tiles_df, tile_spec) where tiles_df has columns: 'tile_id','x','y'
-            and tile_spec is a JSON string. If not found: (None, None).
-        """
-        p = path if path.suffix else path.with_suffix(".npz")
-        if not p.exists():
-            return None, None
-        return load_tiles_npz(p)
-
-
-    def _save_tiles(self, tiles_df: pd.DataFrame, tile_spec: str, path: Path) -> None:
-        """
-        Save tiles + tile_spec to disk.
-
-        Args:
-            tiles_df: DataFrame with required columns: 'tile_id', 'x', 'y'.
-            tile_spec: JSON string (keys may vary).
-            path: Output base path (directory or file path). If no suffix is provided,
-                '.npz' is used.
-        """
-        p = path if path.suffix else path.with_suffix(".npz")
-        save_tiles_npz(tiles_df, tile_spec, p)
-
-    def _load_features(self, path: Path) -> ad.AnnData:
-        """
-        Load features from an .pt file.
-
-        Args:
-            path: Path to the .pt file.
-
-        Returns:
-            AnnData containing features with obs['tile_id'].
-        """
-        pt = path if path.suffix else path.with_suffix(".pt")
-        idx = pt.with_suffix(".index.npz")
-        if not pt.exists() or not idx.exists():
-            return None
-        return load_features_pt(path)
-
-    def _save_features(self, feats: ad.AnnData, path: Path) -> None:
-        """
-        Save features as an .pt file.
-
-        Args:
-            feats: AnnData containing features (expects obs['tile_id']).
-            path: Output path.
-        """
-        save_features_pt(feats, path)
 
     def _build_processor(self) -> SlideProcessorBase:
         """
