@@ -1,0 +1,1 @@
+#TODO: Add minimal tests for optimization CLI functionality

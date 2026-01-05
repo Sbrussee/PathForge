@@ -6,6 +6,8 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import logging
+import hashlib
+import json
 import anndata as ad
 
 from pathbench.policy.base import PolicyBase
@@ -111,7 +113,7 @@ class FeatureExtractionPolicy(PolicyBase):
         tile_mpp = tile_config["tile_mpp"]
         tile_mpp_str = f"{tile_mpp:g}"
 
-        roi_combo_name = self.config.slide_processing.segmentation_method  # TODO: What defines roi combo?
+        roi_combo_name = self.config.slide_processing.segmentation_method  # TODO: This should adhere to the tissue rois found using lazyslide, should be optional.
         tiles_combo_name = f"{tile_px}px_{tile_mpp_str}mpp"
         feats_combo_name = f"{feat_config['model']}_{tile_px}px_{tile_mpp_str}mpp"
 

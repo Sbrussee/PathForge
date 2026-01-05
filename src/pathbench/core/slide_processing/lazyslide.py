@@ -367,10 +367,8 @@ class LazySlideProcessor(SlideProcessorBase):
             #Assert cell types were classified
             assert len(wsi.obj[cell_types_key]) > 0, "[LazySlide] No cell types were classified, something went wrong."
         
-    def inspect_slide(self, wsi: WSI) -> None: #TODO: Not in line with policy as defined in this branch
-        """
-        Print a summary of the slide object for debugging.
-        """
+    def inspect_slide(self, wsi: WSI) -> None:
+        """Log a summary of the slide object for debugging."""
         logger.info("[LazySlide] Inspecting slide object:")
         logger.info("  ID: %s", getattr(wsi.obj, "id", "unknown"))
         logger.info("  Name: %s", getattr(wsi.obj, "name", "unknown"))

@@ -66,20 +66,46 @@ class OptimizationPolicy(PolicyBase):
     def objective(self, trial: optuna.Trial) -> float:
         # 1. Suggest Params (This logic ideally reads from a search space file, 
         # but here we demonstrate modifying the config objects)
-        lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
-        dropout = trial.suggest_float("dropout", 0.1, 0.5)
-        model_name = trial.suggest_categorical("model", ["AttentionMIL", "TransMIL"])
+        lr_min, lr_max = self.config.optimization.lr_range
+        dropout_min, dropout_max = self.config.optimization.dropout_range
+        lr = trial.suggest_float("lr", lr_min, lr_max, log=True)
+        dropout = trial.suggest_float("dropout", dropout_min, dropout_max)
+        model_name, loss_name, activation_name, optimizer_name, tile_px, tile_mpp, feat_extractor = (
+            self._suggest_search_space(trial)
+        )
         
         # Apply to Config (Temporary for this trial)
         self.config.mil.lr = lr
         self.config.mil.dropout_p = dropout
         self.config.mil.best_epoch_based_on = self.config.optimization.objective_metric
-        
+    
+
+        setattr(self.config, "_active_model_name", model_name)
+        if loss_name is not None:
+            setattr(self.config, "_active_loss_name", loss_name)
+        if activation_name is not None:
+            setattr(self.config, "_active_activation_name", activation_name)
+        if optimizer_name is not None:
+            setattr(self.config, "_active_optimizer_name", optimizer_name)
+        if tile_px is not None:
+            setattr(self.config, "_active_tile_px", tile_px)
+        if tile_mpp is not None:
+            setattr(self.config, "_active_tile_mpp", tile_mpp)
+        if feat_extractor is not None:
+            setattr(self.config, "_active_feature_extraction", feat_extractor)
+
         # 2. Instantiate Components
         # Use the registries and abstract factories
-        TrainerClass = TRAINERS.get("lightning")
+        trainer_backend = self.config.experiment.trainer_backend
+        TrainerClass = TRAINERS.get(trainer_backend)
+
         ModelClass = MODELS.get(model_name)
-        LossClass = LOSSES.get("CrossEntropyLoss") # parameterized if needed
+
+        output_dim = self._resolve_output_dim()
+        model = ModelClass(input_dim=1024, dropout=dropout, output_dim=output_dim)
+
+        loss_name = self._resolve_loss_name()
+        LossClass = LOSSES.get(loss_name)
         
         model = ModelClass(input_dim=1024, dropout=dropout, output_dim=2)
         loss_fn = LossClass()
@@ -102,7 +128,17 @@ class OptimizationPolicy(PolicyBase):
         from optuna.integration import PyTorchLightningPruningCallback
         pruning_callback = PyTorchLightningPruningCallback(trial, monitor=self.config.optimization.objective_metric)
         
-        trainer: TrainerBase = TrainerClass(self.config, extra_callbacks=[pruning_callback])
+        trainer: TrainerBase
+        if trainer_backend == "lightning":
+            from optuna.integration import PyTorchLightningPruningCallback
+
+            pruning_callback = PyTorchLightningPruningCallback(
+                trial, monitor=self.config.optimization.objective_metric
+            )
+            trainer = TrainerClass(self.config, extra_callbacks=[pruning_callback])
+        else:
+            trainer = TrainerClass(self.config)
+
         
         try:
             result = trainer.fit(model, ds_train, ds_val, loss_fn)
@@ -113,6 +149,86 @@ class OptimizationPolicy(PolicyBase):
             # Return worst possible score depending on direction
             return float('inf') if self._get_direction() == "minimize" else float('-inf')
 
+
+    def _resolve_loss_name(self) -> str:
+        if self.config.optimization.loss_name:
+            return self.config.optimization.loss_name
+        task = self.config.experiment.task
+        if task == "regression":
+            return "MSELoss"
+        if task == "survival":
+            return "CoxPHLoss"
+        if task == "survival_discrete":
+            return "DiscreteTimeNLLLoss"
+        return "CrossEntropyLoss"
+
+    def _suggest_search_space(
+        self, trial: optuna.Trial
+    ) -> tuple[
+        str,
+        str | None,
+        str | None,
+        str | None,
+        int | None,
+        float | None,
+        str | None,
+    ]:
+        """
+        Suggest trial parameters across the configured search space.
+
+        Returns:
+            model_name, loss_name, activation_name, optimizer_name,
+            tile_px, tile_mpp, feature_extraction
+        """
+        search_space = self.config.search_space
+        if not search_space.mil:
+            raise ValueError("Search space is missing MIL models for optimization.")
+        model_name = trial.suggest_categorical("model", search_space.mil)
+
+        loss_name = None
+        if search_space.loss:
+            loss_name = trial.suggest_categorical("loss", search_space.loss)
+
+        activation_name = None
+        if search_space.activation_function:
+            activation_name = trial.suggest_categorical(
+                "activation", search_space.activation_function
+            )
+
+        optimizer_name = None
+        if search_space.optimizer:
+            optimizer_name = trial.suggest_categorical("optimizer", search_space.optimizer)
+
+        tile_px = None
+        if search_space.tile_px:
+            tile_px = trial.suggest_categorical("tile_px", search_space.tile_px)
+
+        tile_mpp = None
+        if search_space.tile_mpp:
+            tile_mpp = trial.suggest_categorical("tile_mpp", search_space.tile_mpp)
+
+        feature_extraction = None
+        if search_space.feature_extraction:
+            feature_extraction = trial.suggest_categorical(
+                "feature_extraction", search_space.feature_extraction
+            )
+
+        return (
+            model_name,
+            loss_name,
+            activation_name,
+            optimizer_name,
+            tile_px,
+            tile_mpp,
+            feature_extraction,
+        )
+
+    def _resolve_output_dim(self) -> int:
+        task = self.config.experiment.task
+        if task in {"regression", "survival"}:
+            return 1
+        return max(self.config.mil.k, 1)
+        
     def execute(self) -> None:
         print(f"Starting Optimization Study: {self.config.optimization.study_name}")
         

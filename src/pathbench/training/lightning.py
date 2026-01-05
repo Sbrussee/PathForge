@@ -1,7 +1,7 @@
 # src/pathbench/training/lightning.py
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
     ModelCheckpoint, 
@@ -17,6 +17,7 @@ from pathbench.config.config import Config
 from pathbench.core.datasets.base import BagDatasetBase
 from pathbench.core.models.mil_base import MILModelBase
 from pathbench.training.base import TrainerBase, TrainerOutput
+from pathbench.training.utils import mil_collate, resolve_loss_and_logits, unpack_mil_batch
 from pathbench.utils.registries import TRAINERS
 
 class LightningModuleAdapter(pl.LightningModule):
@@ -37,9 +38,9 @@ class LightningModuleAdapter(pl.LightningModule):
         return self.model(*args, **kwargs)
 
     def training_step(self, batch, batch_idx):
-        bag, target, mask = self._unpack_batch(batch)
+        bag, target, mask = unpack_mil_batch(batch)
         output = self.model(bag, mask=mask)
-        loss, logits = self._resolve_loss_and_logits(output, target)
+        loss, _logits = resolve_loss_and_logits(output, target, self.loss_fn)
 
         # Log with batch_size=1 assumption for MIL, or actual batch size
         batch_size = bag.shape[0]
@@ -47,9 +48,9 @@ class LightningModuleAdapter(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        bag, target, mask = self._unpack_batch(batch)
+        bag, target, mask = unpack_mil_batch(batch)
         output = self.model(bag, mask=mask)
-        loss, logits = self._resolve_loss_and_logits(output, target)
+        loss, _logits = resolve_loss_and_logits(output, target, self.loss_fn)
         
         batch_size = bag.shape[0]
         self.log("val_loss", loss, on_epoch=True, prog_bar=True, batch_size=batch_size)
@@ -57,39 +58,11 @@ class LightningModuleAdapter(pl.LightningModule):
         return loss
         
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        bag, _, mask = self._unpack_batch(batch)
+        bag, _, mask = unpack_mil_batch(batch)
         output = self.model(bag, mask=mask)
         if isinstance(output, dict):
             return output.get("logits", output.get("preds", output.get("output")))
         return output
-
-    def _unpack_batch(
-        self, batch: Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]] | Tuple[Any, ...]
-    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
-        if len(batch) == 2:
-            bag, target = batch
-            return bag, target, None
-        if len(batch) == 3:
-            bag, target, mask = batch
-            return bag, target, mask
-        if len(batch) >= 4:
-            bag, target, mask = batch[:3]
-            return bag, target, mask
-        raise ValueError("Unexpected batch structure for MIL training.")
-
-    def _resolve_loss_and_logits(
-        self, output: Union[torch.Tensor, Dict[str, Any]], target: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if isinstance(output, dict):
-            logits = output.get("logits")
-            if logits is None:
-                raise ValueError("Model output dict must include a 'logits' entry.")
-            loss = output.get("loss", self.loss_fn(logits, target))
-            return loss, logits
-
-        logits = output
-        loss = self.loss_fn(logits, target)
-        return loss, logits
 
     def configure_optimizers(self):
         """
@@ -169,21 +142,6 @@ class LightningTrainer(TrainerBase):
         ]
         self.callbacks.extend(self.extra_callbacks)
 
-        self.trainer = pl.Trainer(
-            max_epochs=config.mil.epochs,
-            accumulate_grad_batches=config.mil.accumulate_grad_batches,
-            gradient_clip_val=config.mil.gradient_clip_val,
-            callbacks=self.callbacks,
-            accelerator="gpu" if torch.cuda.is_available() else "cpu",
-            devices=1,
-            logger=True,
-            enable_checkpointing=True,
-            log_every_n_steps=5
-        )
-        
-        # Merge extra callbacks (e.g. LearningRateFinder if passed)
-        self.callbacks.extend(self.extra_callbacks)
-
         precision = 16 if config.experiment.mixed_precision else 32
         self.trainer = pl.Trainer(
             max_epochs=config.mil.epochs,
@@ -216,7 +174,7 @@ class LightningTrainer(TrainerBase):
             shuffle=True, 
             num_workers=self.config.experiment.num_workers,
             pin_memory=True if torch.cuda.is_available() else False,
-            collate_fn=self._mil_collate
+            collate_fn=mil_collate
         )
         val_loader = None
         if dataset_val is not None:
@@ -226,7 +184,7 @@ class LightningTrainer(TrainerBase):
                 shuffle=False,
                 num_workers=self.config.experiment.num_workers,
                 pin_memory=True if torch.cuda.is_available() else False,
-                collate_fn=self._mil_collate,
+                collate_fn=mil_collate,
             )
 
         # Wrap model using the Adapter (Factory logic could go here if complex)
@@ -248,7 +206,7 @@ class LightningTrainer(TrainerBase):
             best_score = best_score.item()
 
     
-    return TrainerOutput(best_model_path=best_path, best_score=best_score)
+        return TrainerOutput(best_model_path=best_path, best_score=best_score)
 
 
     def predict(
@@ -264,9 +222,8 @@ class LightningTrainer(TrainerBase):
             batch_size=self.config.mil.batch_size, 
             shuffle=False, 
             num_workers=self.config.experiment.num_workers,
-            collate_fn=self._mil_collate,
+            collate_fn=mil_collate,
         )
-        
 
         loss_fn = self._default_loss()
         pl_module = LightningModuleAdapter(model, loss_fn, self.config)
@@ -283,55 +240,3 @@ class LightningTrainer(TrainerBase):
         if task in {"survival", "survival_discrete"}:
             return torch.nn.BCEWithLogitsLoss()
         return torch.nn.CrossEntropyLoss()
-
-
-
-
-    @staticmethod
-    def _mil_collate(
-        batch: Sequence[Tuple[torch.Tensor, torch.Tensor] | Tuple[torch.Tensor, torch.Tensor, str]]
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor] | Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[str]]:
-        bags: List[torch.Tensor] = []
-        labels: List[torch.Tensor] = []
-        slide_ids: List[str] = []
-
-        for item in batch:
-            if len(item) == 2:
-                bag, label = item
-            else:
-                bag, label, slide_id = item
-                slide_ids.append(slide_id)
-
-            bags.append(bag)
-            if isinstance(label, torch.Tensor):
-                labels.append(label)
-            else:
-                labels.append(torch.tensor(label))
-
-        lengths = torch.tensor([bag.shape[0] for bag in bags], dtype=torch.long)
-        max_len = int(lengths.max().item()) if lengths.numel() else 0
-        feature_dim = max((bag.shape[1] for bag in bags), default=0)
-
-        padded = []
-        mask = []
-        for bag in bags:
-            if bag.shape[1] not in {0, feature_dim}:
-                raise ValueError("Inconsistent feature dimensions in batch.")
-            if bag.shape[1] == 0 and feature_dim > 0:
-                bag = torch.zeros((bag.shape[0], feature_dim), dtype=bag.dtype)
-            pad_size = max_len - bag.shape[0]
-            if pad_size > 0:
-                pad = torch.zeros((pad_size, bag.shape[1]), dtype=bag.dtype)
-                padded_bag = torch.cat([bag, pad], dim=0)
-            else:
-                padded_bag = bag
-            padded.append(padded_bag)
-            mask.append(torch.arange(max_len) < bag.shape[0])
-
-        batched_bags = torch.stack(padded, dim=0) if padded else torch.empty((0, 0, 0))
-        batched_labels = torch.stack(labels) if labels else torch.empty((0,))
-        batched_mask = torch.stack(mask, dim=0) if mask else torch.empty((0, 0), dtype=torch.bool)
-
-        if slide_ids:
-            return batched_bags, batched_labels, batched_mask, slide_ids
-        return batched_bags, batched_labels, batched_mask

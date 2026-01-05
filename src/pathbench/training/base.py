@@ -39,8 +39,6 @@ class TrainerBase(ABC):
     @abstractmethod
     def predict(
         self,
-        model: MILBase,
-        dataset: DatasetBase,
         model: MILModelBase,
         dataset: BagDatasetBase,
     ) -> torch.Tensor:

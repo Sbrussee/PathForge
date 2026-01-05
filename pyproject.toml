@@ -9,6 +9,8 @@ requires-python = ">=3.9"
 dependencies = [
     "numpy",
     "scikit-learn",
+    "pandas",
+    "huggingface_hub>=0.25",
     "torch",
     "pytorch-lightning", # Training
     "optuna",            # Optimization
@@ -21,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Opt-in heavy deps
-survival = ["scikit-survival"]
+survival = ["pycox>=0.2.3", "scikit-survival"]
 gnn = ["torch-geometric>=2.5"]
 hf = ["huggingface_hub>=0.25"]
 docs = ["mkdocs-material>=9.5"]

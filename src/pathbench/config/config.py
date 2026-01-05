@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Literal, List, Optional, Dict, Union
+from typing import Any, Literal, List, Optional, Dict, Union, Tuple
 import yaml
 import torch
 import inspect
@@ -37,6 +37,7 @@ class ExperimentConfig(BaseModel):
     task: Optional[TaskType] = None
     mode: ModeType = "benchmark"
     aggregation_level: Literal["slide", "patient"] = "slide"
+    trainer_backend: str = "lightning"
 
     # Global behavior
     report: bool = False
@@ -92,6 +93,8 @@ class BagDatasetConfig(BaseModel):
     """Configuration for MIL bag datasets."""
     id_column: str = "slide_id"
     label_column: str = "label"
+    time_column: Optional[str] = None
+    event_column: Optional[str] = None
     dataset_column: str = "dataset"
     feature_path_column: Optional[str] = None
     feature_extension: str = ".pt"
@@ -131,6 +134,10 @@ class OptimizationConfig(BaseModel):
     trials: int = Field(100, gt=0)
     pruner: Optional[str] = "HyperbandPruner"
 
+    model_candidates: List[str] = Field(default_factory=list)
+    lr_range: Tuple[float, float] = (1e-5, 1e-3)
+    dropout_range: Tuple[float, float] = (0.1, 0.5)
+    loss_name: Optional[str] = None
 
 class DatasetEntry(BaseModel):
     """Definition of a dataset source."""
@@ -142,7 +149,7 @@ class DatasetEntry(BaseModel):
     used_for: Literal["training", "testing", "validation", "ignore", "all"]
 
 
-class BenchmarkParameters(BaseModel):
+class SearchSpaceConfig(BaseModel):
     """
     Grid search parameters. 
     Pydantic validators enforce logic previously implemented manually.
@@ -230,7 +237,7 @@ class Config(BaseModel):
     slide_processing: SlideProcessingConfig = Field(default_factory=SlideProcessingConfig)
     optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
     datasets: List[DatasetEntry] = Field(default_factory=list)
-    benchmark_parameters: BenchmarkParameters = Field(default_factory=BenchmarkParameters)
+    search_space: SearchSpaceConfig = Field(default_factory=SearchSpaceConfig)
     
     weights_dir: str = "./pretrained_weights"
     hf_key: Optional[str] = None
@@ -242,7 +249,7 @@ class Config(BaseModel):
         the backend is set to 'lazyslide'.
         """
         backend = self.slide_processing.backend
-        fe_list = self.benchmark_parameters.feature_extraction
+        fe_list = self.search_space.feature_extraction
         
         for fe in fe_list:
             if fe in LAZYSLIDE_MODEL_NAMES and backend != "lazyslide":
@@ -251,8 +258,8 @@ class Config(BaseModel):
                     f"Current backend: '{backend}'."
                 )
         
-        if self.experiment.mode == "benchmark" and not self.benchmark_parameters.mil:
-             raise ValueError("Mode is 'benchmark' but no MIL models specified in benchmark_parameters.")
+        if self.experiment.mode == "benchmark" and not self.search_space.mil:
+             raise ValueError("Mode is 'benchmark' but no MIL models specified in search_space.")
              
         return self
 
@@ -273,3 +280,12 @@ class Config(BaseModel):
         with path.open("w") as f:
             # model_dump is Pydantic v2 for to_dict
             yaml.safe_dump(self.model_dump(), f, sort_keys=False)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Config":
+        """Create a Config from a dict (useful for tests)."""
+        return cls.model_validate(data)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a dict representation for serialization."""
+        return self.model_dump()

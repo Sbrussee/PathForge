@@ -47,9 +47,23 @@ class MILModelBase(ModelBase, nn.Module):
         return self.forward_bag(bag, *args, **kwargs)
 
     # --- PyTorch Implementation of ModelBase ---
-    #TODO: PUT ACTUAL INTIALIZE LOGIC IN HERE
+    #TODO: Use appropriate weight initialization strategies (Xavier, Kaiming, etc.) based on layer types.
     def initialize(self, config: Optional[Dict[str, Any]] = None) -> None:
-        pass
+        """
+        Initialize model weights.
+
+        If config includes a ``weights_path`` key, load those weights.
+        Otherwise, reset parameters for all submodules that implement
+        ``reset_parameters`` (common in torch.nn layers).
+        """
+        if config and config.get("weights_path"):
+            self.load(config["weights_path"])
+            return
+
+        for module in self.modules():
+            reset = getattr(module, "reset_parameters", None)
+            if callable(reset):
+                reset()
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)

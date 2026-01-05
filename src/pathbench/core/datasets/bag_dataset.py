@@ -38,7 +38,7 @@ class BagDataset(BagDatasetBase):
         annotations = self._validate_and_clean(annotations)
 
         self._annotations = annotations.reset_index(drop=True)
-        self._labels = [self._coerce_label(value) for value in self._annotations[self.config.label_column]]
+        self._labels = [self._build_label(row) for _, row in self._annotations.iterrows()]
         self._slide_ids = self._annotations[self.config.id_column].astype(str).tolist()
 
     @classmethod
@@ -54,11 +54,6 @@ class BagDataset(BagDatasetBase):
             annotation_path=Path(config.experiment.annotation_file),
             config=config.bag_dataset,
         )
-    def __post_init__(self):
-        self.annotations = pd.read_csv(self.annotation_path)
-        # Validate paths
-        if not Path(self.feature_path).exists():
-             raise FileNotFoundError(f"Feature path {self.feature_path} does not exist.")
 
     @property
     def name(self) -> str:
@@ -107,16 +102,30 @@ class BagDataset(BagDatasetBase):
         return annotations
 
     def _validate_and_clean(self, annotations: pd.DataFrame) -> pd.DataFrame:
-        missing = [
-            col
-            for col in (self.config.id_column, self.config.label_column)
-            if col not in annotations.columns
-        ]
+        missing = [col for col in (self.config.id_column,) if col not in annotations.columns]
+
+        if self._uses_survival_labels():
+            missing.extend(
+                col
+                for col in (self.config.time_column, self.config.event_column)
+                if col is not None and col not in annotations.columns
+            )
+        else:
+            if self.config.label_column not in annotations.columns:
+                missing.append(self.config.label_column)
+
         if missing:
             raise ValueError(f"Missing required columns in annotations: {missing}")
 
         if self.config.drop_missing_labels:
-            annotations = annotations.dropna(subset=[self.config.label_column])
+            subset = [self.config.label_column]
+            if self._uses_survival_labels():
+                subset = [
+                    col
+                    for col in (self.config.time_column, self.config.event_column)
+                    if col is not None
+                ]
+            annotations = annotations.dropna(subset=subset)
 
         return annotations
 
@@ -160,3 +169,13 @@ class BagDataset(BagDatasetBase):
         if self.config.label_dtype == "float":
             return float(value)
         return str(value)
+
+    def _uses_survival_labels(self) -> bool:
+        return self.config.time_column is not None and self.config.event_column is not None
+
+    def _build_label(self, row: pd.Series) -> Any:
+        if self._uses_survival_labels():
+            time_val = row[self.config.time_column]
+            event_val = row[self.config.event_column]
+            return {"time": float(time_val), "event": float(event_val)}
+        return self._coerce_label(row[self.config.label_column])

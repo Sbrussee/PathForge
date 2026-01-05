@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable
+from typing import Any, Dict, Iterable, Tuple
 
 import numpy as np
 import torch
 from sklearn import metrics as sk_metrics
 
+try:
+    from pycox.evaluation.concordance import concordance_td
+except ImportError:  # pragma: no cover - optional dependency
+    concordance_td = None
+    
 #TODO: Support any metric in torchmetrics / pycox?
 def evaluate_predictions(
     logits: torch.Tensor,
-    labels: np.ndarray,
+    labels: Any,
     task: str,
     metrics: Iterable[str],
     average: str,
@@ -30,18 +35,22 @@ def evaluate_predictions(
         return _evaluate_classification(logits, labels, metrics, average, positive_label)
     if task == "regression":
         return _evaluate_regression(logits, labels, metrics)
+    if task == "survival":
+        return _evaluate_survival_continuous(logits, labels, metrics)
+    if task == "survival_discrete":
+        return _evaluate_survival_discrete(logits, labels, metrics)
     raise ValueError(f"Unsupported task for evaluation: {task}")
 
 
 def _evaluate_classification(
     logits: torch.Tensor,
-    labels: np.ndarray,
+    labels: Any,
     metrics: Iterable[str],
     average: str,
     positive_label: int,
 ) -> Dict[str, float]:
     logits_np = logits.detach().cpu().numpy()
-    labels_np = labels.astype(int)
+    labels_np = np.asarray(labels, dtype=int)
 
     if logits_np.ndim == 1 or logits_np.shape[1] == 1:
         probs = 1 / (1 + np.exp(-logits_np.reshape(-1)))
@@ -85,11 +94,11 @@ def _evaluate_classification(
 
 def _evaluate_regression(
     logits: torch.Tensor,
-    labels: np.ndarray,
+    labels: Any,
     metrics: Iterable[str],
 ) -> Dict[str, float]:
     preds = logits.detach().cpu().numpy().reshape(-1)
-    labels_np = labels.astype(float).reshape(-1)
+    labels_np = np.asarray(labels, dtype=float).reshape(-1)
 
     results: Dict[str, float] = {}
     for metric in metrics:
@@ -105,4 +114,80 @@ def _evaluate_regression(
     return results
 
 
-#TODO: Discrete Survival Metrics and Continous Survival Metrics
+def _evaluate_survival_continuous(
+    logits: torch.Tensor,
+    labels: Any,
+    metrics: Iterable[str],
+) -> Dict[str, float]:
+    time, event = _extract_survival_labels(labels)
+    risk = logits.detach().cpu().numpy().reshape(-1)
+    surv, time_grid = _exponential_survival(time, risk)
+    surv_idx = _survival_index(time, time_grid)
+
+    results: Dict[str, float] = {}
+    for metric in metrics:
+        if metric == "c_index":
+            results[metric] = _concordance_td(time, event, surv, surv_idx)
+        else:
+            raise ValueError(f"Unsupported survival metric: {metric}")
+    return results
+
+
+def _evaluate_survival_discrete(
+    logits: torch.Tensor,
+    labels: Any,
+    metrics: Iterable[str],
+) -> Dict[str, float]:
+    time, event = _extract_survival_labels(labels)
+    logits_np = logits.detach().cpu().numpy()
+    hazard = 1 / (1 + np.exp(-logits_np))
+    surv = np.cumprod(1 - hazard, axis=1).T
+    time_grid = np.arange(surv.shape[0], dtype=float)
+    surv_idx = _survival_index(time, time_grid)
+
+    results: Dict[str, float] = {}
+    for metric in metrics:
+        if metric == "c_index":
+            results[metric] = _concordance_td(time, event, surv, surv_idx)
+        else:
+            raise ValueError(f"Unsupported survival metric: {metric}")
+    return results
+
+
+def _extract_survival_labels(labels: Any) -> Tuple[np.ndarray, np.ndarray]:
+    if isinstance(labels, dict):
+        time = np.asarray(labels["time"], dtype=float)
+        event = np.asarray(labels["event"], dtype=float)
+        return time, event
+    if isinstance(labels, (list, tuple)) and labels and isinstance(labels[0], dict):
+        time = np.asarray([item["time"] for item in labels], dtype=float)
+        event = np.asarray([item["event"] for item in labels], dtype=float)
+        return time, event
+    if isinstance(labels, np.ndarray) and labels.dtype.names:
+        return labels["time"].astype(float), labels["event"].astype(float)
+    raise ValueError("Survival labels must be dicts or structured arrays with 'time' and 'event'.")
+
+
+def _concordance_td(
+    time: np.ndarray, event: np.ndarray, surv: np.ndarray, surv_idx: np.ndarray
+) -> float:
+    if concordance_td is None:  # pragma: no cover - optional dependency
+        raise RuntimeError("pycox is required for c_index evaluation.")
+    return float(concordance_td(time, event, surv, surv_idx))
+
+
+def _survival_index(time: np.ndarray, time_grid: np.ndarray) -> np.ndarray:
+    idx = np.searchsorted(time_grid, time, side="right") - 1
+    return np.clip(idx, 0, len(time_grid) - 1).astype(int)
+
+
+def _exponential_survival(time: np.ndarray, risk: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Build exponential survival curves using risk scores as log hazards.
+
+    This provides a lightweight survival curve proxy for concordance metrics.
+    """
+    time_grid = np.sort(np.unique(time))
+    hazard = np.exp(risk)
+    surv = np.exp(-time_grid[:, None] * hazard[None, :])
+    return surv, time_grid

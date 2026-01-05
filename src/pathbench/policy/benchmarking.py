@@ -26,7 +26,7 @@ class BenchmarkingPolicy(PolicyBase):
         self.logger = logging.getLogger("pathbench.benchmark")
 
     def _generate_configs(self) -> List[Config]:
-        bp = self.config.benchmark_parameters
+        bp = self.config.search_space
         grid = {
             "mil_model": bp.mil,
             "loss": bp.loss,
@@ -46,9 +46,7 @@ class BenchmarkingPolicy(PolicyBase):
     def execute(self) -> None:
         configs_to_run = self._generate_configs()
         
-        # Resolve Trainer Class once (assuming same trainer for all)
-        # We default to 'lightning' if not specified, or add a field to ExperimentConfig
-        trainer_backend = "lightning" 
+        trainer_backend = self.config.experiment.trainer_backend
         TrainerClass = TRAINERS.get(trainer_backend)
         
         if not TrainerClass:
@@ -64,12 +62,22 @@ class BenchmarkingPolicy(PolicyBase):
                 # 1. Components
                 ModelClass = MODELS.get(model_name)
                 LossClass = LOSSES.get(loss_name)
-                model = ModelClass(input_dim=1024, output_dim=2)
+                output_dim = _resolve_output_dim()
+                # TODO: Input_dim should be based on current features
+                model = ModelClass(input_dim=1024, output_dim=output_dim)
                 loss_fn = LossClass()
                 
                 # 2. Data
-                ds_train = BagDataset("train", run_cfg.datasets[0].tile_path, run_cfg.experiment.annotation_file, "label")
-                ds_val = BagDataset("val", run_cfg.datasets[1].tile_path, run_cfg.experiment.annotation_file, "label")
+                train_entry = next(
+                    (ds for ds in run_cfg.datasets if ds.used_for == "training"),
+                    run_cfg.datasets[0],
+                )
+                val_entry = next(
+                    (ds for ds in run_cfg.datasets if ds.used_for == "validation"),
+                    run_cfg.datasets[1] if len(run_cfg.datasets) > 1 else None,
+                )
+                ds_train = BagDataset.from_config(train_entry, run_cfg)
+                ds_val = BagDataset.from_config(val_entry, run_cfg) if val_entry else None
 
                 # 3. Abstract Trainer Instantiation
                 trainer: TrainerBase = TrainerClass(run_cfg)
@@ -78,17 +86,38 @@ class BenchmarkingPolicy(PolicyBase):
                 trainer.fit(model, ds_train, ds_val, loss_fn)
                 
                 # 5. Log
+                metrics_out: Dict[str, float] = {}
+                if ds_val is not None:
+                    preds = trainer.predict(model, ds_val)
+                    metrics_out = evaluate_predictions(
+                        preds,
+                        ds_val.labels,
+                        run_cfg.experiment.task or "classification",
+                        run_cfg.evaluation.metrics,
+                        run_cfg.evaluation.average,
+                        run_cfg.evaluation.positive_label,
+                    )
+    
+
                 self.results.append({
                     "model": model_name,
                     "loss": loss_name,
-                    "status": "success"
+                    "status": "success",
+                    "metrics": metrics_out,
                 })
                 
+
             except Exception as e:
                 self.logger.error(f"Run failed: {e}")
                 self.results.append({"model": model_name, "error": str(e)})
 
         self._save_report()
+
+    def _resolve_output_dim(self) -> int:
+        task = self.config.experiment.task
+        if task in {"regression", "survival"}:
+            return 1
+        return max(self.config.mil.k, 1)
 
     def _save_report(self):
         df = pd.DataFrame(self.results)
