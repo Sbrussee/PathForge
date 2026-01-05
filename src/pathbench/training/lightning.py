@@ -1,7 +1,7 @@
 # src/pathbench/training/lightning.py
 from __future__ import annotations
 
-from typing import Any, Iterable, Dict, Optional, List, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
     ModelCheckpoint, 
@@ -9,13 +9,14 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor, 
     Callback
 )
-import torch
-from torch.utils.data import DataLoader, Dataset
+from pytorch_lightning.callbacks import Callback, EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from torch import nn
+from torch.utils.data import DataLoader
 
-from pathbench.core.models.mil_base import MILModelBase
-from pathbench.training.base import TrainerBase
-from pathbench.core.losses.base import Loss
 from pathbench.config.config import Config
+from pathbench.core.datasets.base import BagDatasetBase
+from pathbench.core.models.mil_base import MILModelBase
+from pathbench.training.base import TrainerBase, TrainerOutput
 from pathbench.utils.registries import TRAINERS
 
 class LightningModuleAdapter(pl.LightningModule):
@@ -23,7 +24,7 @@ class LightningModuleAdapter(pl.LightningModule):
     Adapter: Wraps a PathBench MILModelBase into a PL LightningModule.
     Handles optimization logic, logging, and scheduler configuration via Config.
     """
-    def __init__(self, model: MILModelBase, loss_fn: Loss, config: Config):
+    def __init__(self, model: MILModelBase, loss_fn: nn.Module, config: Config):
         super().__init__()
         self.model = model
         self.loss_fn = loss_fn
@@ -36,33 +37,59 @@ class LightningModuleAdapter(pl.LightningModule):
         return self.model(*args, **kwargs)
 
     def training_step(self, batch, batch_idx):
-        bag, target = batch
-        logits = self.model(bag)
-        loss = self.loss_fn(logits, target)
-        
+        bag, target, mask = self._unpack_batch(batch)
+        output = self.model(bag, mask=mask)
+        loss, logits = self._resolve_loss_and_logits(output, target)
+
         # Log with batch_size=1 assumption for MIL, or actual batch size
         batch_size = bag.shape[0]
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        bag, target = batch
-        logits = self.model(bag)
-        loss = self.loss_fn(logits, target)
+        bag, target, mask = self._unpack_batch(batch)
+        output = self.model(bag, mask=mask)
+        loss, logits = self._resolve_loss_and_logits(output, target)
         
         batch_size = bag.shape[0]
         self.log("val_loss", loss, on_epoch=True, prog_bar=True, batch_size=batch_size)
         
-        # If classification, could add accuracy here (or use TorchMetrics)
-        # preds = torch.argmax(logits, dim=1)
-        # acc = (preds == target).float().mean()
-        # self.log("val_acc", acc, on_epoch=True, batch_size=batch_size)
-        
         return loss
         
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        bag, _ = batch
-        return self.model(bag)
+        bag, _, mask = self._unpack_batch(batch)
+        output = self.model(bag, mask=mask)
+        if isinstance(output, dict):
+            return output.get("logits", output.get("preds", output.get("output")))
+        return output
+
+    def _unpack_batch(
+        self, batch: Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]] | Tuple[Any, ...]
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        if len(batch) == 2:
+            bag, target = batch
+            return bag, target, None
+        if len(batch) == 3:
+            bag, target, mask = batch
+            return bag, target, mask
+        if len(batch) >= 4:
+            bag, target, mask = batch[:3]
+            return bag, target, mask
+        raise ValueError("Unexpected batch structure for MIL training.")
+
+    def _resolve_loss_and_logits(
+        self, output: Union[torch.Tensor, Dict[str, Any]], target: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if isinstance(output, dict):
+            logits = output.get("logits")
+            if logits is None:
+                raise ValueError("Model output dict must include a 'logits' entry.")
+            loss = output.get("loss", self.loss_fn(logits, target))
+            return loss, logits
+
+        logits = output
+        loss = self.loss_fn(logits, target)
+        return loss, logits
 
     def configure_optimizers(self):
         """
@@ -116,28 +143,29 @@ class LightningTrainer(TrainerBase):
     - mil.gradient_clip_val
     - experiment.num_workers
     """
-def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None):
+
+    def __init__(self, config: Config, extra_callbacks: Optional[List[Callback]] = None):
         self.config = config
         self.extra_callbacks = extra_callbacks or []
         
         # We need to access the checkpoint callback later to get the score
         self.checkpoint_callback = ModelCheckpoint(
             monitor=config.mil.best_epoch_based_on,
-            mode="min" if "loss" in config.mil.best_epoch_based_on else "max", 
+            mode="min" if "loss" in config.mil.best_epoch_based_on else "max",
             save_top_k=1,
             filename="{epoch}-{val_loss:.2f}",
             verbose=True,
         )
 
-        self.callbacks = [
+        self.callbacks: List[Callback] = [
             self.checkpoint_callback,
             LearningRateMonitor(logging_interval="epoch"),
             EarlyStopping(
                 monitor=config.mil.best_epoch_based_on,
                 patience=config.mil.patience,
                 mode="min" if "loss" in config.mil.best_epoch_based_on else "max",
-                verbose=True
-            )
+                verbose=True,
+            ),
         ]
         self.callbacks.extend(self.extra_callbacks)
 
@@ -156,6 +184,7 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
         # Merge extra callbacks (e.g. LearningRateFinder if passed)
         self.callbacks.extend(self.extra_callbacks)
 
+        precision = 16 if config.experiment.mixed_precision else 32
         self.trainer = pl.Trainer(
             max_epochs=config.mil.epochs,
             accumulate_grad_batches=config.mil.accumulate_grad_batches,
@@ -165,39 +194,44 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
             devices=1,
             logger=True, # Defaults to TensorBoard; can be configured to WandB/CSV
             enable_checkpointing=True,
-            log_every_n_steps=5 # Useful for small datasets
+            log_every_n_steps=5, # Useful for small datasets.
+            precision=precision,
         )
 
     def fit(
         self,
         model: MILModelBase,
-        dataset_train: Dataset,
-        dataset_val: Dataset,
-        loss_func: Loss,
-    ) -> Tuple[str, float]:
+        dataset_train: BagDatasetBase,
+        dataset_val: Optional[BagDatasetBase],
+        loss_fn: nn.Module,
+    ) -> TrainerOutput:
         """
         Train the model.
         Returns:
-            (best_model_path, best_model_score)
+            TrainerOutput(best_model_path, best_model_score)
         """
         train_loader = DataLoader(
             dataset_train, 
             batch_size=self.config.mil.batch_size, 
             shuffle=True, 
             num_workers=self.config.experiment.num_workers,
-            pin_memory=True if torch.cuda.is_available() else False
+            pin_memory=True if torch.cuda.is_available() else False,
+            collate_fn=self._mil_collate
         )
-        val_loader = DataLoader(
-            dataset_val, 
-            batch_size=self.config.mil.batch_size, 
-            shuffle=False, 
-            num_workers=self.config.experiment.num_workers,
-            pin_memory=True if torch.cuda.is_available() else False
-        )
+        val_loader = None
+        if dataset_val is not None:
+            val_loader = DataLoader(
+                dataset_val,
+                batch_size=self.config.mil.batch_size,
+                shuffle=False,
+                num_workers=self.config.experiment.num_workers,
+                pin_memory=True if torch.cuda.is_available() else False,
+                collate_fn=self._mil_collate,
+            )
 
         # Wrap model using the Adapter (Factory logic could go here if complex)
         from pathbench.training.lightning import LightningModuleAdapter
-        pl_module = LightningModuleAdapter(model, loss_func, self.config)
+        pl_module = LightningModuleAdapter(model, loss_fn, self.config)
 
         self.trainer.fit(pl_module, train_dataloaders=train_loader, val_dataloaders=val_loader)
         
@@ -213,12 +247,14 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
         if isinstance(best_score, torch.Tensor):
             best_score = best_score.item()
 
-        return best_path, best_score
+    
+    return TrainerOutput(best_model_path=best_path, best_score=best_score)
+
 
     def predict(
         self,
         model: MILModelBase,
-        dataset: Dataset,
+        dataset: BagDatasetBase,
     ) -> torch.Tensor:
         """
         Run inference.
@@ -227,20 +263,12 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
             dataset, 
             batch_size=self.config.mil.batch_size, 
             shuffle=False, 
-            num_workers=self.config.experiment.num_workers
+            num_workers=self.config.experiment.num_workers,
+            collate_fn=self._mil_collate,
         )
         
-        # We reuse the LightningModuleAdapter, assuming model is already loaded
-        # (If model is raw MILModelBase, we wrap it lightly or use trainer.predict with raw model if supported?)
-        # PL requires a LightningModule for trainer.predict
-        # If 'model' here is the raw PyTorch model (trained), we wrap it again.
-        
-        # Hack: If we don't have the original config for prediction, we use self.config
-        # Assuming loss_fn doesn't matter for prediction
-        dummy_loss = self.config.benchmark_parameters.loss[0] # dummy
-        from pathbench.utils.registries import LOSSES
-        loss_fn = LOSSES.get("CrossEntropyLoss")() # generic
-        
+
+        loss_fn = self._default_loss()
         pl_module = LightningModuleAdapter(model, loss_fn, self.config)
 
         predictions = self.trainer.predict(pl_module, dataloaders=loader)
@@ -248,3 +276,62 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
         # Concatenate all predictions
         return torch.cat(predictions, dim=0)
 
+    def _default_loss(self) -> nn.Module:
+        task = self.config.experiment.task or "classification"
+        if task == "regression":
+            return torch.nn.MSELoss()
+        if task in {"survival", "survival_discrete"}:
+            return torch.nn.BCEWithLogitsLoss()
+        return torch.nn.CrossEntropyLoss()
+
+
+
+
+    @staticmethod
+    def _mil_collate(
+        batch: Sequence[Tuple[torch.Tensor, torch.Tensor] | Tuple[torch.Tensor, torch.Tensor, str]]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor] | Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[str]]:
+        bags: List[torch.Tensor] = []
+        labels: List[torch.Tensor] = []
+        slide_ids: List[str] = []
+
+        for item in batch:
+            if len(item) == 2:
+                bag, label = item
+            else:
+                bag, label, slide_id = item
+                slide_ids.append(slide_id)
+
+            bags.append(bag)
+            if isinstance(label, torch.Tensor):
+                labels.append(label)
+            else:
+                labels.append(torch.tensor(label))
+
+        lengths = torch.tensor([bag.shape[0] for bag in bags], dtype=torch.long)
+        max_len = int(lengths.max().item()) if lengths.numel() else 0
+        feature_dim = max((bag.shape[1] for bag in bags), default=0)
+
+        padded = []
+        mask = []
+        for bag in bags:
+            if bag.shape[1] not in {0, feature_dim}:
+                raise ValueError("Inconsistent feature dimensions in batch.")
+            if bag.shape[1] == 0 and feature_dim > 0:
+                bag = torch.zeros((bag.shape[0], feature_dim), dtype=bag.dtype)
+            pad_size = max_len - bag.shape[0]
+            if pad_size > 0:
+                pad = torch.zeros((pad_size, bag.shape[1]), dtype=bag.dtype)
+                padded_bag = torch.cat([bag, pad], dim=0)
+            else:
+                padded_bag = bag
+            padded.append(padded_bag)
+            mask.append(torch.arange(max_len) < bag.shape[0])
+
+        batched_bags = torch.stack(padded, dim=0) if padded else torch.empty((0, 0, 0))
+        batched_labels = torch.stack(labels) if labels else torch.empty((0,))
+        batched_mask = torch.stack(mask, dim=0) if mask else torch.empty((0, 0), dtype=torch.bool)
+
+        if slide_ids:
+            return batched_bags, batched_labels, batched_mask, slide_ids
+        return batched_bags, batched_labels, batched_mask

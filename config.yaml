@@ -1,32 +1,83 @@
 experiment:
-  project_name: cbir_lumc_tissue
-  annotation_file: /exports/path-pulmogroep-hpc/Jurre/SalvDataset/LUMC_cohort/annotations_key_diag_test.csv
-  task: null
-  mode: feature_extraction
-  aggregation_level: slide
-  report: true
-  mixed_precision: true
-  num_workers: 8
-  split_technique: k-fold
-  val_fraction: 0.1
+  project_name: cbir_lumc_tissue # Experiment name used for logging and output folders
+  annotation_file: /exports/path-pulmogroep-hpc/Jurre/SalvDataset/LUMC_cohort/annotations_key_diag_test.csv # Path to annotations CSV
+  task: null # Task type (classification, regression, survival, survival_discrete) or null for feature_extraction
+  mode: feature_extraction # Execution mode (benchmark, optimization, feature_extraction)
+  aggregation_level: slide # Slide/patient aggregation for downstream reporting
+  report: true # Enable report generation
+  mixed_precision: true # Use mixed precision during training where supported
+  num_workers: 8 # DataLoader worker count
+  split_technique: k-fold # Dataset split strategy
+  val_fraction: 0.1 # Validation split fraction for fixed splits
+  evaluation:
+    - accuracy # Default evaluation metrics (legacy list)
+
+
+mil:
+  epochs: 20 # Max epochs for MIL training
+  batch_size: 1 # MIL batch size (bags per batch)
+  best_epoch_based_on: val_loss # Metric to select the best checkpoint
+  patience: 10 # Early stopping patience
+  accumulate_grad_batches: 1 # Gradient accumulation steps
+  gradient_clip_val: 0.0 # Gradient clipping value
+  lr: 0.0001 # Learning rate
+  weight_decay: 0.00001 # Weight decay
+  scheduler: none # Scheduler type (none, reduce_on_plateau, cosine)
+  scheduler_monitor: val_loss # Metric to monitor for LR scheduling
+  balancing: null # Optional balancing strategy
+  class_weighting: false # Enable class weighting for losses
+  bag_size: 512 # Fixed bag size where models require it
+  encoder_layers: 1 # MIL encoder layer count (model-specific)
+  z_dim: 256 # Latent dimension for MIL encoders
+  dropout_p: 0.1 # Dropout probability
+  k: 2 # Top-k or cluster size hyperparameter (model-specific)
+  skip_extracted: true # Skip already extracted features
+  skip_feature_extraction: true # Skip feature extraction in MIL runs
+
+bag_dataset:
+  id_column: slide_id # Column with slide identifiers in annotations
+  label_column: label # Column with labels in annotations
+  dataset_column: dataset # Column that maps rows to dataset entries
+  feature_path_column: null # Column with explicit feature paths (optional)
+  feature_extension: .pt # Feature file extension when deriving paths
+  allow_missing_features: false # Allow missing feature files (empty bags)
+  drop_missing_labels: true # Drop rows with missing labels
+  label_dtype: int # Label type coercion (int, float, str)
+  max_instances: null # Max instances per bag (null = use all)
+  sampling_strategy: random # Instance sampling strategy (random, first)
+  random_seed: 0 # RNG seed for sampling
+  return_slide_id: false # Include slide_id in dataset output
+
+evaluation:
+  metrics:
+    - accuracy # Metrics to compute for evaluation
+  average: macro # Averaging strategy for multi-class metrics
+  positive_label: 1 # Positive label index for binary metrics
+
 
 slide_processing:
-  backend: lazyslide
-  save_tiles: false
-  segmentation_method: otsu
-
+  backend: lazyslide # Slide processing backend
+  save_tiles: false # Persist extracted tiles to disk
+  segmentation_method: otsu # Tissue segmentation method
+  
 datasets:
   - name: Salv-LUMC
-    slide_path: /exports/path-pulmogroep-hpc/Jurre/SalvDataset/LUMC_cohort/slides
-    used_for: testing
+    slide_path: /exports/path-pulmogroep-hpc/Jurre/SalvDataset/LUMC_cohort/slides # Slide directory
+    features_path: /exports/path-pulmogroep-hpc/Jurre/SalvDataset/LUMC_cohort/features # Feature bags directory
+    used_for: testing # Dataset usage designation (training, validation, testing, all)
 
 benchmark_parameters:
-  tile_px:
-    - 256
-  tile_mpp:
-    - 0.25
-  feature_extraction:
-    - resnet50
+  tile_px:          # Tile sizes in pixels
+    - 256 
+    
+  tile_um:          # Magnification levels
+    - 128
+    
+  normalization:    # Normalization methods
+    - reinhard
 
-weights_dir: ./pretrained_weights
-hf_key: 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
+  feature_extraction:  # Feature extraction methods for image retrieval
+    - resnet50
+    
+weights_dir: ./pretrained_weights # Directory for cached/pretrained weights
+hf_key: your_hf_token # Hugging Face token (optional)

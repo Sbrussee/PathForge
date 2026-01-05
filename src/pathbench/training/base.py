@@ -1,13 +1,23 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
+
+import torch
+
+from torch import nn
+
+from pathbench.core.datasets.base import BagDatasetBase
+from pathbench.core.models.mil_base import MILModelBase
+
+@dataclass(frozen=True)
+class TrainerOutput:
+    """Result bundle for training runs."""
+    best_model_path: str
+    best_score: float
 
 
-from pathbench.core.datasets.base import DatasetBase
-from pathbench.core.losses.base import LossBase
-from pathbench.core.models.base import MILBase
-from pathbench.core.tasks.base import TaskBase
+
 
 
 class TrainerBase(ABC):
@@ -18,22 +28,26 @@ class TrainerBase(ABC):
     @abstractmethod
     def fit(
         self,
-        model: MILBase,
-        dataset: DatasetBase,
-        task: TaskBase,
-    ) -> Any:
-        """Train the model on the given dataset using the specified loss function and task."""
-        pass
+        model: MILModelBase,
+        dataset_train: BagDatasetBase,
+        dataset_val: Optional[BagDatasetBase],
+        loss_fn: nn.Module,
+    ) -> TrainerOutput:
+        """Train the model on the given dataset using the specified loss function."""
+        raise NotImplementedError
     
     @abstractmethod
     def predict(
         self,
         model: MILBase,
         dataset: DatasetBase,
-        task: TaskBase,
-    ) -> Any:
-        """Make predictions using the trained model on the given dataset."""
-        pass
+        model: MILModelBase,
+        dataset: BagDatasetBase,
+    ) -> torch.Tensor:
+        """Generate predictions using the trained model on the given dataset."""
+        raise NotImplementedError
+
+
     
 @dataclass
 class MILTrainer:
@@ -46,15 +60,14 @@ class MILTrainer:
 
     trainer: TrainerBase
     model: MILModelBase
-    dataset: BagDatasetBase
-    task: TaskBase
-    loss: LossBase
+    dataset_train: BagDatasetBase
+    dataset_val: Optional[BagDatasetBase]
+    loss_fn: nn.Module
 
-    def run(self) -> None:
-        self.trainer.fit(
+    def run(self) -> TrainerOutput:
+        return self.trainer.fit(
             model=self.model,
-            dataset=self.dataset,
-            task=self.task,
-            loss=self.loss,
-            policy=self.policy,
+            dataset_train=self.dataset_train,
+            dataset_val=self.dataset_val,
+            loss_fn=self.loss_fn,
         )

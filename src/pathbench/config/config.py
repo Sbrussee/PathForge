@@ -88,6 +88,28 @@ class MILConfig(BaseModel):
     skip_extracted: bool = True
     skip_feature_extraction: bool = True
 
+class BagDatasetConfig(BaseModel):
+    """Configuration for MIL bag datasets."""
+    id_column: str = "slide_id"
+    label_column: str = "label"
+    dataset_column: str = "dataset"
+    feature_path_column: Optional[str] = None
+    feature_extension: str = ".pt"
+    allow_missing_features: bool = False
+    drop_missing_labels: bool = True
+    label_dtype: Literal["int", "float", "str"] = "int"
+    max_instances: Optional[int] = Field(None, gt=0)
+    sampling_strategy: Literal["random", "first"] = "random"
+    random_seed: int = 0
+    return_slide_id: bool = False
+
+
+class EvaluationConfig(BaseModel):
+    """Evaluation settings for MIL workflows."""
+    metrics: List[str] = Field(default_factory=lambda: ["accuracy"])
+    average: Literal["macro", "micro", "weighted"] = "macro"
+    positive_label: int = 1
+
 
 class SlideProcessingConfig(BaseModel):
     """Settings for slide processing backends."""
@@ -199,8 +221,12 @@ class Config(BaseModel):
     """
     Top-level configuration object. 
     """
+
+    #TODO: Based on specified mode, only load the relevant sections to save memory.
     experiment: ExperimentConfig
     mil: MILConfig = Field(default_factory=MILConfig)
+    bag_dataset = Field(default_factory=BagDatasetConfig)
+    evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     slide_processing: SlideProcessingConfig = Field(default_factory=SlideProcessingConfig)
     optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
     datasets: List[DatasetEntry] = Field(default_factory=list)

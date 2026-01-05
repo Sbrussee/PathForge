@@ -1,10 +1,13 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Any, Iterable, Tuple
-import torch
-import pandas as pd
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Iterable, Sequence, Tuple, Optional
 
+import numpy as np
+import pandas as pd
+import torch
+
+from pathbench.config.config import BagDatasetConfig, Config, DatasetEntry
 from pathbench.core.datasets.base import BagDatasetBase
 
 @dataclass
@@ -14,10 +17,43 @@ class BagDataset(BagDatasetBase):
     Assumes features are pre-extracted and stored in .pt (torch) files.
     """
     _name: str
-    feature_path: str
-    annotation_path: str
-    target_column: str
-    
+    features_dir: Path
+    annotation_path: Path
+    config: BagDatasetConfig = field(default_factory=BagDatasetConfig)
+    _annotations: pd.DataFrame = field(init=False, repr=False)
+    _labels: list[Any] = field(init=False, repr=False)
+    _slide_ids: list[str] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.features_dir = Path(self.features_dir)
+        self.annotation_path = Path(self.annotation_path)
+
+        if not self.features_dir.exists():
+            raise FileNotFoundError(f"Features directory not found: {self.features_dir}")
+        if not self.annotation_path.exists():
+            raise FileNotFoundError(f"Annotation file not found: {self.annotation_path}")
+
+        annotations = pd.read_csv(self.annotation_path)
+        annotations = self._filter_by_dataset(annotations)
+        annotations = self._validate_and_clean(annotations)
+
+        self._annotations = annotations.reset_index(drop=True)
+        self._labels = [self._coerce_label(value) for value in self._annotations[self.config.label_column]]
+        self._slide_ids = self._annotations[self.config.id_column].astype(str).tolist()
+
+    @classmethod
+    def from_config(cls, dataset: DatasetEntry, config: Config) -> "BagDataset":
+        """Build a BagDataset from Config + DatasetEntry definitions."""
+        if dataset.features_path is None:
+            raise ValueError(
+                f"Dataset '{dataset.name}' is missing features_path required for MIL bag datasets."
+            )
+        return cls(
+            _name=dataset.name,
+            features_dir=Path(dataset.features_path),
+            annotation_path=Path(config.experiment.annotation_file),
+            config=config.bag_dataset,
+        )
     def __post_init__(self):
         self.annotations = pd.read_csv(self.annotation_path)
         # Validate paths
@@ -30,30 +66,97 @@ class BagDataset(BagDatasetBase):
 
     @property
     def num_bags(self) -> int:
-        return len(self.annotations)
+        return len(self._annotations)
     
-    def __getitem__(self, index: int) -> Tuple[torch.Tensor, Any]:
-        """
-        Returns:
-            bag: (N, D) Tensor
-            label: scalar
-        """
-        row = self.annotations.iloc[index]
-        slide_id = row['slide_id']
-        label = row[self.target_column]
-        
-        # Construct path to feature file (assuming {slide_id}.pt pattern)
-        # In production, consider a more robust path mapping strategy
-        f_path = Path(self.feature_path) / f"{slide_id}.pt"
-        
-        if not f_path.exists():
-            # Handle missing files gracefully or raise
-            raise FileNotFoundError(f"Features for slide {slide_id} not found at {f_path}")
-            
-        bag = torch.load(f_path)
-        
-        # Ensure bag is float32 and correct shape
-        if isinstance(bag, torch.Tensor):
-            bag = bag.float()
-        
+
+    @property
+    def labels(self) -> Sequence[Any]:
+        """Labels aligned with dataset indices."""
+        return self._labels
+
+    @property
+    def slide_ids(self) -> Sequence[str]:
+        """Slide identifiers aligned with dataset indices."""
+        return self._slide_ids
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, Any] | Tuple[torch.Tensor, Any, str]:
+        row = self._annotations.iloc[index]
+        slide_id = str(row[self.config.id_column])
+        label = self._labels[index]
+
+        bag_path = self._resolve_feature_path(row)
+        if not bag_path.exists():
+            if self.config.allow_missing_features:
+                bag = torch.empty((0, 0), dtype=torch.float32)
+            else:
+                raise FileNotFoundError(
+                    f"Features for slide '{slide_id}' not found at {bag_path}"
+                )
+        else:
+            bag = self._load_bag(bag_path)
+
+        bag = self._sample_instances(bag)
+        if self.config.return_slide_id:
+            return bag, label, slide_id
         return bag, label
+
+    def _filter_by_dataset(self, annotations: pd.DataFrame) -> pd.DataFrame:
+        dataset_column = self.config.dataset_column
+        if dataset_column in annotations.columns:
+            return annotations[annotations[dataset_column] == self._name]
+        return annotations
+
+    def _validate_and_clean(self, annotations: pd.DataFrame) -> pd.DataFrame:
+        missing = [
+            col
+            for col in (self.config.id_column, self.config.label_column)
+            if col not in annotations.columns
+        ]
+        if missing:
+            raise ValueError(f"Missing required columns in annotations: {missing}")
+
+        if self.config.drop_missing_labels:
+            annotations = annotations.dropna(subset=[self.config.label_column])
+
+        return annotations
+
+    def _resolve_feature_path(self, row: pd.Series) -> Path:
+        if self.config.feature_path_column and self.config.feature_path_column in row:
+            raw_path = Path(row[self.config.feature_path_column])
+            return raw_path if raw_path.is_absolute() else self.features_dir / raw_path
+
+        slide_id = str(row[self.config.id_column])
+        filename = f"{slide_id}{self.config.feature_extension}"
+        return self.features_dir / filename
+
+    def _load_bag(self, path: Path) -> torch.Tensor:
+        bag = torch.load(path)
+        if isinstance(bag, np.ndarray):
+            bag = torch.from_numpy(bag)
+        if not isinstance(bag, torch.Tensor):
+            raise TypeError(f"Unsupported bag type at {path}: {type(bag)}")
+        if bag.ndim == 1:
+            bag = bag.unsqueeze(0)
+        return bag.float()
+
+    def _sample_instances(self, bag: torch.Tensor) -> torch.Tensor:
+        if self.config.max_instances is None:
+            return bag
+
+        if bag.shape[0] <= self.config.max_instances:
+            return bag
+
+        if self.config.sampling_strategy == "first":
+            return bag[: self.config.max_instances]
+
+        generator = torch.Generator()
+        generator.manual_seed(self.config.random_seed)
+        indices = torch.randperm(bag.shape[0], generator=generator)[: self.config.max_instances]
+        return bag[indices]
+
+    def _coerce_label(self, value: Any) -> Any:
+        if self.config.label_dtype == "int":
+            return int(value)
+        if self.config.label_dtype == "float":
+            return float(value)
+        return str(value)

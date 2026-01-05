@@ -84,11 +84,19 @@ class OptimizationPolicy(PolicyBase):
         model = ModelClass(input_dim=1024, dropout=dropout, output_dim=2)
         loss_fn = LossClass()
         
-        # 3. Data Loading (Mocking paths from config)
-        # In production, ensure these paths are valid or passed via config
-        ds_train = BagDataset("train", self.config.datasets[0].tile_path, self.config.experiment.annotation_file, "label")
-        ds_val = BagDataset("val", self.config.datasets[1].tile_path, self.config.experiment.annotation_file, "label")
-        
+        # 3. Data Loading
+        train_entry = next(
+            (ds for ds in self.config.datasets if ds.used_for == "training"),
+            self.config.datasets[0],
+        )
+        val_entry = next(
+            (ds for ds in self.config.datasets if ds.used_for == "validation"),
+            self.config.datasets[1] if len(self.config.datasets) > 1 else None,
+        )
+
+        ds_train = BagDataset.from_config(train_entry, self.config)
+        ds_val = BagDataset.from_config(val_entry, self.config) if val_entry else None
+
         # 4. Training
         # We can optionally pass an Optuna Pruning Callback here if the Trainer supports it
         from optuna.integration import PyTorchLightningPruningCallback
@@ -97,8 +105,8 @@ class OptimizationPolicy(PolicyBase):
         trainer: TrainerBase = TrainerClass(self.config, extra_callbacks=[pruning_callback])
         
         try:
-            best_path, best_score = trainer.fit(model, ds_train, ds_val, loss_fn)
-            return best_score
+            result = trainer.fit(model, ds_train, ds_val, loss_fn)
+            return result.best_score
         except Exception as e:
             # Handle pruning or NaN errors
             print(f"Trial failed: {e}")

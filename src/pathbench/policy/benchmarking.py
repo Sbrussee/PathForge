@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 import itertools
 import pandas as pd
+import numpy as np
 import copy
 import logging
 from pathlib import Path
@@ -11,6 +12,7 @@ from pathbench.config.config import Config
 from pathbench.utils.registries import MODELS, LOSSES, TRAINERS
 from pathbench.core.datasets.bag_dataset import BagDataset
 from pathbench.training.base import TrainerBase
+from pathbench.training.metrics import evaluate_predictions
 
 class BenchmarkingPolicy(PolicyBase):
     """
