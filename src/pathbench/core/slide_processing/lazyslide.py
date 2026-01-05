@@ -185,7 +185,30 @@ class LazySlideProcessor(SlideProcessorBase):
         # Round-trip validation
         json.loads(tile_spec)
         return tile_spec
+    
     # ----------------- Policy methods -----------------
+    def load_wsi(self, wsi: WSI) -> None:
+        """
+        LazySlide uses wsidata.open_wsi(...) which returns a wsidata.WSIData object.
+        """
+        if getattr(wsi, "_obj", None) is not None:
+            return
+
+        wsi._obj = open_wsi(wsi.path) 
+
+    def close_wsi(self, wsi: WSI) -> None:
+        """
+        wsidata.WSIData has .close() which closes the underlying reader.
+        """
+        obj = getattr(wsi, "_obj", None)
+        if obj is None:
+            return
+
+        try:
+            obj.close()
+        finally:
+            wsi._obj = None
+
     def segment_tissue(self, wsi: WSI, config: Dict[str, Any]) -> List[np.ndarray]:
 
         method = config.get("method", "otsu")

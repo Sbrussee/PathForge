@@ -10,6 +10,19 @@ class SlideProcessorBase(ABC):
     """Base class for slide processing backends."""
 
     @abstractmethod
+    def load_wsi(self, wsi: WSI) -> None:
+        """
+        Load / open the backend-native slide object and store it on the WSI.
+        """
+        pass
+
+    def close_wsi(self, wsi: WSI) -> None:
+        """
+        Close the backend-native slide object (if needed) and clear it from the WSI.
+        """
+        pass
+
+    @abstractmethod
     def segment_tissue(self, wsi: WSI, config: Optional[Dict[str, Any]] = None) -> Any:
         """Segment tissue regions from the slide object."""
         pass

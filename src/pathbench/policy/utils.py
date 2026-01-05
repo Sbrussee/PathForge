@@ -266,7 +266,9 @@ def save_features_pt(adata: ad.AnnData, path: str | Path) -> None:
     path = Path(path)
     pt_path = _ensure_suffix(path, ".pt")
     idx_path = pt_path.with_suffix(".index.npz")
-    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Ensure directory of actual output path exists
+    pt_path.parent.mkdir(parents=True, exist_ok=True)
 
     if adata.X is None:
         raise ValueError("AnnData.X is None; expected feature matrix.")
@@ -298,7 +300,9 @@ def save_features_pt(adata: ad.AnnData, path: str | Path) -> None:
             )
 
     pt_tmp = pt_path.with_name(f".{pt_path.name}.tmp")
-    idx_tmp = idx_path.with_name(f".{idx_path.name}.tmp")
+
+    # Ensure tmp ends with .npz so numpy doesn't append another suffix
+    idx_tmp = idx_path.with_name(f".{idx_path.name}.tmp.npz")
 
     try:
         # tensor only
@@ -310,6 +314,7 @@ def save_features_pt(adata: ad.AnnData, path: str | Path) -> None:
             np.savez_compressed(idx_tmp, tile_id=tile_id, library_id=library_id)
         else:
             np.savez_compressed(idx_tmp, tile_id=tile_id)
+
         idx_tmp.replace(idx_path)
 
     finally:
