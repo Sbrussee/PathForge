@@ -18,7 +18,7 @@ import os
 #ClassificationAnnotation, RegressionAnnotation, SurvivalAnnotation, DiscreteSurvivalAnnotation,
 #)
 
-from pathbench.core.datasets.slides import SlideDataset
+from pathbench.core.datasets.wsi_dataset import WSIDataset
 
 logger = logging.getLogger(__name__)
 

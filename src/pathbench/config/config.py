@@ -105,6 +105,9 @@ class BagDatasetConfig(BaseModel):
     sampling_strategy: Literal["random", "first"] = "random"
     random_seed: int = 0
     return_slide_id: bool = False
+    grouping_strategy: Literal["slide", "patient", "tissue"] = "slide"
+    patient_column: str = "patient"
+    tissue_column: str = "tissue_id"
 
 
 class EvaluationConfig(BaseModel):
@@ -120,6 +123,7 @@ class SlideProcessingConfig(BaseModel):
     save_tiles: bool = False
     segmentation_method: str = "otsu"
     qc_filters: List[Dict[str, Any]] = Field(default_factory=list)
+    prefer_existing_rois: bool = True
 
 
 class OptimizationConfig(BaseModel):
@@ -232,7 +236,7 @@ class Config(BaseModel):
     #TODO: Based on specified mode, only load the relevant sections to save memory.
     experiment: ExperimentConfig
     mil: MILConfig = Field(default_factory=MILConfig)
-    bag_dataset = Field(default_factory=BagDatasetConfig)
+    bag_dataset: BagDatasetConfig = Field(default_factory=BagDatasetConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     slide_processing: SlideProcessingConfig = Field(default_factory=SlideProcessingConfig)
     optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
@@ -263,6 +267,31 @@ class Config(BaseModel):
              
         return self
 
+
+    @classmethod
+    def _filter_for_mode(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Remove unused config sections based on experiment mode.
+
+        This keeps the in-memory config lean for single-purpose runs, while
+        preserving defaults for multi-purpose modes like benchmarking or optimization.
+
+        Args:
+            data: Raw config dictionary loaded from YAML.
+
+        Returns:
+            Pruned config dictionary based on mode.
+        """
+        experiment = data.get("experiment", {})
+        mode = experiment.get("mode")
+
+        if mode == "feature_extraction":
+            data = dict(data)
+            for key in ("mil", "bag_dataset", "evaluation", "optimization"):
+                data.pop(key, None)
+
+        return data
+
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
         path = Path(path)
@@ -271,6 +300,7 @@ class Config(BaseModel):
             
         with path.open("r") as f:
             data = yaml.safe_load(f) or {}
+        data = cls._filter_for_mode(data)
             
         return cls.model_validate(data)
 
@@ -284,7 +314,7 @@ class Config(BaseModel):
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Config":
         """Create a Config from a dict (useful for tests)."""
-        return cls.model_validate(data)
+        return cls.model_validate(cls._filter_for_mode(data))
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a dict representation for serialization."""

@@ -260,7 +260,7 @@ class WSIDataset(DatasetBase):
                     slide=slide_id,
                     patient=patient,
                     category=category,
-                    wsi_path=wsi_path,
+                    path=wsi_path,
                 )
             )
 

@@ -6,9 +6,7 @@ import numpy as np
 import copy
 import logging
 from pathlib import Path
-
-from pathbench.policy.base import PolicyBase
-from pathbench.config.config import Config
+from pathbench.policy.base import PolicyBase, ExperimentLike
 from pathbench.utils.registries import MODELS, LOSSES, TRAINERS
 from pathbench.core.datasets.bag_dataset import BagDataset
 from pathbench.training.base import TrainerBase
@@ -20,8 +18,9 @@ class BenchmarkingPolicy(PolicyBase):
     Strictly uses TrainerBase abstraction.
     """
 
-    def __init__(self, config: Config) -> None:
-        self.config = config
+    def __init__(self, experiment: ExperimentLike):
+        super().__init__(experiment)
+        self.config = experiment.config
         self.results: List[Dict[str, Any]] = []
         self.logger = logging.getLogger("pathbench.benchmark")
 
@@ -43,7 +42,7 @@ class BenchmarkingPolicy(PolicyBase):
             config_objects.append(new_cfg)
         return config_objects
 
-    def execute(self) -> None:
+    def execute(self) -> dict[str, Any]:
         configs_to_run = self._generate_configs()
         
         trainer_backend = self.config.experiment.trainer_backend
@@ -63,9 +62,6 @@ class BenchmarkingPolicy(PolicyBase):
                 ModelClass = MODELS.get(model_name)
                 LossClass = LOSSES.get(loss_name)
                 output_dim = _resolve_output_dim()
-                # TODO: Input_dim should be based on current features
-                model = ModelClass(input_dim=1024, output_dim=output_dim)
-                loss_fn = LossClass()
                 
                 # 2. Data
                 train_entry = next(
@@ -78,6 +74,10 @@ class BenchmarkingPolicy(PolicyBase):
                 )
                 ds_train = BagDataset.from_config(train_entry, run_cfg)
                 ds_val = BagDataset.from_config(val_entry, run_cfg) if val_entry else None
+
+                input_dim = self._resolve_input_dim(ds_train)
+                model = ModelClass(input_dim=input_dim, output_dim=output_dim)
+                loss_fn = LossClass()
 
                 # 3. Abstract Trainer Instantiation
                 trainer: TrainerBase = TrainerClass(run_cfg)
@@ -112,12 +112,25 @@ class BenchmarkingPolicy(PolicyBase):
                 self.results.append({"model": model_name, "error": str(e)})
 
         self._save_report()
+        return {"status": "benchmark_complete", "results_file": "benchmark_results.csv"}
 
     def _resolve_output_dim(self) -> int:
         task = self.config.experiment.task
         if task in {"regression", "survival"}:
             return 1
         return max(self.config.mil.k, 1)
+
+    def _resolve_input_dim(self, dataset: BagDataset) -> int:
+        """
+        Infer input feature dimension from a dataset's stored bags.
+
+        Args:
+            dataset: BagDataset instance to inspect.
+
+        Returns:
+            Feature dimension inferred from stored bag tensors.
+        """
+        return dataset.infer_feature_dim()
 
     def _save_report(self):
         df = pd.DataFrame(self.results)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Tuple
-
+import inspect
 import numpy as np
 import torch
 from sklearn import metrics as sk_metrics
@@ -10,7 +10,12 @@ try:
     from pycox.evaluation.concordance import concordance_td
 except ImportError:  # pragma: no cover - optional dependency
     concordance_td = None
-    
+
+try:
+    import torchmetrics.functional as tmf
+except ImportError:  # pragma: no cover - optional dependency
+    tmf = None
+
 #TODO: Support any metric in torchmetrics / pycox?
 def evaluate_predictions(
     logits: torch.Tensor,
@@ -87,7 +92,15 @@ def _evaluate_classification(
                 raise ValueError("Specificity is only defined for binary classification.")
             results[metric] = sk_metrics.recall_score(labels_np, preds, pos_label=0)
         else:
-            raise ValueError(f"Unsupported classification metric: {metric}")
+            results[metric] = _evaluate_torchmetrics(
+                metric=metric,
+                preds=preds,
+                probs=probs,
+                labels=labels_np,
+                average=average,
+                positive_label=positive_label,
+                task="classification",
+            )
 
     return results
 

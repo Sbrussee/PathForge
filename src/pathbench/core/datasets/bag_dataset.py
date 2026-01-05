@@ -10,6 +10,7 @@ import torch
 from pathbench.config.config import BagDatasetConfig, Config, DatasetEntry
 from pathbench.core.datasets.base import BagDatasetBase
 
+#TODO: add support for multiple splitting strategies (no patient leakage, center-level splits, etc.)
 @dataclass
 class BagDataset(BagDatasetBase):
     """
@@ -21,6 +22,7 @@ class BagDataset(BagDatasetBase):
     annotation_path: Path
     config: BagDatasetConfig = field(default_factory=BagDatasetConfig)
     _annotations: pd.DataFrame = field(init=False, repr=False)
+    _bags: list[dict[str, Any]] = field(init=False, repr=False)
     _labels: list[Any] = field(init=False, repr=False)
     _slide_ids: list[str] = field(init=False, repr=False)
 
@@ -38,8 +40,9 @@ class BagDataset(BagDatasetBase):
         annotations = self._validate_and_clean(annotations)
 
         self._annotations = annotations.reset_index(drop=True)
-        self._labels = [self._build_label(row) for _, row in self._annotations.iterrows()]
-        self._slide_ids = self._annotations[self.config.id_column].astype(str).tolist()
+        self._bags = self._build_bags(self._annotations)
+        self._labels = [bag["label"] for bag in self._bags]
+        self._slide_ids = [bag["group_id"] for bag in self._bags]
 
     @classmethod
     def from_config(cls, dataset: DatasetEntry, config: Config) -> "BagDataset":
@@ -75,25 +78,53 @@ class BagDataset(BagDatasetBase):
         return self._slide_ids
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, Any] | Tuple[torch.Tensor, Any, str]:
-        row = self._annotations.iloc[index]
-        slide_id = str(row[self.config.id_column])
-        label = self._labels[index]
+        bag_info = self._bags[index]
+        slide_id = bag_info["group_id"]
+        label = bag_info["label"]
 
-        bag_path = self._resolve_feature_path(row)
-        if not bag_path.exists():
-            if self.config.allow_missing_features:
-                bag = torch.empty((0, 0), dtype=torch.float32)
-            else:
+        bag_tensors = []
+        for row in bag_info["rows"]:
+            bag_path = self._resolve_feature_path(row)
+            if not bag_path.exists():
+                if self.config.allow_missing_features:
+                    continue
                 raise FileNotFoundError(
-                    f"Features for slide '{slide_id}' not found at {bag_path}"
+                    f"Features for slide '{row[self.config.id_column]}' not found at {bag_path}"
                 )
+            bag_tensors.append(self._load_bag(bag_path))
+
+        if bag_tensors:
+            bag = torch.cat(bag_tensors, dim=0)
         else:
-            bag = self._load_bag(bag_path)
+            bag = torch.empty((0, 0), dtype=torch.float32)
 
         bag = self._sample_instances(bag)
         if self.config.return_slide_id:
             return bag, label, slide_id
         return bag, label
+
+
+    def infer_feature_dim(self) -> int:
+        """
+        Infer the feature dimension by inspecting the first available bag.
+
+        Returns:
+            Feature dimension (number of columns in the bag tensor).
+
+        Raises:
+            ValueError: If no valid feature files are found.
+        """
+        for _, row in self._annotations.iterrows():
+            bag_path = self._resolve_feature_path(row)
+            if not bag_path.exists():
+                continue
+            bag = self._load_bag(bag_path)
+            if bag.ndim == 2 and bag.shape[1] > 0:
+                return int(bag.shape[1])
+
+        raise ValueError(
+            f"No valid feature files found in '{self.features_dir}' to infer input_dim."
+        )
 
     def _filter_by_dataset(self, annotations: pd.DataFrame) -> pd.DataFrame:
         dataset_column = self.config.dataset_column

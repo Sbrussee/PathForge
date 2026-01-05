@@ -2,8 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 import optuna
 import pandas as pd
-from pathbench.policy.base import PolicyBase
-from pathbench.config.config import Config
+from pathbench.policy.base import PolicyBase, ExperimentLike
 from pathbench.utils.registries import MODELS, LOSSES, TRAINERS
 from pathbench.core.datasets.bag_dataset import BagDataset
 from pathbench.training.base import TrainerBase
@@ -13,8 +12,9 @@ class OptimizationPolicy(PolicyBase):
     Optimization Policy that dynamically configures Optuna based on Config.
     """
     
-    def __init__(self, config: Config) -> None:
-        self.config = config
+    def __init__(self, experiment: ExperimentLike):
+        super().__init__(experiment)
+        self.config = experiment.config
         
     def _get_sampler(self) -> optuna.samplers.BaseSampler:
         """Factory method for Optuna Samplers based on config."""
@@ -102,12 +102,10 @@ class OptimizationPolicy(PolicyBase):
         ModelClass = MODELS.get(model_name)
 
         output_dim = self._resolve_output_dim()
-        model = ModelClass(input_dim=1024, dropout=dropout, output_dim=output_dim)
 
         loss_name = self._resolve_loss_name()
         LossClass = LOSSES.get(loss_name)
         
-        model = ModelClass(input_dim=1024, dropout=dropout, output_dim=2)
         loss_fn = LossClass()
         
         # 3. Data Loading
@@ -122,6 +120,9 @@ class OptimizationPolicy(PolicyBase):
 
         ds_train = BagDataset.from_config(train_entry, self.config)
         ds_val = BagDataset.from_config(val_entry, self.config) if val_entry else None
+
+        input_dim = self._resolve_input_dim(ds_train)
+        model = ModelClass(input_dim=input_dim, output_dim=output_dim)
 
         # 4. Training
         # We can optionally pass an Optuna Pruning Callback here if the Trainer supports it
@@ -228,8 +229,20 @@ class OptimizationPolicy(PolicyBase):
         if task in {"regression", "survival"}:
             return 1
         return max(self.config.mil.k, 1)
-        
-    def execute(self) -> None:
+
+    def _resolve_input_dim(self, dataset: BagDataset) -> int:
+        """
+        Infer input feature dimension from a dataset's stored bags.
+
+        Args:
+            dataset: BagDataset instance to inspect.
+
+        Returns:
+            Feature dimension inferred from stored bag tensors.
+        """
+        return dataset.infer_feature_dim()
+
+    def execute(self) -> Dict[str, Any]:
         print(f"Starting Optimization Study: {self.config.optimization.study_name}")
         
         sampler = self._get_sampler()
@@ -252,3 +265,9 @@ class OptimizationPolicy(PolicyBase):
         # Save results
         df = study.trials_dataframe()
         df.to_csv(f"{self.config.optimization.study_name}_results.csv")
+        return {
+            "status": "optimization_complete",
+            "best_params": study.best_params,
+            "best_value": study.best_value,
+            "results_file": f"{self.config.optimization.study_name}_results.csv",
+        }
