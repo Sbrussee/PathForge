@@ -14,7 +14,7 @@ class OptimizationPolicy(PolicyBase):
     
     def __init__(self, experiment: ExperimentLike):
         super().__init__(experiment)
-        self.config = experiment.config
+        self.config = self.cfg
         
     def _get_sampler(self) -> optuna.samplers.BaseSampler:
         """Factory method for Optuna Samplers based on config."""

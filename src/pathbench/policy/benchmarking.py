@@ -20,7 +20,7 @@ class BenchmarkingPolicy(PolicyBase):
 
     def __init__(self, experiment: ExperimentLike):
         super().__init__(experiment)
-        self.config = experiment.config
+        self.config = self.cfg
         self.results: List[Dict[str, Any]] = []
         self.logger = logging.getLogger("pathbench.benchmark")
 

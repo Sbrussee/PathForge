@@ -64,7 +64,7 @@ class BagDataset(BagDatasetBase):
 
     @property
     def num_bags(self) -> int:
-        return len(self._annotations)
+        return len(self._bags)
     
 
     @property
@@ -210,3 +210,52 @@ class BagDataset(BagDatasetBase):
             event_val = row[self.config.event_column]
             return {"time": float(time_val), "event": float(event_val)}
         return self._coerce_label(row[self.config.label_column])
+    
+    def _build_bags(self, annotations: pd.DataFrame) -> list[dict[str, Any]]:
+        """
+        Build bag definitions based on the configured grouping strategy.
+
+        Returns:
+            List of bag descriptors containing:
+            - group_id: Group identifier (slide/patient/tissue).
+            - label: Label for the bag (must be consistent within group).
+            - rows: List of annotation rows belonging to the bag.
+        """
+        group_column = self._resolve_group_column()
+        if group_column not in annotations.columns:
+            raise ValueError(
+                f"Grouping column '{group_column}' not found in annotations."
+            )
+
+        bags: list[dict[str, Any]] = []
+        for group_id, group_df in annotations.groupby(group_column, dropna=False):
+            rows = [row for _, row in group_df.iterrows()]
+            label = self._build_label(rows[0])
+            if not self._labels_consistent(rows, label):
+                raise ValueError(
+                    f"Inconsistent labels found for group '{group_id}' in column '{group_column}'."
+                )
+            bags.append({"group_id": str(group_id), "label": label, "rows": rows})
+        return bags
+
+    def _resolve_group_column(self) -> str:
+        strategy = self.config.grouping_strategy
+        if strategy == "slide":
+            return self.config.id_column
+        if strategy == "patient":
+            return self.config.patient_column
+        if strategy == "tissue":
+            return self.config.tissue_column
+        raise ValueError(f"Unsupported grouping strategy: {strategy}")
+
+    def _labels_consistent(self, rows: list[pd.Series], expected: Any) -> bool:
+        for row in rows[1:]:
+            if not self._labels_equal(self._build_label(row), expected):
+                return False
+        return True
+
+    @staticmethod
+    def _labels_equal(left: Any, right: Any) -> bool:
+        if isinstance(left, dict) and isinstance(right, dict):
+            return left == right
+        return left == right

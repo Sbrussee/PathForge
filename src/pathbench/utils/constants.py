@@ -33,3 +33,5 @@ TIFFSLIDE_SLIDE_FORMATS = [".tiff", ".tif", ".svs", ".ndpi", ".scn"] # for tiffs
 
 CUCIM_SLIDE_FORMATS = [".svs", ".tiff", ".tif"] # for cucim backend
 
+# Unified list for generic slide discovery.
+SLIDE_FILE_FORMATS = sorted({*OPENSLIDE_SLIDE_FORMATS, *TIFFSLIDE_SLIDE_FORMATS, *CUCIM_SLIDE_FORMATS})

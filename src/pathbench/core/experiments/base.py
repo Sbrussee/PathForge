@@ -250,20 +250,20 @@ class Experiment:
         """
         Build all combinations of benchmark parameters for the given keys.
         Args:
-            keys: List of field names in cfg.benchmark_parameters to build combinations for.
+            keys: List of field names in cfg.search_space to build combinations for.
         Returns:
             List of ComboConfig instances representing all combinations.
         """
-        bp = self.cfg.benchmark_parameters
+        bp = self.cfg.search_space
 
         value_lists: List[list[Any]] = []
         for key in keys:
             if not hasattr(bp, key):
-                raise AttributeError(f"benchmark_parameters has no field '{key}'")
+                raise AttributeError(f"search_space has no field '{key}'")
             values = getattr(bp, key)
 
             if not values:
-                raise ValueError(f"benchmark_parameters.{key} is empty; cannot build grid.")
+                raise ValueError(f"search_space.{key} is empty; cannot build grid.")
             value_lists.append(values)
 
         combos: List[ComboConfig] = []
@@ -272,7 +272,7 @@ class Experiment:
 
         return combos
     
-    def build_datasets(self) -> list[SlideDataset]:
+    def build_datasets(self) -> list[WSIDataset]:
         """
         Build SlideDataset instances for all datasets in cfg.datasets.
         Returns:
@@ -287,5 +287,5 @@ class Experiment:
         for ds in self.cfg.datasets:
             if ds.used_for == "ignore":
                 continue
-            datasets.append(SlideDataset(ds, annotations))
+            datasets.append(WSIDataset(ds, annotations))
         return datasets

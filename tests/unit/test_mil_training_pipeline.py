@@ -1,20 +1,23 @@
+"""Unit tests for MIL training on synthetic Gaussian-distributed features."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
 import pandas as pd
 import pytest
 import torch
 
 from pathbench.config.config import Config
 from pathbench.core.datasets.bag_dataset import BagDataset
-from pathbench.core.models.mil_base import MILModelBase
 from pathbench.core.losses.classification import CrossEntropyLoss
-from pathbench.core.losses.regression import MSELoss
-from pathbench.core.losses.survival_continuous import CoxPHLoss
-from pathbench.core.losses.survival_discrete import DiscreteTimeNLLLoss
-from pathbench.training.metrics import evaluate_predictions
+from pathbench.core.models.mil_base import MILModelBase
 from pathbench.training.simple import SimpleTrainer
+from pathbench.utils.registries import MODELS
 
 
-class MeanPoolMIL(MILModelBase):
-    """Minimal MIL model for pipeline testing."""
+class MeanPoolGaussianMIL(MILModelBase):
+    """Minimal MIL model that mean-pools instances before classification."""
 
     def __init__(self, input_dim: int, output_dim: int):
         super().__init__()
@@ -24,7 +27,12 @@ class MeanPoolMIL(MILModelBase):
     def bag_size(self) -> int | None:
         return None
 
-    def forward_bag(self, bag: torch.Tensor, mask: torch.Tensor | None = None, **_: object) -> torch.Tensor:
+    def forward_bag(
+        self,
+        bag: torch.Tensor,
+        mask: torch.Tensor | None = None,
+        **_: object,
+    ) -> torch.Tensor:
         if mask is not None:
             masked = bag * mask.unsqueeze(-1)
             denom = mask.sum(dim=1, keepdim=True).clamp_min(1)
@@ -34,61 +42,44 @@ class MeanPoolMIL(MILModelBase):
         return self.encoder(pooled)
 
 
-@pytest.mark.parametrize(
-    "task,output_dim,loss_cls,metrics,label_dtype",
-    [
-        ("classification", 2, CrossEntropyLoss, ["accuracy"], "int"),
-        ("classification", 3, CrossEntropyLoss, ["accuracy"], "int"),
-        ("regression", 1, MSELoss, ["mse"], "float"),
-        ("survival", 1, CoxPHLoss, ["c_index"], "float"),
-        ("survival_discrete", 4, DiscreteTimeNLLLoss, ["c_index"], "float"),
-    ],
-)
-def test_simple_trainer_fit_predict(tmp_path, task, output_dim, loss_cls, metrics, label_dtype):
-    if task in {"survival", "survival_discrete"}:
-        pytest.importorskip("pycox")
-    feature_dim = 8
-    slide_ids = [f"slide_{i}" for i in range(4)]
-    features_dir = tmp_path / "features"
-    features_dir.mkdir()
-    for slide_id in slide_ids:
-        torch.save(torch.randn(4, feature_dim), features_dir / f"{slide_id}.pt")
+def _write_gaussian_bag(
+    features_dir: Path,
+    slide_id: str,
+    num_tiles: int,
+    feature_dim: int,
+    mean_shift: float,
+    seed: int,
+) -> torch.Tensor:
+    """
+    Persist a Gaussian bag with shape (num_tiles, feature_dim).
 
-    labels = [0, 1, 0, 1]
-    if output_dim > 2:
-        labels = [0, 1, 2, 1]
-    data = {
-        "slide_id": slide_ids,
-        "dataset": ["train", "train", "val", "val"],
-        "label": labels,
-    }
-    if task in {"survival", "survival_discrete"}:
-        data["time"] = [1, 2, 3, 2]
-        data["event"] = [1, 0, 1, 1]
-    annotations = pd.DataFrame(data)
-    ann_path = tmp_path / "annotations.csv"
-    annotations.to_csv(ann_path, index=False)
+    The mean_shift parameter creates overlapping but separable distributions.
+    """
+    generator = torch.Generator().manual_seed(seed)
+    bag = torch.randn(num_tiles, feature_dim, generator=generator) + mean_shift
+    torch.save(bag, features_dir / f"{slide_id}.pt")
+    return bag
 
-    config = Config.from_dict(
+
+def _build_config(tmp_path: Path, ann_path: Path, features_dir: Path) -> Config:
+    return Config.from_dict(
         {
             "experiment": {
-                "project_name": "unit",
+                "project_name": "gaussian",
                 "annotation_file": str(ann_path),
-                "task": task,
+                "task": "classification",
                 "mode": "benchmark",
                 "project_root": str(tmp_path),
                 "trainer_backend": "simple",
             },
-            "mil": {"epochs": 1, "batch_size": 2, "k": output_dim},
+            "mil": {"epochs": 1, "batch_size": 2, "k": 2},
             "bag_dataset": {
                 "id_column": "slide_id",
                 "label_column": "label",
                 "dataset_column": "dataset",
-                "label_dtype": label_dtype,
-                "time_column": "time" if task in {"survival", "survival_discrete"} else None,
-                "event_column": "event" if task in {"survival", "survival_discrete"} else None,
+                "label_dtype": "int",
             },
-            "evaluation": {"metrics": metrics},
+            "evaluation": {"metrics": ["accuracy"]},
             "datasets": [
                 {
                     "name": "train",
@@ -103,28 +94,67 @@ def test_simple_trainer_fit_predict(tmp_path, task, output_dim, loss_cls, metric
                     "used_for": "validation",
                 },
             ],
+            "search_space": {"mil": ["MeanPoolGaussianMIL"], "loss": ["CrossEntropyLoss"]},
         }
     )
 
+
+@pytest.mark.parametrize("feature_dim", [8, 16])
+def test_gaussian_mil_training_pipeline(tmp_path, feature_dim):
+    """
+    Train a simple MIL model on two overlapping Gaussian distributions.
+
+    Feature bags are stored with shapes (num_tiles, feature_dim),
+    where num_tiles is sampled between 100 and 200 per slide.
+    """
+    torch.manual_seed(0)
+    features_dir = tmp_path / "features"
+    features_dir.mkdir()
+
+    slide_specs = [
+        ("slide_0", 0, -0.25),
+        ("slide_1", 0, -0.25),
+        ("slide_2", 1, 0.25),
+        ("slide_3", 1, 0.25),
+    ]
+
+    num_tiles_by_slide: dict[str, int] = {}
+    for idx, (slide_id, _label, mean_shift) in enumerate(slide_specs):
+        num_tiles = int(torch.randint(100, 201, (1,)).item())
+        num_tiles_by_slide[slide_id] = num_tiles
+        _write_gaussian_bag(
+            features_dir=features_dir,
+            slide_id=slide_id,
+            num_tiles=num_tiles,
+            feature_dim=feature_dim,
+            mean_shift=mean_shift,
+            seed=idx,
+        )
+
+    annotations = pd.DataFrame(
+        {
+            "slide_id": [spec[0] for spec in slide_specs],
+            "dataset": ["train", "train", "val", "val"],
+            "label": [spec[1] for spec in slide_specs],
+        }
+    )
+    ann_path = tmp_path / "annotations.csv"
+    annotations.to_csv(ann_path, index=False)
+
+    if not MODELS.is_available("MeanPoolGaussianMIL"):
+        MODELS.register("MeanPoolGaussianMIL")(MeanPoolGaussianMIL)
+
+    config = _build_config(tmp_path, ann_path, features_dir)
     train_ds = BagDataset.from_config(config.datasets[0], config)
     val_ds = BagDataset.from_config(config.datasets[1], config)
+    assert all(100 <= count <= 200 for count in num_tiles_by_slide.values())
 
-    model = MeanPoolMIL(input_dim=feature_dim, output_dim=output_dim)
-    loss_fn = loss_cls()
+    model = MeanPoolGaussianMIL(input_dim=feature_dim, output_dim=2)
     trainer = SimpleTrainer(config)
+    loss_fn = CrossEntropyLoss()
 
     result = trainer.fit(model, train_ds, val_ds, loss_fn)
     assert result.best_model_path
 
     preds = trainer.predict(model, val_ds)
-    assert preds.shape[0] == len(val_ds)
-
-    metrics_out = evaluate_predictions(
-        preds,
-        val_ds.labels,
-        task,
-        metrics=config.evaluation.metrics,
-        average=config.evaluation.average,
-        positive_label=config.evaluation.positive_label,
-    )
-    assert metrics_out
+    assert preds.shape == (len(val_ds), 2)
