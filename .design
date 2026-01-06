@@ -1,13 +1,245 @@
-Layering rule (unidirectional deps):
+Overall Design:
+PathBench-MIL adheres to the standards set by 'Clean Architecture' principles, ensuring a modular and maintainable codebase. The project is structured into distinct layers, each responsible for specific functionalities, promoting separation of concerns and facilitating easier testing and scalability.
+This means that code is organized from abstraction to concrete implementation, with dependencies pointing inwards. The core logic and business rules are isolated from external systems, allowing for independent development and testing of each layer.
+The codebase should work independently of frameworks (e.g. slide processing frameworks, MIL training frameworks) to allow for easy swapping of implementations. This is achieved through the use of interfaces and dependency injection.
 
-utils → (nobody depends on it)
+Testing approach:
+We use pytest as the testing framework for PathBench-MIL. The testing strategy includes both unit tests and smoke tests to ensure the reliability and correctness of the codebase.
 
-io → may import utils
+- Unit tests are designed to validate the functionality of individual components in isolation. Typically, we use pass a variety of mock data inputs to ensure that each function or class behaves as expected under different scenarios.
+- Smoke tests are implemented to verify that the major functionalities of the system work together as intended. These tests cover end-to-end scenarios, ensuring that the integration between different components is seamless and that the overall system meets its requirements.
 
-core/* → may import utils, io
+- Tests should check for the following aspects:
+    - Correctness: Ensure that the output (formatting, shape) of functions and methods is as expected for given inputs.
+    - Robustness: Verify that the system can handle edge cases and unexpected inputs gracefully.
 
-training, optimization → may import core/*, utils
+For smoke tests, we accept a range of possible outputs as long as they fall within acceptable bounds. This approach acknowledges the  in the deep learning systems while still ensuring that the core functionalities are intact.
+In order to make the tests tractable, we use small mock datasets, use the CPU for testing instead of GPU, and limit the number of training epochs or iterations.
 
-cli/* → may import everything above, never the other way around
+We can use the sample data from lazyslide:
+"""
+import warnings
+from pathlib import Path
 
-Enforce by keeping imports one‑way and adding a simple import linter in CI later.
+from huggingface_hub import HfApi, hf_hub_download
+from wsidata import open_wsi
+
+from lazyslide._utils import find_stack_level
+
+
+def _load_dataset(slide_file, zarr_file, with_data=True, pbar=False):
+    # Get the current version
+    from packaging.version import Version
+
+    from lazyslide import __version__
+
+    version = Version(__version__)
+    # Get clean version
+    tag = f"v{version.base_version}"
+
+    # Get all the tags from huggingface repo
+    REPO_ID = "RendeiroLab/LazySlide-data"
+    api = HfApi()
+    refs = api.list_repo_refs(REPO_ID, repo_type="dataset")
+    tags = [t.name for t in refs.tags]
+    if tag not in tags:
+        tag = None
+
+    if pbar:
+        warnings.warn(
+            "pbar is deprecated in datasets",
+            DeprecationWarning,
+            stacklevel=find_stack_level(),
+        )
+
+    slide = hf_hub_download(REPO_ID, slide_file, repo_type="dataset", revision=tag)
+    slide_zarr = None
+    if with_data:
+        slide_zarr_zip = hf_hub_download(
+            REPO_ID, zarr_file, repo_type="dataset", revision=tag
+        )
+        slide_zarr = Path(slide_zarr_zip.replace(".zip", ""))
+        # Unzip the zarr file if it is a zip file
+        # But only if it is not already unzipped
+        if not slide_zarr.exists():
+            from zipfile import ZipFile
+
+            with ZipFile(slide_zarr_zip, "r") as zip_ref:
+                zip_ref.extractall(slide_zarr.parent)
+    return open_wsi(slide, store=str(slide_zarr) if with_data else None, pbar=pbar)
+
+
+def sample(with_data: bool = True, pbar: bool = False):
+    """
+    Load a small sample slide (~1.9 MB).
+
+    Source: https://openslide.cs.cmu.edu/download/openslide-testdata/Aperio/CMU-1-Small-Region.svs
+
+    Parameters
+    ----------
+    with_data : bool, default: True
+        Whether to load the associated zarr storage data.
+    pbar : bool, default: False
+        Whether to show the progress bar.
+
+    """
+    return _load_dataset(
+        "sample.svs", "sample.zarr.zip", with_data=with_data, pbar=pbar
+    )
+
+
+def gtex_artery(with_data: bool = True, pbar: bool = False):
+    """
+    A GTEX artery slide.
+
+    Source: https://gtexportal.org/home/histologyPage, GTEX-1117F-0526
+
+    Parameters
+    ----------
+    with_data : bool, default: True
+        Whether to load the associated zarr storage data.
+    pbar : bool, default: False
+        Whether to show the progress bar.
+
+    """
+    return _load_dataset(
+        "GTEX-1117F-0526.svs",
+        "GTEX-1117F-0526.zarr.zip",
+        with_data=with_data,
+        pbar=pbar,
+    )
+
+
+def gtex_small_intestine(with_data: bool = True, pbar: bool = False):
+    """
+    A small GTEX artery slide for testing purposes.
+
+    Source: https://gtexportal.org/home/histologyPage, GTEX-11DXX-1626.svs
+
+    Parameters
+    ----------
+    with_data : bool, default: True
+        Whether to load the associated zarr storage data.
+    pbar : bool, default: False
+        Whether to show the progress bar.
+
+    """
+    return _load_dataset(
+        "GTEX-11DXX-1626.svs",
+        "GTEX-11DXX-1626.zarr.zip",
+        with_data=with_data,
+        pbar=pbar,
+    )
+
+
+def lung_carcinoma(with_data: bool = True, pbar: bool = False):
+    """
+    A lung carcinoma slide.
+
+    Source: https://idr.openmicroscopy.org/webclient/img_detail/9846318/?dataset=10801
+
+    Parameters
+    ----------
+    with_data : bool, default: True
+        Whether to load the associated zarr storage data.
+    pbar : bool, default: False
+        Whether to show the progress bar.
+
+    """
+
+    return _load_dataset(
+        "lung_carcinoma.ndpi", "lung_carcinoma.zarr.zip", with_data=with_data, pbar=pbar
+    )
+"""
+
+
+Tests can be similarly structured to those in lazyslide:
+"""
+import pytest
+
+import lazyslide as zs
+
+TIMM_MODEL = "mobilenetv3_small_050"
+
+
+class TestFeatureExtraction:
+    def test_load_model(self, wsi_small, torch_model_file):
+        zs.tl.feature_extraction(wsi_small, model_path=torch_model_file)
+        # Test feature aggregation
+        zs.tl.feature_aggregation(wsi_small, feature_key="MockNet")
+
+    def test_load_jit_model(self, wsi_small, torch_jit_file):
+        zs.tl.feature_extraction(wsi_small, model_path=torch_jit_file)
+
+    def test_timm_model(self, wsi_small):
+        zs.tl.feature_extraction(wsi_small, model=TIMM_MODEL)
+
+
+@pytest.mark.large_runner
+class TestSlideEncoders:
+    """Tests for all slide encoder models in lazyslide."""
+
+    def test_madeleine_encoder(self, wsi_small):
+        """Test the Madeleine slide encoder."""
+        # Extract features with CONCH model
+        zs.tl.feature_extraction(wsi_small, model="conch")
+
+        # Test Madeleine slide encoder
+        zs.tl.feature_aggregation(wsi_small, feature_key="conch", encoder="madeleine")
+        assert "agg_slide" in wsi_small.tables["conch_tiles"].uns["agg_ops"]
+
+    def test_titan_encoder(self, wsi_small):
+        """Test the Titan slide encoder."""
+        # Extract features with Titan model
+        zs.tl.feature_extraction(wsi_small, model="titan")
+
+        # Test Titan slide encoder
+        zs.tl.feature_aggregation(wsi_small, feature_key="titan", encoder="titan")
+        assert "agg_slide" in wsi_small.tables["titan_tiles"].uns["agg_ops"]
+
+    def test_chief_encoder(self, wsi_small):
+        """Test the CHIEF slide encoder."""
+        # Extract features with CHIEF model
+        zs.tl.feature_extraction(wsi_small, model="chief")
+
+        # Test CHIEF slide encoder
+        zs.tl.feature_aggregation(wsi_small, feature_key="chief", encoder="chief")
+        assert "agg_slide" in wsi_small.tables["chief_tiles"].uns["agg_ops"]
+
+    def test_prism_encoder(self, wsi_small):
+        """Test the Prism slide encoder."""
+        # Extract features with Virchow model
+        zs.tl.feature_extraction(wsi_small, model="virchow")
+
+        # Test Prism slide encoder
+        zs.tl.feature_aggregation(wsi_small, feature_key="virchow", encoder="prism")
+        assert "agg_slide" in wsi_small.tables["virchow_tiles"].uns["agg_ops"]
+
+        # Check that latents were generated
+        agg_info = wsi_small.tables["virchow_tiles"].uns["agg_ops"]["agg_slide"]
+        assert "latents" in agg_info
+"""
+Expected formats:
+    - Features are expected  to be in pytorch format (tensors) with a .pt extension. Shape for tile features: (num_instances, num_features), Shape for slide-level features: (num_features,).
+    
+    
+Expected Annotation formats:
+    - Classification: slide, patient, dataset, category
+    - Regression: slide, patient, dataset, value
+    - Survival (continuous): slide, patient, dataset, time, event
+    - Survival (discrete): slide, patient, dataset, time_bin, event
+    
+    Note that patient and dataset are optional fields.
+    
+Expected MIL formats:
+    - Shape for Bags: (num_instances, num_features)
+    - Batch shape for Bags: (batch_size, num_instances, num_features)
+    - Shape for Slide-level features: (num_features,)
+    - Batch shape for Slide-level features: (batch_size, num_features)
+    - Outputs depend on the task type:
+        - Classification: (batch_size, num_classes)
+        - Regression: (batch_size, 1)
+        - Survival (continuous): (batch_size, 2)  # time and event
+        - Survival (discrete): (batch_size, num_time_bins)
+    
+    
