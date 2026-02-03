@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 from tqdm import tqdm
 from pathlib import Path
 import pandas as pd
@@ -26,12 +26,14 @@ from pathbench.core.io.tissues import SUPPORTED_SUFFIXES as TISSUES_SUFFIXES, DE
 
 logger = logging.getLogger(__name__)
 
+
 class FeatureExtractionPolicy(PolicyBase):
     """
     Policy for extracting features from WSI slides.
     Depends on Experiment for project context (paths, datasets, combos).
     """
 
+    # ---- Initialization ----
     def __init__(self, experiment: Experiment):
         super().__init__(experiment)
 
@@ -47,6 +49,7 @@ class FeatureExtractionPolicy(PolicyBase):
 
         self.backend_name = self.config.slide_processing.backend
 
+    # ---- Public Policy Entrypoints ----
     def execute(self) -> dict[str, Any]:
         """
         Run feature extraction for all benchmark combinations across all datasets.
@@ -54,7 +57,6 @@ class FeatureExtractionPolicy(PolicyBase):
         Returns:
             Status dictionary indicating completion.
         """
-
         logger.info("[Policy] Number of benchmark parameter combos: %d", len(self.combos))
 
         for i, combo_cfg in enumerate(self.combos, start=1):
@@ -67,9 +69,9 @@ class FeatureExtractionPolicy(PolicyBase):
                 combo_cfg.tile_mpp,
             )
             self.execute_combo(combo_cfg)
-        
-        for ds in self.datasets:
-            ds.reset_active()
+
+        for dataset in self.datasets:
+            dataset.reset_active()
 
         logger.info("[Policy] Feature extraction DONE.")
         return {"status": "feature_extraction_done"}
@@ -81,160 +83,279 @@ class FeatureExtractionPolicy(PolicyBase):
         Args:
             combo_cfg: Combination containing model and tiling parameters.
         """
-
-        for ds in self.datasets:
+        for dataset in self.datasets:
             logger.info(
                 "[Policy] Processing dataset '%s' (%d slides, used_for=%s)",
-                ds.name,
-                len(ds),
-                ds.used_for,
+                dataset.name,
+                len(dataset),
+                dataset.used_for,
             )
-            self.execute_dataset(ds=ds, combo_cfg=combo_cfg)
+            self.execute_dataset(dataset=dataset, combo_cfg=combo_cfg)
 
-    def execute_dataset(self, ds: WSIDataset, combo_cfg: ComboConfig) -> None:
+    def execute_dataset(self, dataset: WSIDataset, combo_cfg: ComboConfig) -> None:
         """
         Process all slides in a dataset for one benchmark combination.
 
         Args:
-            ds: Dataset to process.
+            dataset: Dataset to process.
             combo_cfg: Combination containing model and tiling parameters.
         """
-
         processor = self._build_processor()
 
-        seg_config = self._build_seg_config()
+        run_configs = self._build_run_configs(combo_cfg)
+        combo_id, run_paths = self._prepare_paths_for_combo(dataset=dataset, run_configs=run_configs)
+
+        for wsi in tqdm(dataset.samples, desc=f"Dataset: {dataset.name}"):
+            self._execute_wsi(
+                wsi=wsi,
+                processor=processor,
+                combo_id=combo_id,
+                run_configs=run_configs,
+                run_paths=run_paths,
+            )
+
+    # ---- Single-slide Wrapper ----
+    def process_slide(
+        self,
+        dataset: WSIDataset,
+        wsi: WSI,
+        combo_cfg: ComboConfig,
+    ) -> None:
+        """
+        Process a single slide for a single benchmark combination.
+
+        Args:
+            dataset: Dataset that determines output roots (tiles/features/roi).
+            wsi: Slide to process.
+            combo_cfg: Combination containing model and tiling parameters.
+            processor: Slide processing backend instance (should be reused across slides).
+        """
+        processor = self._build_processor()
+
+        run_configs = self._build_run_configs(combo_cfg)
+        combo_id, run_paths = self._prepare_paths_for_combo(dataset=dataset, run_configs=run_configs)
+
+        self._execute_wsi(
+            wsi=wsi,
+            processor=processor,
+            combo_id=combo_id,
+            run_configs=run_configs,
+            run_paths=run_paths,
+        )
+
+    # ---- Core Slide Execution ----
+    def _execute_wsi(
+        self,
+        *,
+        wsi: WSI,
+        processor: SlideProcessorBase,
+        combo_id: str,
+        run_configs: dict[str, Any],
+        run_paths: dict[str, Optional[Path]],
+    ) -> None:
+        """
+        Core implementation for processing exactly one slide for exactly one combo.
+        """
+        slide_id = wsi.slide
+
+        tiles_directory = run_paths["tiles_dir"]
+        features_directory = run_paths["features_dir"]
+        roi_directory = run_paths["roi_dir"]
+
+        if tiles_directory is None or features_directory is None:
+            raise RuntimeError("[Policy] run_paths must contain 'tiles_dir' and 'features_dir'.")
+
+        tiles_path = tiles_directory / slide_id
+        features_path = features_directory / slide_id
+        tissues_path = roi_directory / slide_id if roi_directory is not None else None
+
+        segmentation_config = run_configs["seg_config"]
+        tile_config = run_configs["tile_config"]
+        feature_config = run_configs["feat_config"]
+
+        try:
+            # ---- Load cached artifacts (no WSI open required) ----
+            tiles_dataframe, tile_specification = load_tiles(tiles_path)
+            features_anndata: Optional[ad.AnnData] = load_features(features_path)
+            tissues: Optional[list[np.ndarray]] = None
+
+            # ---- Bind cached tiles if present ----
+            if tiles_dataframe is not None:
+                detected_tiles_path = detect_artifact_path(
+                    tiles_path,
+                    allowed_suffixes=TILES_SUFFIXES,
+                    kind="tiles",
+                    prefer_suffixes=(TILES_DEFAULT,),
+                )
+                if detected_tiles_path is not None:
+                    wsi.bind_active_tiles(combo_id, detected_tiles_path)
+
+            # ---- Bind cached features if present ----
+            if features_anndata is not None:
+                detected_features_path = detect_artifact_path(
+                    features_path,
+                    allowed_suffixes=FEATS_SUFFIXES,
+                    kind="features",
+                    prefer_suffixes=(FEATS_DEFAULT,),
+                )
+                if detected_features_path is not None:
+                    wsi.bind_active_features(combo_id, detected_features_path)
+
+                logger.info("[Policy] Features already exist for slide %s, skipping.", slide_id)
+                return
+
+            # ---- Open slide (always close in finally) ----
+            processor.load_wsi(wsi)
+            try:
+                need_tiling = (tiles_dataframe is None) or (
+                    not processor.validate_tile_spec(tile_specification, config=tile_config)
+                )
+
+                if need_tiling:
+                    # ---- Load cached tissues if present ----
+                    if tissues_path is not None:
+                        detected_tissues_path = detect_artifact_path(
+                            tissues_path,
+                            allowed_suffixes=TISSUES_SUFFIXES,
+                            kind="tissues",
+                            prefer_suffixes=(TISSUES_DEFAULT,),
+                        )
+                        if detected_tissues_path is not None:
+                            tissues = load_tissues(tissues_path)
+                            if tissues is not None:
+                                wsi.bind_active_tissues(combo_id, detected_tissues_path)
+
+                    # ---- Segment tissues if needed ----
+                    if tissues is None:
+                        logger.info("[Policy] Segmenting tissue for slide %s", slide_id)
+                        tissues = processor.segment_tissue(wsi, config=segmentation_config)
+
+                        if tissues_path is not None:
+                            saved_tissues_path = save_tissues(tissues, tissues_path)
+                            if saved_tissues_path.exists():
+                                wsi.bind_active_tissues(combo_id, saved_tissues_path)
+
+                    # ---- Extract tiles ----
+                    logger.info("[Policy] Tiling slide %s", slide_id)
+                    tiles_dataframe, tile_specification = processor.extract_patches(
+                        wsi, tissues, config=tile_config
+                    )
+
+                    saved_tiles_path = save_tiles(tiles_dataframe, tile_specification, tiles_path)
+                    if saved_tiles_path.exists():
+                        wsi.bind_active_tiles(combo_id, saved_tiles_path)
+
+                # ---- Extract features ----
+                logger.info("[Policy] Extracting features for slide %s", slide_id)
+                features_anndata = processor.extract_features(
+                    wsi,
+                    tiles_dataframe,
+                    tile_specification,
+                    config={**feature_config, **tile_config},
+                )
+
+            finally:
+                processor.close_wsi(wsi)
+
+            # ---- Validate + save features ----
+            features_anndata = self._ensure_features_schema(features_anndata, tiles_dataframe)
+            saved_features_path = save_features(features_anndata, features_path)
+
+            features_index_path = saved_features_path.with_suffix(".index.npz")
+            if saved_features_path.exists() and features_index_path.exists():
+                wsi.bind_active_features(combo_id, saved_features_path)
+
+        except Exception:
+            logger.exception("[Policy] Error processing slide %s", slide_id)
+
+    # ---- Run Configuration ----
+    def _build_run_configs(self, combo_cfg: ComboConfig) -> dict[str, Any]:
+        """
+        Build configs needed to run one combination.
+        """
+        segmentation_config = self._build_seg_config()
         tile_config = self._build_tile_config(combo_cfg)
-        feat_config = self._build_feat_config(combo_cfg)
+        feature_config = self._build_feat_config(combo_cfg)
 
-        tile_px = tile_config["tile_px"]
-        tile_mpp = tile_config["tile_mpp"]
-        tile_mpp_str = f"{tile_mpp:g}"
+        return {
+            "seg_config": segmentation_config,
+            "tile_config": tile_config,
+            "feat_config": feature_config,
+        }
 
-        roi_combo_name = self.config.slide_processing.segmentation_method  # TODO: What defines roi combo?
-        tiles_combo_name = f"{tile_px}px_{tile_mpp_str}mpp"
-        feats_combo_name = f"{feat_config['model']}_{tile_px}px_{tile_mpp_str}mpp"
+    # ---- Output Paths and Metadata ----
+    def _prepare_paths_for_combo(
+        self,
+        *,
+        dataset: WSIDataset,
+        run_configs: dict[str, Any],
+    ) -> tuple[str, dict[str, Optional[Path]]]:
+        """
+        Prepare combo-dependent output directories and meta.json files.
 
-        combo_id = f"{roi_combo_name}__{feats_combo_name}"
-        ds.set_active_combo(combo_id, reset=True)
+        Returns:
+            (combo_id, run_paths)
+            where run_paths contains: tiles_dir, features_dir, roi_dir
+        """
+        tile_config = run_configs["tile_config"]
+        feature_config = run_configs["feat_config"]
+        segmentation_config = run_configs["seg_config"]
 
-        roi_root = ds.rois_dir
+        tile_size_pixels = tile_config["tile_px"]
+        tile_mpp_value = tile_config["tile_mpp"]
+        tile_mpp_string = f"{tile_mpp_value:g}"
 
-        tiles_root = Path(ds.tiles_dir) if ds.tiles_dir is not None else self.project_root / "tiles"
-        tiles_dir = tiles_root / tiles_combo_name
+        roi_name = self.config.slide_processing.segmentation_method
+        tiles_directory_name = f"{tile_size_pixels}px_{tile_mpp_string}mpp"
+        features_directory_name = f"{feature_config['model']}_{tile_size_pixels}px_{tile_mpp_string}mpp"
 
-        features_root = Path(ds.features_dir) if ds.features_dir is not None else self.project_root / "features"
-        feats_dir = features_root / feats_combo_name
+        combo_id = f"{roi_name}__{features_directory_name}"
+
+        dataset.set_active_combo(combo_id, reset=True)
+
+        tiles_root_directory = (
+            Path(dataset.tiles_dir) if dataset.tiles_dir is not None else self.project_root / "tiles"
+        )
+        features_root_directory = (
+            Path(dataset.features_dir) if dataset.features_dir is not None else self.project_root / "features"
+        )
+
+        tiles_directory = tiles_root_directory / tiles_directory_name
+        features_directory = features_root_directory / features_directory_name
+
+        roi_directory: Optional[Path] = None
+        if dataset.rois_dir is not None:
+            roi_directory = Path(dataset.rois_dir) / roi_name
 
         self._ensure_dir_metadata(
-            tiles_dir,
+            tiles_directory,
             expected_meta={
                 "kind": "tiles_combo",
                 "tile_config": dict(tile_config),
-                "seg_config": dict(seg_config),
+                "seg_config": dict(segmentation_config),
             },
         )
 
         self._ensure_dir_metadata(
-            feats_dir,
+            features_directory,
             expected_meta={
                 "kind": "features_combo",
                 "tile_config": dict(tile_config),
-                "feat_config": dict(feat_config),
+                "feat_config": dict(feature_config),
             },
         )
 
-        for wsi in tqdm(ds.samples, desc=f"Dataset: {ds.name}"):
-            slide_id = wsi.slide
+        run_paths: dict[str, Optional[Path]] = {
+            "tiles_dir": tiles_directory,
+            "features_dir": features_directory,
+            "roi_dir": roi_directory,
+        }
+        return combo_id, run_paths
 
-            tiles_path = tiles_dir / slide_id
-            feats_path = feats_dir / slide_id
-            tissues_path = None
-            if roi_root is not None:
-                tissues_path = Path(roi_root) / roi_combo_name / slide_id  # base (no suffix)
-
-            try:
-                # ---- load cached artifacts (no WSI open required) ----
-                tiles_df, tile_spec = load_tiles(tiles_path)
-                feats: Optional[ad.AnnData] = load_features(feats_path)
-                tissues: Optional[list[np.ndarray]] = None
-
-                # If cached tiles exist -> bind tiles path now
-                if tiles_df is not None:
-                    p_tiles = detect_artifact_path(tiles_path, allowed_suffixes=TILES_SUFFIXES, kind="tiles", prefer_suffixes=(TILES_DEFAULT,))
-                    if p_tiles is not None:
-                        wsi.bind_active_tiles(combo_id, p_tiles)
-
-                # If cached features exist -> bind features paths now (pt + index)
-                if feats is not None:
-                    p_feats = detect_artifact_path(feats_path, allowed_suffixes=FEATS_SUFFIXES, kind="features", prefer_suffixes=(FEATS_DEFAULT,))
-                    if p_feats is not None:
-                        wsi.bind_active_features(combo_id, p_feats)
-                    logger.info("[Policy] Features already exist for slide %s, skipping.", slide_id)
-                    continue
-
-                # ---- open slide (always close in finally) ----
-                processor.load_wsi(wsi)
-                try:
-                    need_tiling = (tiles_df is None) or (
-                        not processor.validate_tile_spec(tile_spec, config=tile_config)
-                    )
-
-                    if need_tiling:
-                        # Try load tissues if roi_root configured and file exists
-                        if tissues_path is not None:
-                            p_tissues = detect_artifact_path(tissues_path, allowed_suffixes=TISSUES_SUFFIXES, kind="tissues", prefer_suffixes=(TISSUES_DEFAULT,))
-                            if p_tissues is not None:
-                                tissues = load_tissues(tissues_path)
-                                if tissues is not None:
-                                    wsi.bind_active_tissues(combo_id, p_tissues)
-
-                        if tissues is None:
-                            logger.info("[Policy] Segmenting tissue for slide %s", slide_id)
-                            tissues = processor.segment_tissue(wsi, config=seg_config)
-
-                            # Save + bind tissues only if roi_root configured
-                            if tissues_path is not None:
-                                saved_tissues = save_tissues(tissues, tissues_path)
-                                if saved_tissues.exists():
-                                    wsi.bind_active_tissues(combo_id, saved_tissues)
-
-                        logger.info("[Policy] Tiling slide %s", slide_id)
-                        tiles_df, tile_spec = processor.extract_patches(wsi, tissues, config=tile_config)
-
-                        saved_tiles = save_tiles(tiles_df, tile_spec, tiles_path)
-
-                        # After saving, bind tiles path (only if file exists)
-                        if saved_tiles.exists():
-                            wsi.bind_active_tiles(combo_id, saved_tiles)
-
-                    logger.info("[Policy] Extracting features for slide %s", slide_id)
-                    feats = processor.extract_features(
-                        wsi, tiles_df, tile_spec, config={**feat_config, **tile_config}
-                    )
-
-                finally:
-                    processor.close_wsi(wsi)
-
-                feats = self._ensure_features_schema(feats, tiles_df)
-                saved_feats = save_features(feats, feats_path)
-
-                # After saving, bind features path(s) only if they exist
-                idx = saved_feats.with_suffix(".index.npz")
-                if saved_feats.exists() and idx.exists():
-                    wsi.bind_active_features(combo_id, saved_feats)
-
-            except Exception:
-                logger.exception("[Policy] Error processing slide %s", slide_id)
-
+    # ---- Backend and Config Builders ----
     def _build_processor(self) -> SlideProcessorBase:
         """
         Instantiate the configured slide processing backend.
-
-        Returns:
-            Backend processor instance.
-
-        Raises:
-            ValueError: If the backend is not registered.
         """
         ProcessorClass = SLIDE_PROCESSORS.get(self.backend_name)
         if not ProcessorClass:
@@ -247,9 +368,6 @@ class FeatureExtractionPolicy(PolicyBase):
     def _build_seg_config(self) -> dict[str, Any]:
         """
         Build segmentation config for the backend.
-
-        Returns:
-            Dict with segmentation method and parameters.
         """
         return {
             "method": self.config.slide_processing.segmentation_method,
@@ -263,12 +381,6 @@ class FeatureExtractionPolicy(PolicyBase):
     def _build_tile_config(self, combo_cfg: ComboConfig) -> dict[str, Any]:
         """
         Build tiling config for the backend.
-
-        Args:
-            combo_cfg: Combination providing tile_px and tile_mpp.
-
-        Returns:
-            Dict containing tiling parameters.
         """
         return {
             "tile_px": combo_cfg.tile_px,
@@ -279,30 +391,17 @@ class FeatureExtractionPolicy(PolicyBase):
     def _build_feat_config(self, combo_cfg: ComboConfig) -> dict[str, Any]:
         """
         Build feature extraction config for the backend.
-
-        Args:
-            combo_cfg: Combination providing feature extraction model.
-
-        Returns:
-            Dict containing model and parameters.
         """
         return {
             "model": combo_cfg.feature_extraction,
             "params": {},
         }
 
+    # ---- Metadata and Schema ----
     def _ensure_dir_metadata(self, dir_path: Path, expected_meta: dict) -> None:
         """
         Ensure meta.json exists in dir_path and matches expected.
-
-        Args:
-            dir_path: Output directory for a parameter combination.
-            expected: Expected metadata content.
-
-        Raises:
-            ValueError: If existing metadata does not match expected.
         """
-
         dir_path.mkdir(parents=True, exist_ok=True)
         meta_path = dir_path / "meta.json"
 
@@ -320,30 +419,19 @@ class FeatureExtractionPolicy(PolicyBase):
     def _ensure_features_schema(self, feats: ad.AnnData, tiles_df: pd.DataFrame) -> ad.AnnData:
         """
         Ensure required feature fields exist and align with tiles.
-
-        Requires obs['tile_id']; adds obsm['spatial'] from tiles_df if missing.
-
-        Args:
-            feats: Feature AnnData.
-            tiles_df: Tiles table with 'tile_id', 'x', 'y'.
-
-        Returns:
-            Updated AnnData with guaranteed obsm['spatial'].
         """
-        # Require tile_id
         if "tile_id" not in feats.obs.columns:
             raise ValueError("[Policy] Features AnnData must have obs['tile_id'].")
 
-        # Make spatial mandatory (top-left x,y), derived from tiles_df
         if "spatial" not in feats.obsm:
             if not {"tile_id", "x", "y"}.issubset(set(tiles_df.columns)):
                 raise ValueError("[Policy] Tiles must contain columns: tile_id, x, y to build spatial.")
 
             tiles_key = tiles_df.set_index("tile_id")[["x", "y"]]
-            feat_tile_ids = feats.obs["tile_id"].to_numpy()
+            feature_tile_ids = feats.obs["tile_id"].to_numpy()
 
             try:
-                xy = tiles_key.loc[feat_tile_ids].to_numpy(dtype=np.float32)
+                xy = tiles_key.loc[feature_tile_ids].to_numpy(dtype=np.float32)
             except KeyError as e:
                 raise ValueError("[Policy] Features tile_id does not match tiles tile_id.") from e
 
