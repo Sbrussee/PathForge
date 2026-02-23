@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional, List, Tuple
 import numpy as np
 import pandas as pd
 
-from pathbench.core.datasets.wsi import WSI
+from pathbench.core.datasets.wsi_dataset import WSI
 
 class SlideProcessorBase(ABC):
     """Base class for slide processing backends."""

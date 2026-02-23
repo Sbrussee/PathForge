@@ -1,0 +1,87 @@
+# tests/unit/test_h5_tissue.py
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from pathbench.core.io.h5.base import FileHandleH5
+from pathbench.core.io.h5 import tissue as tissue_io
+
+
+def test_h5_tissue_roundtrip(tmp_path: Path) -> None:
+    h5_path = tmp_path / "S1.h5"
+
+    polys_in = [
+        np.array([[0, 0], [10, 0], [10, 10], [0, 0]], dtype=np.float32),
+        np.array([[5, 5], [6, 5], [6, 6], [5, 5]], dtype=np.float32),
+    ]
+
+    with FileHandleH5(h5_path, mode="a") as f:
+        tissue_io.write_tissue(f, polys_in)
+        assert tissue_io.tissue_exists(f) is True
+
+        polys_out = tissue_io.read_tissue(f)
+        assert isinstance(polys_out, list)
+        assert len(polys_out) == 2
+
+        np.testing.assert_allclose(polys_out[0], polys_in[0])
+        np.testing.assert_allclose(polys_out[1], polys_in[1])
+
+
+def test_load_external_tissue_polygons_geojson_polygon_and_multipolygon(tmp_path: Path) -> None:
+    geojson_path = tmp_path / "S1.geojson"
+
+    # One Polygon + one MultiPolygon (two polygons inside)
+    obj = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"name": "poly"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[0, 0], [10, 0], [10, 10], [0, 0]],
+                    ],
+                },
+            },
+            {
+                "type": "Feature",
+                "properties": {"name": "mpoly"},
+                "geometry": {
+                    "type": "MultiPolygon",
+                    "coordinates": [
+                        [
+                            [[20, 20], [30, 20], [30, 30], [20, 20]],
+                        ],
+                        [
+                            [[40, 40], [50, 40], [50, 50], [40, 40]],
+                        ],
+                    ],
+                },
+            },
+        ],
+    }
+
+    geojson_path.write_text(json.dumps(obj), encoding="utf-8")
+
+    polys = tissue_io.load_external_tissue_polygons(geojson_path)
+
+    assert len(polys) == 3
+    for p in polys:
+        assert isinstance(p, np.ndarray)
+        assert p.ndim == 2 and p.shape[1] == 2
+
+
+def test_load_external_tissue_polygons_unsupported_suffix_raises(tmp_path: Path) -> None:
+    p = tmp_path / "S1.txt"
+    p.write_text("nope", encoding="utf-8")
+
+    with pytest.raises(ValueError) as excinfo:
+        tissue_io.load_external_tissue_polygons(p)
+
+    assert "Unsupported external tissue format" in str(excinfo.value)

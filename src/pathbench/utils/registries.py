@@ -1,11 +1,8 @@
 # src/pathbench/utils/registries.py
 from __future__ import annotations
-import torch
-import timm
-try:
-    import lazyslide as zs
-except ImportError:
-    zs = None
+
+from functools import lru_cache
+from typing import Callable, Optional
 
 from pathbench.utils.registry import Registry
 from pathbench.core.base import CoreRegistries
@@ -37,31 +34,101 @@ SLIDE_PROCESSORS = Registry()
 TRAINERS = Registry()
 
 # Track Lazyslide-specific models for validation
-LAZYSLIDE_MODEL_NAMES = set()
+LAZYSLIDE_MODEL_NAMES: set[str] = set()
 
-def populate_dynamic_registries():
-    """
-    Populates registries with dynamic entries from external libraries.
-    """
-    # 1. Register timm models
-    for model_name in timm.list_models():
-        if not FEATURE_EXTRACTORS.is_available(model_name):
-            @FEATURE_EXTRACTORS.register(model_name)
-            def _timm_factory(name=model_name, pretrained=True, **kwargs):
-                return timm.create_model(name, pretrained=pretrained, **kwargs)
+# ---------------------------------------------------------------------------
+# Optional dependency discovery (safe, lazy)
+# ---------------------------------------------------------------------------
 
-    # 2. Register lazyslide models (only if installed)
+@lru_cache(maxsize=1)
+def _timm_module():
+    try:
+        import timm  # noqa: WPS433
+        return timm
+    except Exception:
+        return None
+
+
+@lru_cache(maxsize=1)
+def _lazyslide_module():
+    try:
+        import lazyslide as zs  # noqa: WPS433
+        return zs
+    except Exception:
+        return None
+
+
+@lru_cache(maxsize=1)
+def timm_model_names() -> set[str]:
+    timm = _timm_module()
+    if timm is None:
+        return set()
+    try:
+        return set(timm.list_models())
+    except Exception:
+        return set()
+
+
+@lru_cache(maxsize=1)
+def lazyslide_model_names() -> set[str]:
+    zs = _lazyslide_module()
+    if zs is None:
+        return set()
+    try:
+        return set(zs.models.list_models())
+    except Exception:
+        return set()
+
+
+def is_feature_extractor_available(name: str) -> bool:
+    """
+    Used by config validation without importing timm/torchvision at module import time.
+    """
+    if FEATURE_EXTRACTORS.is_available(name):
+        return True
+    if name in timm_model_names():
+        return True
+    if name in lazyslide_model_names():
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Dynamic registry population (explicit, not at import time)
+# ---------------------------------------------------------------------------
+
+_populated = False
+
+
+def populate_dynamic_registries() -> None:
+    """
+    Populate FEATURE_EXTRACTORS with entries from timm and lazyslide.
+
+    IMPORTANT:
+    - This is NOT called automatically at import time.
+    - Call it explicitly in CLI/policy paths that require timm/lazyslide.
+    """
+    global _populated
+    if _populated:
+        return
+
+    timm = _timm_module()
+    if timm is not None:
+        for model_name in timm_model_names():
+            if not FEATURE_EXTRACTORS.is_available(model_name):
+                @FEATURE_EXTRACTORS.register(model_name)
+                def _timm_factory(name=model_name, pretrained=True, **kwargs):
+                    # Import torch lazily as well (only when actually constructing models)
+                    return timm.create_model(name, pretrained=pretrained, **kwargs)
+
+    zs = _lazyslide_module()
     if zs is not None:
-        for model_name in zs.models.list_models():
+        for model_name in lazyslide_model_names():
             LAZYSLIDE_MODEL_NAMES.add(model_name)
-            
-            # If name conflict with timm (e.g. resnet50), we rely on user preference 
-            # or registration order. Here we skip if already registered (timm priority)
-            # OR we can force overwrite if lazyslide implementation is preferred.
             if not FEATURE_EXTRACTORS.is_available(model_name):
                 @FEATURE_EXTRACTORS.register(model_name)
                 def _zs_factory(name=model_name, **kwargs):
-                    return name # Lazyslide extractors might just return the string ID for the backend
+                    # Lazyslide backends often take model name strings
+                    return name
 
-# Auto-populate
-populate_dynamic_registries()
+    _populated = True
