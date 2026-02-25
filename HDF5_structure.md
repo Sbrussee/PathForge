@@ -45,7 +45,7 @@ meta/
 
 ## 1. Tile Coordinates (Patch Sampling)
 
-**Purpose:** spatial definition of MIL bags (tile sampling grid), including the tiling metadata required to interpret the coordinates.
+**Purpose:** spatial definition of MIL bags (tile sampling grid), including the tiling metadata required to interpret the coordinates and an optional overview visualization of the tiled slide.
 
 **Bag identity:**  
 `bag_id = "{tile_px}px_{tile_mpp:g}mpp"`  
@@ -94,6 +94,29 @@ meta/
 - `tiling_spec` is **backend-agnostic** (no lazyslide/wsidata internals stored here)
 - `coords` provide the **read window** (`read_w/read_h/read_level`); `tiling_spec` provides the **output intent** (`tile_px/tile_mpp/stride_px`)
 - Cache reuse checks compare a **subset** of keys (typically `tile_px`, `tile_mpp`, `stride_px`, `coord_space`)
+
+### 1.3 Tiles overview (optional visualization)
+
+**Purpose:** compact visualization of the tiling result for reporting/inspection (thumbnail with tile grid overlay and tile count).
+
+**Path (per bag):**  
+`bags/{bag_id}/tiles_overview`
+
+**Encoding:** compressed image bytes stored as a 1D `uint8` array (currently JPEG bytes)
+
+**Shape:** `(M,)`  
+**Dtype:** `uint8`
+
+**Content**
+- Grayscale thumbnail of the slide
+- Tile grid overlay derived from `coords`
+- Simple title text: `"{slide_id}: {num_tiles} tiles"`
+
+**Rules**
+- Optional: only written when `experiment.report = true`
+- If tiles are **newly created**, `tiles_overview` is **always (re)written**
+- If tiles are **reused**, `tiles_overview` is written **only if missing**
+- `tiles_overview` is tied to the bag (`bag_id`) and therefore corresponds to the same tiling setup as `coords` and `tiling_spec`
 
 ---
 

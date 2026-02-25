@@ -1,10 +1,10 @@
-
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Tuple
 import numpy as np
 import pandas as pd
 
 from pathbench.core.datasets.wsi_dataset import WSI
+
 
 class SlideProcessorBase(ABC):
     """Base class for slide processing backends."""
@@ -19,6 +19,26 @@ class SlideProcessorBase(ABC):
     def close_wsi(self, wsi: WSI) -> None:
         """
         Close the backend-native slide object (if needed) and clear it from the WSI.
+        """
+        pass
+
+    @abstractmethod
+    def get_thumbnail(self, wsi: WSI, level: int = -1) -> Tuple[Any, float, float]:
+        """
+        Retrieve a thumbnail image for visualization and the downscale factors
+        relative to level-0 (base resolution) coordinates.
+
+        Args:
+            wsi: Loaded WSI.
+            level: Pyramid level to use for thumbnail retrieval. By convention,
+                   level=-1 means the lowest-resolution level.
+
+        Returns:
+            (thumbnail_image, downscale_x, downscale_y)
+
+            - thumbnail_image: backend-defined image object (e.g. PIL image / ndarray)
+            - downscale_x: factor such that x_thumb = x_level0 / downscale_x
+            - downscale_y: factor such that y_thumb = y_level0 / downscale_y
         """
         pass
 
@@ -69,7 +89,3 @@ class SlideProcessorBase(ABC):
     def inspect_slide(self, wsi: WSI) -> None:
         """Inspect the slide object for debugging or analysis."""
         pass
-    
-    
-    
-    

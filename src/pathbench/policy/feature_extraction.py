@@ -20,6 +20,9 @@ from pathbench.core.io.h5 import tiles as tiles_io
 from pathbench.core.io.h5 import features as features_io
 from pathbench.core.io.h5 import tissue as tissue_io
 
+from pathbench.core.visualization.tiles_overview import render_tiles_overview_image
+from pathbench.core.reports.tiles_report_pdf import create_tiles_report_pdf 
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,6 +51,10 @@ class FeatureExtractionPolicy(PolicyBase):
                 combo_cfg.tile_mpp,
             )
             self.execute_combo(combo_cfg)
+
+        # ---- Generate tile reports once after all combos (dedupe on bag_id) ----
+        if bool(self.config.experiment.report):
+            self._generate_tiles_reports_after_extraction()
 
         logger.info("[Policy] Feature extraction DONE.")
         return {"status": "feature_extraction_done"}
@@ -104,6 +111,8 @@ class FeatureExtractionPolicy(PolicyBase):
         extractor_name: str = str(feature_config["model"])
         bag_id = self._bag_id(tile_px=tile_px, tile_mpp=tile_mpp)
 
+        report_enabled = bool(self.config.experiment.report)
+
         expected_tiling_spec = {
             "tile_px": tile_px,
             "tile_mpp": tile_mpp,
@@ -115,14 +124,18 @@ class FeatureExtractionPolicy(PolicyBase):
             with FileHandleH5(artifact_path, mode="a") as slide_artifact:
                 # ---- Fast skip if features already valid (no slide open) ----
                 coords_row_count = tiles_io.coords_num_rows(slide_artifact, bag_id)
-                if features_io.features_exist(
+                features_already_exist = features_io.features_exist(
                     slide_artifact,
                     bag_id=bag_id,
                     extractor_name=extractor_name,
                     expected_rows=coords_row_count,
-                ):
-                    logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, bag_id, extractor_name)
-                    return
+                )
+
+                # Only skip immediately if we do NOT need to create a missing tiles_overview
+                if features_already_exist:
+                    if (not report_enabled) or tiles_io.tiles_overview_exists(slide_artifact, bag_id):
+                        logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, bag_id, extractor_name)
+                        return
 
                 # ---- Coords reuse or recompute ----
                 coords_are_valid = tiles_io.coords_exist(slide_artifact, bag_id) and tiles_io.tiling_spec_matches(
@@ -133,6 +146,7 @@ class FeatureExtractionPolicy(PolicyBase):
 
                 coords_array: Optional[np.ndarray] = None
                 tiling_spec: Optional[dict[str, Any]] = None
+                tiles_newly_created = False
 
                 if coords_are_valid:
                     coords_array = tiles_io.read_coords(slide_artifact, bag_id)
@@ -162,9 +176,33 @@ class FeatureExtractionPolicy(PolicyBase):
 
                     tiles_io.write_coords(slide_artifact, bag_id, coords_array)
                     tiles_io.write_tiling_spec(slide_artifact, bag_id, tiling_spec)
+                    tiles_newly_created = True
 
                 if coords_array is None or tiling_spec is None:
                     raise RuntimeError("[Policy] Internal error: coords_array/tiling_spec not resolved.")
+                
+                # ---- tiles_overview (optional report visualization) ----
+                if report_enabled:
+                    should_write_tiles_overview = tiles_newly_created or (
+                        not tiles_io.tiles_overview_exists(slide_artifact, bag_id)
+                    )
+
+                    if should_write_tiles_overview:
+                        slide_processor.load_wsi(wsi)
+                        try:
+                            thumbnail_image, downscale_x, downscale_y = slide_processor.get_thumbnail(wsi, level=-1)
+                            tiles_overview_bytes = render_tiles_overview_image(
+                                thumbnail_image=thumbnail_image,
+                                coords_array=coords_array,
+                                downscale_x=downscale_x,
+                                downscale_y=downscale_y,
+                                slide_id=slide_id,
+                                tiling_spec=tiling_spec,
+                            )
+                        finally:
+                            slide_processor.close_wsi(wsi)
+
+                        tiles_io.write_tiles_overview(slide_artifact, bag_id, tiles_overview_bytes)
 
                 # ---- Features reuse or recompute ----
                 if features_io.features_exist(
@@ -308,3 +346,82 @@ class FeatureExtractionPolicy(PolicyBase):
                 f"[Policy] features rows must match coords rows: expected {expected_rows}, got {feature_matrix.shape[0]}."
             )
         return feature_matrix
+
+    # ------------------------------------------------------------------
+    # Report generation (after all combos)
+    # ------------------------------------------------------------------
+
+    def _generate_tiles_reports_after_extraction(self) -> None:
+        unique_bag_ids = self._collect_unique_report_bag_ids()
+
+        if not unique_bag_ids:
+            logger.info("[Policy] report=True but no tiling combos found; skipping tile reports.")
+            return
+
+        logger.info(
+            "[Policy] Generating tile overview PDF reports for %d unique bag_ids across %d datasets.",
+            len(unique_bag_ids),
+            len(self.datasets),
+        )
+
+        for dataset in self.datasets:
+            for bag_id in unique_bag_ids:
+                try:
+                    self._generate_tiles_report_for_dataset_bag(dataset=dataset, bag_id=bag_id)
+                except Exception:
+                    logger.exception(
+                        "[Policy] Failed to generate tile report for dataset='%s', bag_id='%s'",
+                        dataset.name,
+                        bag_id,
+                    )
+
+    def _collect_unique_report_bag_ids(self) -> list[str]:
+        """
+        Deduplicate bag_ids across combos while preserving order.
+
+        Important: bag_id depends only on tile_px + tile_mpp, so multiple feature
+        extractors should map to the same report target.
+        """
+        seen: set[str] = set()
+        bag_ids: list[str] = []
+
+        for combo_cfg in self.combos:
+            bag_id = self._bag_id(
+                tile_px=int(combo_cfg.tile_px),
+                tile_mpp=float(combo_cfg.tile_mpp),
+            )
+            if bag_id in seen:
+                continue
+            seen.add(bag_id)
+            bag_ids.append(bag_id)
+
+        return bag_ids
+
+    def _generate_tiles_report_for_dataset_bag(self, *, dataset: WSIDataset, bag_id: str) -> None:
+        """
+        Wrapper around the PDF report generator.
+
+        Keeps the rest of the policy independent from the exact reporting function
+        signature used in pathbench.core.reporting.tiles_report_pdf.
+        """
+
+        logger.info(
+            "[Policy] Generating tile report for dataset='%s' bag_id='%s' (artifacts_dir=%s)",
+            dataset.name,
+            bag_id,
+            dataset.artifacts_dir,
+        )
+
+        output_pdf = create_tiles_report_pdf(
+            dataset=dataset,
+            bag_id=bag_id,
+            output_path=None,   # timestamped default in dataset.artifacts_dir
+            timestamp=None,     # use current time
+        )
+
+        logger.info(
+            "[Policy] Tile report generated for dataset='%s' bag_id='%s': %s",
+            dataset.name,
+            bag_id,
+            output_pdf,
+        )

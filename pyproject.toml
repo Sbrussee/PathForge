@@ -23,6 +23,9 @@ dependencies = [
     "pytorch-lightning",
     "optuna",
     "shapely",
+    "transformers[torch]>=5.2.0",
+    "pillow>=12.0.0",
+    "reportlab>=4.4.10",
 ]
 
 [project.optional-dependencies]
@@ -43,7 +46,10 @@ cu128 = [
 
 survival = ["scikit-survival"]
 gnn = ["torch-geometric>=2.5"]
-hf = ["huggingface_hub>=0.25"]
+hf = [
+    "huggingface_hub>=1.0",
+    "typer",
+]
 docs = ["mkdocs-material>=9.5"]
 
 dev = [

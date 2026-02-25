@@ -1,7 +1,7 @@
 # src/pathbench/core/slide_processing/lazyslide.py
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 import logging
 
 import lazyslide as zs
@@ -311,6 +311,78 @@ class LazySlideProcessor(SlideProcessorBase):
         tile_id = np.arange(coords.shape[0]).astype(str)
 
         return self._xy_to_backend_tiles_table(x, y, tile_px=int(tile_px), tile_id=tile_id)
+    
+    # ---------------------------------------------------------------------
+    # Thumnail helpers
+    # ---------------------------------------------------------------------
+
+    def _get_level0_shape(self, wsi_obj: Any) -> tuple[int, int]:
+        """
+        Return level-0 shape as (height, width) from LazySlide/WSIData.
+
+        In our environment, `wsi_obj.properties.shape` is in (H, W) order.
+        """
+        props = getattr(wsi_obj, "properties", None)
+        if props is None or not hasattr(props, "shape"):
+            raise RuntimeError("[LazySlide] Could not determine level-0 shape: missing wsi.obj.properties.shape.")
+
+        shape = getattr(props, "shape")
+        try:
+            h0 = int(shape[0])
+            w0 = int(shape[1])
+        except Exception as e:
+            raise RuntimeError(
+                f"[LazySlide] Invalid wsi.obj.properties.shape format: {shape!r}"
+            ) from e
+
+        if h0 <= 0 or w0 <= 0:
+            raise RuntimeError(f"[LazySlide] Invalid level-0 shape values: {shape!r}")
+
+        return h0, w0
+
+
+    def _thumbnail_to_rgb_uint8_numpy(self, thumb_obj: Any) -> np.ndarray:
+        """
+        Convert LazySlide/SpatialData thumbnail object into HxWx3 uint8 numpy array.
+        """
+        # Common wrappers (xarray / image models)
+        src = thumb_obj
+        if hasattr(src, "values"):
+            src = src.values
+        elif hasattr(src, "data"):
+            src = src.data
+
+        arr = np.asarray(src)
+
+        # If channel-first (C,H,W), convert to H,W,C
+        if arr.ndim == 3 and arr.shape[0] in (3, 4) and arr.shape[-1] not in (3, 4):
+            arr = np.moveaxis(arr, 0, -1)
+
+        # grayscale -> RGB
+        if arr.ndim == 2:
+            arr = np.stack([arr, arr, arr], axis=-1)
+
+        if arr.ndim != 3 or arr.shape[-1] not in (3, 4):
+            raise RuntimeError(
+                f"[LazySlide] Unsupported thumbnail array shape for visualization: {arr.shape}"
+            )
+
+        # RGBA -> RGB
+        if arr.shape[-1] == 4:
+            arr = arr[..., :3]
+
+        # Normalize dtype to uint8
+        if arr.dtype != np.uint8:
+            if np.issubdtype(arr.dtype, np.floating):
+                arr = np.nan_to_num(arr, nan=0.0, posinf=255.0, neginf=0.0)
+                # If likely 0..1 floats, scale to 0..255
+                if arr.size > 0:
+                    max_val = float(np.max(arr))
+                    if max_val <= 1.5:
+                        arr = arr * 255.0
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
+
+        return arr
 
     # ---------------------------------------------------------------------
     # SlideProcessorBase API
@@ -332,7 +404,38 @@ class LazySlideProcessor(SlideProcessorBase):
 
     # ---------------------------------------------------------------------
     # Policy methods
-    # ---------------------------------------------------------------------
+    # --------------------------------------------------------------------- 
+
+    def get_thumbnail(self, wsi: WSI, level: int = -1) -> Tuple[Any, float, float]:
+        """
+        Return a thumbnail image and downscale factors relative to level-0 coords.
+
+        Returns:
+            (thumbnail_image, downscale_x, downscale_y)
+
+        Notes:
+        - Current implementation prefers LazySlide's existing 'wsi_thumbnail'.
+        - `level` is accepted for API compatibility; for now we use the stored thumbnail.
+        """
+        if getattr(wsi, "_obj", None) is None:
+            raise RuntimeError("[LazySlide] WSI not loaded. Call load_wsi(wsi) first.")
+
+        if "wsi_thumbnail" not in wsi.obj:
+            raise RuntimeError("[LazySlide] 'wsi_thumbnail' not found on loaded WSI object.")
+
+        thumb_obj = wsi.obj["wsi_thumbnail"]
+        thumb = self._thumbnail_to_rgb_uint8_numpy(thumb_obj)  # HxWx3 uint8
+
+        h_thumb, w_thumb = thumb.shape[:2]
+        if h_thumb <= 0 or w_thumb <= 0:
+            raise RuntimeError("[LazySlide] Invalid thumbnail dimensions.")
+
+        h0, w0 = self._get_level0_shape(wsi.obj)
+
+        downscale_x = float(w0) / float(w_thumb)
+        downscale_y = float(h0) / float(h_thumb)
+
+        return thumb, downscale_x, downscale_y
 
     def segment_tissue(self, wsi: WSI, config: Dict[str, Any]) -> List[np.ndarray]:
         method = config.get("method", "otsu")

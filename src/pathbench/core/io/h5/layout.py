@@ -13,6 +13,7 @@ class H5Layout:
     bags_group: str = "bags"
     coords_name: str = "coords"  # (N,5) int32
     tiling_spec_name: str = "tiling_spec"  # scalar UTF-8 JSON string
+    tiles_overview_name: str = "tiles_overview"  # JPEG bytes stored as uint8 vector
     features_group_name: str = "features"  # features/{extractor} -> (N,D) float32
 
     def bag_group(self, bag_id: str) -> str:
@@ -24,6 +25,9 @@ class H5Layout:
 
     def tiling_spec_dataset(self, bag_id: str) -> str:
         return f"{self.bag_group(bag_id)}/{self.tiling_spec_name}"
+
+    def tiles_overview_dataset(self, bag_id: str) -> str:
+        return f"{self.bag_group(bag_id)}/{self.tiles_overview_name}"
 
     def features_group(self, bag_id: str) -> str:
         return f"{self.bag_group(bag_id)}/{self.features_group_name}"

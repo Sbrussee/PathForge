@@ -126,3 +126,68 @@ def tiling_spec_matches(
             return False
 
     return True
+
+
+# ---- tiles_overview ---------------------------------------------------------
+
+def tiles_overview_exists(
+    slide_artifact: FileHandleH5,
+    bag_id: str,
+    *,
+    layout: H5Layout = DEFAULT_LAYOUT,
+) -> bool:
+    return exists(slide_artifact.h5, layout.tiles_overview_dataset(bag_id))
+
+
+def write_tiles_overview(
+    slide_artifact: FileHandleH5,
+    bag_id: str,
+    image_bytes: bytes,
+    *,
+    layout: H5Layout = DEFAULT_LAYOUT,
+) -> None:
+    """
+    Store compressed image bytes (e.g. JPEG) for the bag tiles overview.
+
+    Stored as a 1D uint8 array for robust binary storage in HDF5.
+    Existing dataset is overwritten by write_array_dataset.
+    """
+    if not isinstance(image_bytes, (bytes, bytearray, memoryview)):
+        raise TypeError(f"image_bytes must be bytes-like. Got {type(image_bytes)}.")
+
+    # memoryview avoids an unnecessary copy before np.frombuffer
+    mv = memoryview(image_bytes)
+    arr = np.frombuffer(mv, dtype=np.uint8)
+    if arr.ndim != 1:
+        raise ValueError("image_bytes must produce a 1D uint8 buffer.")
+
+    write_array_dataset(
+        slide_artifact.h5,
+        layout.tiles_overview_dataset(bag_id),
+        arr,
+        dtype=np.uint8,
+    )
+
+
+def read_tiles_overview(
+    slide_artifact: FileHandleH5,
+    bag_id: str,
+    *,
+    layout: H5Layout = DEFAULT_LAYOUT,
+) -> bytes:
+    payload = read_array_dataset(slide_artifact.h5, layout.tiles_overview_dataset(bag_id))
+
+    # Common/expected case: stored as 1D uint8 array
+    if isinstance(payload, np.ndarray):
+        arr = np.asarray(payload, dtype=np.uint8)
+        if arr.ndim != 1:
+            raise ValueError(f"tiles_overview must be a 1D uint8 array. Got shape {arr.shape}.")
+        return arr.tobytes()
+
+    # Robust fallback for scalar byte-like payloads (e.g. np.void / bytes / memoryview)
+    try:
+        return bytes(payload)
+    except Exception as e:
+        raise ValueError(
+            f"tiles_overview payload could not be converted to bytes (type={type(payload)!r})."
+        ) from e

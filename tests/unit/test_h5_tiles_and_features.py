@@ -92,3 +92,36 @@ def test_read_features_rejects_non_2d(tmp_path: Path) -> None:
             _ = features_io.read_features(f, bag_id, extractor)
 
         assert "features must have shape (N,D)" in str(excinfo.value)
+
+
+def test_tiles_overview_roundtrip_and_overwrite(tmp_path: Path) -> None:
+    h5_path = tmp_path / "S1.h5"
+    bag_id = "256px_0.5mpp"
+
+    overview_v1 = b"\xff\xd8\xff\xe0fakejpeg_v1"
+    overview_v2 = b"\xff\xd8\xff\xe0fakejpeg_v2_longer"
+
+    with FileHandleH5(h5_path, mode="a") as f:
+        assert tiles_io.tiles_overview_exists(f, bag_id) is False
+
+        tiles_io.write_tiles_overview(f, bag_id, overview_v1)
+        assert tiles_io.tiles_overview_exists(f, bag_id) is True
+
+        out_v1 = tiles_io.read_tiles_overview(f, bag_id)
+        assert isinstance(out_v1, (bytes, bytearray))
+        assert bytes(out_v1) == overview_v1
+
+        # overwrite should replace existing bytes
+        tiles_io.write_tiles_overview(f, bag_id, overview_v2)
+        out_v2 = tiles_io.read_tiles_overview(f, bag_id)
+        assert isinstance(out_v2, (bytes, bytearray))
+        assert bytes(out_v2) == overview_v2
+
+
+def test_write_tiles_overview_rejects_non_bytes(tmp_path: Path) -> None:
+    h5_path = tmp_path / "S1.h5"
+    bag_id = "256px_0.5mpp"
+
+    with FileHandleH5(h5_path, mode="a") as f:
+        with pytest.raises((TypeError, ValueError)):
+            tiles_io.write_tiles_overview(f, bag_id, "not-bytes")  # type: ignore[arg-type]

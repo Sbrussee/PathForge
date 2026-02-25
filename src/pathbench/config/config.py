@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator, Validat
 
 # Internal Imports
 from pathbench.utils.constants import TASK_TYPES, MODE_TYPES, EXPERIMENTS_DIR
-from pathbench.utils.registries import MODELS, FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES, is_feature_extractor_available
+from pathbench.utils.registries import MODELS, FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES, is_feature_extractor_available, all_feature_extractor_names
 from pathbench.core.models.mil_base import MILModelBase
 
 TaskType = Literal[tuple(TASK_TYPES)]
@@ -94,9 +94,9 @@ class SlideProcessingConfig(BaseModel):
     """Settings for slide processing backends."""
     backend: Literal["lazyslide", "openslide", "cucim"] = "lazyslide"
     save_tiles: bool = False
-
-    #TODO: Do we need these two options below? 
     segmentation_method: Optional[str] = None
+
+    #TODO: Do we need this option below? 
     qc_filters: List[Dict[str, Any]] = Field(default_factory=list)
 
 
@@ -123,13 +123,13 @@ class DatasetEntry(BaseModel):
 
 class BenchmarkParameters(BaseModel):
     """
-    Grid search parameters. 
+    Grid search parameters.
     Pydantic validators enforce logic previously implemented manually.
     """
     tile_px: List[int] = Field(default_factory=lambda: [256])
     tile_mpp: List[float] = Field(default_factory=lambda: [0.5])
     feature_extraction: List[str] = Field(default_factory=list)
-    normalization: Optional[List[str]] = None  #TODO: Do we want to keep this and is it available in lazyslide? if so add a validate class 
+    normalization: Optional[List[str]] = None  # TODO: Do we want to keep this and is it available in lazyslide?
     mil: List[str] = Field(default_factory=list)
     loss: List[str] = Field(default_factory=list)
     activation_function: List[str] = Field(default_factory=list)
@@ -154,11 +154,14 @@ class BenchmarkParameters(BaseModel):
     @field_validator("feature_extraction")
     @classmethod
     def validate_feature_extractors(cls, v: list[str]) -> list[str]:
-        for fe in v:
-            if not is_feature_extractor_available(fe):
-                raise ValueError(f"Feature extractor '{fe}' is not registered in timm/lazyslide.")
-        return v
+        for fe in v: 
+            if not is_feature_extractor_available(fe): 
+                raise ValueError(
+                f"Feature extractor '{fe}' is not registered. "
+                f"Available feature extractors: {sorted(all_feature_extractor_names())}"
+            )
 
+        return v
 
     @field_validator('mil')
     @classmethod
@@ -166,10 +169,9 @@ class BenchmarkParameters(BaseModel):
         for model_name in v:
             if not MODELS.is_available(model_name):
                 raise ValueError(f"MIL model '{model_name}' not found in registry.")
-            
+
             # Check Inheritance
             model_cls = MODELS.get(model_name)
-            # If the registry returns a class, we check subclass
             if isinstance(model_cls, type):
                 if not issubclass(model_cls, MILModelBase):
                     raise ValueError(f"Model '{model_name}' does not inherit from MILModelBase.")

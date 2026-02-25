@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from importlib import import_module
 
 import numpy as np
+import pandas as pd
 import pytest
 
-import pandas as pd
-
-from importlib import import_module
 from pathbench.utils.registries import SLIDE_PROCESSORS
 
 
@@ -22,23 +20,51 @@ def _get_processor():
     ProcessorClass = SLIDE_PROCESSORS.get("lazyslide")
     return ProcessorClass()
 
-def test_tiling_spec_from_config() -> None:
+
+def test_backend_tile_spec_to_policy_tiling_spec() -> None:
     proc = _get_processor()
 
-    spec = proc._tiling_spec_from_config({"tile_px": 256, "tile_mpp": 0.5})
-    assert spec == {"tile_px": 256, "tile_mpp": 0.5}
+    tile_spec_obj = {
+        "tiles": {
+            "width": 256,
+            "height": 256,
+            "mpp": 0.5,
+            "stride_width": 128,
+            "ops_level": 0,
+            "ops_downsample": 1.0,
+        }
+    }
+    config = {"tile_px": 999, "tile_mpp": 9.9}  # should be ignored when backend values exist
 
+    spec = proc._backend_tile_spec_to_policy_tiling_spec(config=config, tile_spec_obj=tile_spec_obj)
+
+    assert spec == {
+        "tile_px": 256,
+        "tile_mpp": 0.5,
+        "stride_px": 128,
+        "coord_space": "level0",
+        "backend": "lazyslide",
+    }
+
+
+def test_backend_tile_spec_to_policy_tiling_spec_missing_values_raises() -> None:
+    proc = _get_processor()
+
+    # Missing both backend and config tile_mpp -> should fail
     with pytest.raises(ValueError):
-        _ = proc._tiling_spec_from_config({"tile_px": 256})  # missing tile_mpp
+        _ = proc._backend_tile_spec_to_policy_tiling_spec(
+            config={"tile_px": 256},
+            tile_spec_obj={"tiles": {"width": 256}},
+        )
 
 
-def test_tiles_table_to_coords_sorting_and_values() -> None:
+def test_backend_tiles_to_policy_coords_sorting_and_values() -> None:
     proc = _get_processor()
 
     # Two tiles, intentionally out-of-order tile_id so we test sorting
     geoms = [
-        Polygon([(256, 0), (512, 0), (512, 256), (256, 0)]),
-        Polygon([(0, 0), (256, 0), (256, 256), (0, 0)]),
+        Polygon([(256, 0), (512, 0), (512, 256), (256, 256)]),
+        Polygon([(0, 0), (256, 0), (256, 256), (0, 256)]),
     ]
     df = pd.DataFrame(
         {
@@ -47,8 +73,17 @@ def test_tiles_table_to_coords_sorting_and_values() -> None:
         }
     )
 
-    tile_spec_obj = {"tiles": {"width": 256, "height": 256, "ops_level": 0}}
-    coords = proc._tiles_table_to_coords(df, tile_spec_obj=tile_spec_obj)
+    tile_spec_obj = {
+        "tiles": {
+            "width": 256,
+            "height": 256,
+            "mpp": 0.5,
+            "ops_level": 0,
+            "ops_downsample": 2.0,  # read window becomes 512 x 512
+        }
+    }
+
+    coords = proc._backend_tiles_to_policy_coords(df, tile_spec_obj=tile_spec_obj)
 
     assert coords.shape == (2, 5)
     assert coords.dtype == np.int32
@@ -61,22 +96,25 @@ def test_tiles_table_to_coords_sorting_and_values() -> None:
     assert coords[1, 0] == 256
     assert coords[1, 1] == 0
 
-    # read_w, read_h, level
-    assert np.all(coords[:, 2] == 256)
-    assert np.all(coords[:, 3] == 256)
+    # read_w, read_h are derived from tile_px * ops_downsample = 256 * 2 = 512
+    assert np.all(coords[:, 2] == 512)
+    assert np.all(coords[:, 3] == 512)
+
+    # read level = ops_level
     assert np.all(coords[:, 4] == 0)
 
 
-def test_tissues_table_to_policy() -> None:
+def test_backend_tissues_to_policy() -> None:
     proc = _get_processor()
 
-    poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 0)])
+    poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
     df = pd.DataFrame({"geometry": [poly]})
 
-    tissues = proc._tissues_table_to_policy(df)
+    tissues = proc._backend_tissues_to_policy(df)
 
     assert isinstance(tissues, list)
     assert len(tissues) == 1
+
     arr = tissues[0]
     assert isinstance(arr, np.ndarray)
     assert arr.ndim == 2 and arr.shape[1] == 2
@@ -86,7 +124,22 @@ def test_tissues_table_to_policy() -> None:
 def test_validate_tile_spec() -> None:
     proc = _get_processor()
 
-    assert proc.validate_tile_spec({"tile_px": 256, "tile_mpp": 0.5}, {"tile_px": 256, "tile_mpp": 0.5}) is True
-    assert proc.validate_tile_spec({"tile_px": 256, "tile_mpp": 0.5}, {"tile_px": 512, "tile_mpp": 0.5}) is False
+    valid_spec = {
+        "tile_px": 256,
+        "tile_mpp": 0.5,
+        "stride_px": 256,
+        "coord_space": "level0",
+        "backend": "lazyslide",
+    }
+
+    assert proc.validate_tile_spec(valid_spec, {"tile_px": 256, "tile_mpp": 0.5}) is True
+    assert proc.validate_tile_spec(valid_spec, {"tile_px": 512, "tile_mpp": 0.5}) is False
     assert proc.validate_tile_spec(None, {"tile_px": 256, "tile_mpp": 0.5}) is False
     assert proc.validate_tile_spec({"tile_px": 256}, {"tile_px": 256, "tile_mpp": 0.5}) is False
+    assert proc.validate_tile_spec(
+        {"tile_px": 256, "tile_mpp": 0.5, "stride_px": 256, "coord_space": "not_level0"},
+        {"tile_px": 256, "tile_mpp": 0.5},
+    ) is False
+
+    # If no config is provided, only structural validation is checked
+    assert proc.validate_tile_spec(valid_spec, None) is True

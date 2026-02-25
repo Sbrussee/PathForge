@@ -83,6 +83,7 @@ def test_smoke_feature_extraction_lazyslide(tmp_path: Path, monkeypatch: pytest.
             "annotation_file": str(ann_path),
             "project_root": str(project_root),
             "mode": "feature_extraction",
+            "report": True,  # <-- enable tiles_overview generation
         },
         "slide_processing": {
             "backend": "lazyslide",
@@ -130,18 +131,31 @@ def test_smoke_feature_extraction_lazyslide(tmp_path: Path, monkeypatch: pytest.
     bag_id = f"{tile_px}px_{tile_mpp:g}mpp"
     coords_path = DEFAULT_LAYOUT.coords_dataset(bag_id)
     tiling_path = DEFAULT_LAYOUT.tiling_spec_dataset(bag_id)
+    overview_path = DEFAULT_LAYOUT.tiles_overview_dataset(bag_id)  # <-- new
     feats_path = DEFAULT_LAYOUT.features_dataset(bag_id, extractor)
 
     with FileHandleH5(wsi.artifact_path, mode="r") as fh:
         assert DEFAULT_LAYOUT.tissue_dataset in fh.h5
         assert coords_path in fh.h5
         assert tiling_path in fh.h5
+        assert overview_path in fh.h5  # <-- new
         assert feats_path in fh.h5
 
         coords = fh.h5[coords_path][()]
+        overview = fh.h5[overview_path][()]  # <-- new
         feats = fh.h5[feats_path][()]
 
         assert coords.ndim == 2 and coords.shape[1] == 5
+
+        # tiles_overview: compressed image bytes stored as 1D uint8 array
+        assert overview.ndim == 1
+        assert overview.dtype.name == "uint8"
+        assert overview.size > 0
+
+        # JPEG SOI marker (optional but useful sanity check)
+        overview_bytes = bytes(overview[:4].tolist()) if overview.size >= 4 else bytes(overview.tolist())
+        assert overview_bytes[:2] == b"\xff\xd8"
+
         assert feats.ndim == 2
         assert feats.shape[0] == coords.shape[0]
         assert feats.shape[0] > 0
