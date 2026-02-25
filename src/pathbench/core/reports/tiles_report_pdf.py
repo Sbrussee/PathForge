@@ -1,4 +1,4 @@
-# src/pathbench/core/reporting/tiles_report_pdf.py
+# src/pathbench/core/reports/tiles_report_pdf.py
 from __future__ import annotations
 
 import io
