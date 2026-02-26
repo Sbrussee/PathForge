@@ -470,6 +470,38 @@ class LazySlideProcessor(SlideProcessorBase):
             obj.close()
         finally:
             wsi._obj = None
+    
+    def get_base_mpp(self, wsi: WSI) -> float:
+        """
+        Return the level-0 MPP as a scalar.
+        """
+        if getattr(wsi, "_obj", None) is None:
+            raise RuntimeError("[LazySlide] WSI not loaded. Call load_wsi(wsi) first.")
+
+        props = getattr(wsi.obj, "properties", None)
+        if props is None:
+            raise RuntimeError("[LazySlide] Missing slide properties; cannot determine base MPP.")
+
+        mpp = getattr(props, "mpp", None)
+        if mpp is None:
+            raise RuntimeError(
+                "[LazySlide] Slide base MPP is missing (wsi.obj.properties.mpp is None)."
+            )
+
+        if isinstance(mpp, (tuple, list)):
+            raise RuntimeError(
+                f"[LazySlide] Expected scalar base MPP, got sequence: {mpp!r}"
+            )
+
+        try:
+            mpp = float(mpp)
+        except Exception as e:
+            raise RuntimeError(f"[LazySlide] Invalid base MPP value: {mpp!r}") from e
+
+        if mpp <= 0:
+            raise RuntimeError(f"[LazySlide] Base MPP must be > 0, got {mpp}.")
+
+        return mpp
 
     # ---------------------------------------------------------------------
     # Policy methods

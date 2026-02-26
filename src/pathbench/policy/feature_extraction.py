@@ -191,6 +191,8 @@ class FeatureExtractionPolicy(PolicyBase):
                         slide_processor.load_wsi(wsi)
                         try:
                             thumbnail_image, downscale_x, downscale_y = slide_processor.get_thumbnail(wsi, level=-1)
+                            base_mpp = slide_processor.get_base_mpp(wsi)
+
                             tiles_overview_bytes = render_tiles_overview_image(
                                 thumbnail_image=thumbnail_image,
                                 coords_array=coords_array,
@@ -198,6 +200,7 @@ class FeatureExtractionPolicy(PolicyBase):
                                 downscale_y=downscale_y,
                                 slide_id=slide_id,
                                 tiling_spec=tiling_spec,
+                                base_mpp=base_mpp,
                             )
                         finally:
                             slide_processor.close_wsi(wsi)
