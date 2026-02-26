@@ -1,39 +1,22 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any, List
+from datetime import datetime
 from itertools import product
-import pandas as pd
+import json
 import logging
 import shutil
-from datetime import datetime
-import json
+from pathlib import Path
+from typing import Any, List
+
+import pandas as pd
 
 from ...config.config import Config
 from ...utils.constants import EXPERIMENTS_DIR
-
-import os
-
-#from ..tasks.base import ClassificationTask, RegressionTask, ContinuousSurvivalTask, DiscreteSurvivalTask
-#from ..annotations.annotations import (
-#ClassificationAnnotation, RegressionAnnotation, SurvivalAnnotation, DiscreteSurvivalAnnotation,
-#)
-
-from pathbench.core.datasets.slides import SlideDataset
+from pathbench.core.datasets.wsi_dataset import WSIDataset
 
 logger = logging.getLogger(__name__)
 
-#TASK_TO_ANN = {
-#"classification": (ClassificationTask, ClassificationAnnotation),
-#"regression": (RegressionTask, RegressionAnnotation),
-#"survival": (ContinuousSurvivalTask, SurvivalAnnotation),
-#"survival_discrete": (DiscreteSurvivalTask, DiscreteSurvivalAnnotation),
-#}
-
-# inside Experiment.run() implementations, e.g., BenchmarkingExperiment.run():
-#TCls, ACls = TASK_TO_ANN[self.cfg.experiment.task]
-#assert isinstance(self.cfg.task_obj, TCls) if hasattr(self.cfg, "task_obj") else True
-#ann = ACls()
-#rows = ann.read(self.cfg.experiment.annotation_file)
 
 class ComboConfig:
     """
@@ -43,6 +26,7 @@ class ComboConfig:
         Combo(feature_extraction="virchow", tile_px=256)
         -> combo.feature_extraction, combo.tile_px
     """
+
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -59,15 +43,14 @@ class ComboConfig:
 @dataclass(slots=True)
 class Experiment:
     """
-    Experiment class, which manages project structure and metadata.
+    Manage experiment project_root and experiment-level metadata files.
 
-    Responsibilities:
-    - Determine project_root.
-    - Ensure project structure exists:
-        * project.json
-        * annotations.csv (copied into project_root)
-        * datasets.json with absolute features_dir / tile_records_dir
-    - Provide utilities to compute benchmark parameter combinations.
+    Creates/validates:
+    - project.json
+    - annotations.csv (copied into project_root)
+
+    Provides helpers to load annotations, build parameter combos, and build datasets.
+    Dataset-scoped artifacts (per-slide .h5) are managed via dataset config, not here.
     """
 
     cfg: Config
@@ -84,16 +67,9 @@ class Experiment:
 
     def _determine_project_root(self) -> str:
         """
-        Determine the absolute path to the experiment project root.
-
-        Rules:
-        - cfg.experiment.project_name must be a non-empty string.
-        - If cfg.experiment.project_root is provided:
-            * it must be an absolute path
-            * the final root is <project_root>/<project_name>
-        - Otherwise:
-            * use <repo_root>/experiments/<project_name>, where repo_root is resolved
-            as the parent of the 'src' directory containing this file.
+        Resolve absolute project_root as:
+        - <experiment.project_root>/<project_name> if provided (must be absolute), else
+        - <repo_root>/{EXPERIMENTS_DIR}/<project_name>.
         """
         exp_cfg = self.cfg.experiment
 
@@ -104,81 +80,69 @@ class Experiment:
         project_root = getattr(exp_cfg, "project_root", None)
 
         if project_root is not None:
-            if not os.path.isabs(project_root):
+            base = Path(project_root)
+            if not base.is_absolute():
                 raise ValueError(
                     "cfg.experiment.project_root must be an absolute path "
                     f"(got: {project_root!r})."
                 )
-            base = project_root
         else:
             # Resolve repo root robustly (avoid cwd). Assumes repo layout: <repo>/src/pathbench/...
-            this_file = os.path.abspath(__file__)
+            this_file = Path(__file__).resolve()
+            cur = this_file.parent
+            repo_root: Path | None = None
+
             # Walk up until we find the 'src' directory, then take its parent as repo root
-            cur = os.path.dirname(this_file)
-            repo_root = None
             while True:
-                if os.path.basename(cur) == "src":
-                    repo_root = os.path.dirname(cur)
+                if cur.name == "src":
+                    repo_root = cur.parent
                     break
-                parent = os.path.dirname(cur)
+                parent = cur.parent
                 if parent == cur:
                     break
                 cur = parent
 
             if repo_root is None:
                 # Fallback: use current working directory as last resort
-                repo_root = os.getcwd()
+                repo_root = Path.cwd()
 
-            base = os.path.join(repo_root, "experiments")
+            base = repo_root / str(EXPERIMENTS_DIR)
 
-        root = os.path.join(base, project_name)
-        root_abs = os.path.abspath(root)
+        root_abs = (base / project_name).resolve()
 
         logger.info("Using project_root: %s", root_abs)
-        return root_abs
+        return str(root_abs)
 
     def _prepare_project(self) -> None:
-        """
-        Ensure the project structure exists and is consistent.
-
-        Steps (idempotent):
-        1. Create project_root directory if it does not exist.
-        2. Ensure project.json exists (create if missing).
-        3. Ensure annotations.csv exists in project_root
-           (copy from cfg.experiment.annotation_file if missing).
-        4. Ensure datasets.json exists:
-           - if present: load it and sync cfg.datasets from it.
-           - if absent: create it from cfg.datasets and write absolute
-             features_dir / tile_records_dir paths.
-        """
+        """Ensure project_root exists and contains project.json and annotations.csv."""
         if self.project_root is None:
             raise RuntimeError("project_root is not set.")
 
-        root = self.project_root
-        os.makedirs(root, exist_ok=True)
+        root = Path(self.project_root)
+        root.mkdir(parents=True, exist_ok=True)
 
         # 1) project.json
-        project_json_path = os.path.join(root, "project.json")
-        if not os.path.exists(project_json_path):
+        project_json_path = root / "project.json"
+        if not project_json_path.exists():
             self._write_project_json(project_json_path)
         else:
             # We only sanity-check; not using these values for logic yet.
             self._load_project_json(project_json_path)
 
         # 2) annotations.csv
-        annotations_target = os.path.join(root, "annotations.csv")
-        if not os.path.exists(annotations_target):
+        annotations_target = root / "annotations.csv"
+        if not annotations_target.exists():
             self._copy_annotations(annotations_target)
-    
-    def _write_project_json(self, path: str) -> None:
+
+    def _write_project_json(self, path: Path) -> None:
         """
         Create a minimal project.json with basic metadata.
 
         Raises:
             FileNotFoundError if the configured annotation_file does not exist.
         """
-        ann_src = self.cfg.experiment.annotation_file
-        if not os.path.isfile(ann_src):
+        ann_src = Path(self.cfg.experiment.annotation_file)
+        if not ann_src.is_file():
             raise FileNotFoundError(
                 f"experiment.annotation_file does not exist: {ann_src}"
             )
@@ -186,21 +150,19 @@ class Experiment:
         data = {
             "project_name": self.cfg.experiment.project_name,
             "created_at": datetime.now().isoformat(timespec="seconds"),
-            "annotation_source": os.path.abspath(ann_src),
+            "annotation_source": str(ann_src.resolve()),
         }
 
         logger.info("Creating project.json at %s", path)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
-    def _load_project_json(self, path: str) -> None:
+    def _load_project_json(self, path: Path) -> None:
         """
         Load and lightly validate project.json.
 
         Currently only checks that project_name matches cfg.experiment.project_name.
         """
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = json.loads(path.read_text(encoding="utf-8"))
 
         pj_name = data.get("project_name")
         cfg_name = self.cfg.experiment.project_name
@@ -210,25 +172,24 @@ class Experiment:
                 f"cfg.experiment.project_name={cfg_name!r}."
             )
 
-        # Could add more checks later if needed.
         logger.debug("Loaded project.json from %s", path)
 
-    def _copy_annotations(self, target: str) -> None:
+    def _copy_annotations(self, target: Path) -> None:
         """
         Copy annotations CSV from cfg.experiment.annotation_file into project_root.
 
         Raises:
             FileNotFoundError if the source annotation file does not exist.
         """
-        src = self.cfg.experiment.annotation_file
-        if not os.path.isfile(src):
+        src = Path(self.cfg.experiment.annotation_file)
+        if not src.is_file():
             raise FileNotFoundError(
                 f"experiment.annotation_file does not exist: {src}"
             )
 
         logger.info("Copying annotations from %s to %s", src, target)
         shutil.copy2(src, target)
-        
+
     def load_annotations(self) -> pd.DataFrame:
         """
         Load annotations CSV from project_root/annotations.csv.
@@ -238,14 +199,13 @@ class Experiment:
         """
         if self.project_root is None:
             raise RuntimeError("project_root is not set.")
-        
-        ann_path = os.path.join(self.project_root, "annotations.csv")
-        if not os.path.isfile(ann_path):
+
+        ann_path = Path(self.project_root) / "annotations.csv"
+        if not ann_path.is_file():
             raise FileNotFoundError(f"Annotations file not found: {ann_path}")
-        
-        df = pd.read_csv(ann_path)
-        return df
-    
+
+        return pd.read_csv(ann_path)
+
     def build_combinations(self, keys: List[str]) -> List[ComboConfig]:
         """
         Build all combinations of benchmark parameters for the given keys.
@@ -271,21 +231,21 @@ class Experiment:
             combos.append(ComboConfig.from_keys_values(keys, list(vals)))
 
         return combos
-    
-    def build_datasets(self) -> list[SlideDataset]:
+
+    def build_datasets(self) -> list[WSIDataset]:
         """
-        Build SlideDataset instances for all datasets in cfg.datasets.
+        Build WSIDataset instances for all datasets in cfg.datasets.
         Returns:
             List of SlideDataset instances.
         """
         if self.project_root is None:
             raise RuntimeError("project_root is not set.")
-        
+
         annotations = self.load_annotations()
-        
-        datasets = []
+
+        datasets: list[WSIDataset] = []
         for ds in self.cfg.datasets:
             if ds.used_for == "ignore":
                 continue
-            datasets.append(SlideDataset(ds, annotations))
+            datasets.append(WSIDataset(ds, annotations))
         return datasets

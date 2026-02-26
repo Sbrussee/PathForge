@@ -1,6 +1,52 @@
+#tests/unit/test_config.py
+
+from pathlib import Path
+import pytest
+from textwrap import dedent
+
 from pathbench.config.config import Config
 
 
-def test_yaml_loads(example_yaml_path="configs/config.example.yaml"):
-cfg = Config.from_yaml(example_yaml_path)
-assert cfg.experiment.task in {"classification","regression","survival","survival_discrete"}
+def test_from_yaml_loads_minimal_valid_config(tmp_path):
+    # Minimal config that satisfies validators (benchmark requires task + mil)
+    yaml_text = dedent("""
+                        experiment:
+                            project_name: testproj
+                            annotation_file: dummy.csv
+                            mode: feature_extraction
+
+                        slide_processing:
+                            backend: lazyslide
+
+                        datasets: []
+
+                        benchmark_parameters:
+                            tile_px: [256]
+                            tile_mpp: [0.5]
+                            feature_extraction: ["resnet18"]
+                            mil: []
+                        """).lstrip()
+
+    p = tmp_path / "cfg.yaml"
+    p.write_text(yaml_text, encoding="utf-8")
+
+    cfg = Config.from_yaml(p)
+    assert cfg.experiment.project_name == "testproj"
+    assert cfg.experiment.mode == "feature_extraction"
+    assert cfg.experiment.task is None
+    assert cfg.slide_processing.backend == "lazyslide"
+    assert cfg.benchmark_parameters.tile_px == [256]
+
+
+def test_from_yaml_missing_file_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        Config.from_yaml(tmp_path / "does_not_exist.yaml")
+
+
+def test_example_yaml_loads():
+    example_yaml_path = Path("configs/config.example.yaml")
+    if not example_yaml_path.exists():
+        pytest.skip("configs/config.example.yaml not present in this environment")
+
+    cfg = Config.from_yaml(example_yaml_path)
+    assert cfg.experiment.task in {"classification", "regression", "survival", "survival_discrete"}

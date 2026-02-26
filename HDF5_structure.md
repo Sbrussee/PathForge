@@ -45,70 +45,108 @@ meta/
 
 ## 1. Tile Coordinates (Patch Sampling)
 
-**Purpose:** spatial definition of MIL bags
+**Purpose:** spatial definition of MIL bags (tile sampling grid), including the tiling metadata required to interpret the coordinates and an optional overview visualization of the tiled slide.
 
-**Path:**  
+**Bag identity:**  
+`bag_id = "{tile_px}px_{tile_mpp:g}mpp"`  
+(e.g. `256px_0.5mpp`)
 
-coords/
+### 1.1 Coordinates
 
+**Path (per bag):**  
+`bags/{bag_id}/coords`
 
 **Shape:** `(N, 5)`  
 **Dtype:** `int32`
 
 **Columns (fixed order):**
-1. `x` – level-0 pixel x
-2. `y` – level-0 pixel y
-3. `read_w` – patch width at read level
-4. `read_h` – patch height at read level
-5. `level` – pyramid level read from
+1. `x` – level-0 pixel x (top-left)
+2. `y` – level-0 pixel y (top-left)
+3. `read_w` – patch width in pixels **at `read_level`**
+4. `read_h` – patch height in pixels **at `read_level`**
+5. `read_level` – pyramid level to read from
 
 **Rules**
 - Row order is **authoritative**
 - All tile-aligned matrices must match this row order
+- For a given `bag_id`, `read_w`, `read_h`, and `read_level` are expected to be **constant** across rows (single tiling setup per bag)
+- `x,y` are always in **level-0 coordinate space** (`coord_space = "level0"`)
+
+### 1.2 Tiling specification
+
+**Purpose:** backend-agnostic tiling intent and guardrails for cache reuse / reconstruction.
+
+**Path (per bag):**  
+`bags/{bag_id}/tiling_spec`
+
+**Encoding:** scalar UTF-8 JSON string
+
+**Required keys**
+- `tile_px` (int) – **output** tile size (pixels)
+- `tile_mpp` (float) – target microns-per-pixel
+- `stride_px` (int) – **output** stride in pixels (no-overlap: `stride_px == tile_px`)
+- `coord_space` (str) – must be `"level0"`
+
+**Optional keys**
+- `backend` (str) – backend that generated the coords (used for warnings/debug)
+
+**Rules**
+- `tiling_spec` is **backend-agnostic** (no lazyslide/wsidata internals stored here)
+- `coords` provide the **read window** (`read_w/read_h/read_level`); `tiling_spec` provides the **output intent** (`tile_px/tile_mpp/stride_px`)
+- Cache reuse checks compare a **subset** of keys (typically `tile_px`, `tile_mpp`, `stride_px`, `coord_space`)
+
+### 1.3 Tiles overview (optional visualization)
+
+**Purpose:** compact visualization of the tiling result for reporting/inspection (thumbnail with tile grid overlay and tile count).
+
+**Path (per bag):**  
+`bags/{bag_id}/tiles_overview`
+
+**Encoding:** compressed image bytes stored as a 1D `uint8` array (currently JPEG bytes)
+
+**Shape:** `(M,)`  
+**Dtype:** `uint8`
+
+**Content**
+- Grayscale thumbnail of the slide
+- Tile grid overlay derived from `coords`
+- Simple title text: `"{slide_id}: {num_tiles} tiles"`
+
+**Rules**
+- Optional: only written when `experiment.report = true`
+- If tiles are **newly created**, `tiles_overview` is **always (re)written**
+- If tiles are **reused**, `tiles_overview` is written **only if missing**
+- `tiles_overview` is tied to the bag (`bag_id`) and therefore corresponds to the same tiling setup as `coords` and `tiling_spec`
 
 ---
 
 ## 2. Feature Matrices (Tile-Level)
 
-**Purpose:** MIL inputs
+**Purpose:** MIL inputs (tile embeddings)
 
-**Path:**  
-
-features/{extractor_name}
-
+**Path (per bag, per extractor):**  
+`bags/{bag_id}/features/{extractor_name}`
 
 **Shape:** `(N, D)`  
 **Dtype:** `float32`
 
 **Rules**
 - One dataset per extractor
-- Must be **row-aligned with `coords/`**
+- Must be **row-aligned with** `bags/{bag_id}/coords`
 - No spatial information stored here
 
 ---
 
 ## 3. Tissue Masks (Vector-Based)
 
-**Purpose:** define valid tissue regions
+**Purpose:** define valid tissue regions (used for tiling / filtering)
 
-**Path:**  
+**Path (per slide):**  
+`annotations/tissue`
 
-annotations/tissue/
+**Encoding:** scalar UTF-8 JSON string
 
-
-**Vector encoding:** polygon rings
-
-**Datasets**
-- `points : (M, 2) float32`
-- `ring_offsets : (R+1,) int64`
-- `poly_offsets : (P+1,) int64`
-- `poly_label_id : (P,) int32`  
-  → index into `labels/tissue/classes`
-
-**Attributes**
-- `geometry_type = "polygon_rings"`
-- `coord_space = "level0_pixel"`
-- `fill_rule = "even-odd"`
+**Coordinate space:** level-0 pixels (`coord_space = "level0"` by convention)
 
 **Rules**
 - Polygons may contain holes

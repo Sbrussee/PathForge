@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator, Validat
 
 # Internal Imports
 from pathbench.utils.constants import TASK_TYPES, MODE_TYPES, EXPERIMENTS_DIR
-from pathbench.utils.registries import MODELS, FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES
+from pathbench.utils.registries import MODELS, FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES, is_feature_extractor_available, all_feature_extractor_names
 from pathbench.core.models.mil_base import MILModelBase
 
 TaskType = Literal[tuple(TASK_TYPES)]
@@ -28,7 +28,7 @@ class ExperimentConfig(BaseModel):
     annotation_file: str
     project_root: str | None = None
     
-    # Execution
+    # Execution #TODO: Is this part of the experiment config, we do not use it in the experiment class
     num_workers: int = Field(0, ge=0)
     split_technique: Literal["k-fold", "k-fold-stratified", "fixed"] = "k-fold"
     val_fraction: float = Field(0.1, gt=0, lt=1)
@@ -42,6 +42,7 @@ class ExperimentConfig(BaseModel):
     report: bool = False
     mixed_precision: bool = False
     
+    #TODO: Does this make sense to be here? 
     visualization: List[str] = Field(default_factory=list)
     evaluation: List[str] = Field(default_factory=list)
     custom_metrics: List[str] = Field(default_factory=list)
@@ -93,7 +94,9 @@ class SlideProcessingConfig(BaseModel):
     """Settings for slide processing backends."""
     backend: Literal["lazyslide", "openslide", "cucim"] = "lazyslide"
     save_tiles: bool = False
-    segmentation_method: str = "otsu"
+    segmentation_method: Optional[str] = None
+
+    #TODO: Do we need this option below? 
     qc_filters: List[Dict[str, Any]] = Field(default_factory=list)
 
 
@@ -113,21 +116,20 @@ class OptimizationConfig(BaseModel):
 class DatasetEntry(BaseModel):
     """Definition of a dataset source."""
     name: str
-    slide_path: str
-    tiles_path: Optional[str] = None
-    roi_path: Optional[str] = None
-    features_path: Optional[str] = None
+    slides_dir: str
+    artifacts_dir: str
+    tissue_annotations_dir: Optional[str] = None
     used_for: Literal["training", "testing", "validation", "ignore", "all"]
-
 
 class BenchmarkParameters(BaseModel):
     """
-    Grid search parameters. 
+    Grid search parameters.
     Pydantic validators enforce logic previously implemented manually.
     """
     tile_px: List[int] = Field(default_factory=lambda: [256])
     tile_mpp: List[float] = Field(default_factory=lambda: [0.5])
     feature_extraction: List[str] = Field(default_factory=list)
+    normalization: Optional[List[str]] = None  # TODO: Do we want to keep this and is it available in lazyslide?
     mil: List[str] = Field(default_factory=list)
     loss: List[str] = Field(default_factory=list)
     activation_function: List[str] = Field(default_factory=list)
@@ -149,12 +151,16 @@ class BenchmarkParameters(BaseModel):
                 raise ValueError(f"Invalid tile_mpp: {mpp}. Must be > 0.")
         return v
 
-    @field_validator('feature_extraction')
+    @field_validator("feature_extraction")
     @classmethod
-    def validate_feature_extractors(cls, v: List[str]) -> List[str]:
-        for fe in v:
-            if not FEATURE_EXTRACTORS.is_available(fe):
-                raise ValueError(f"Feature extractor '{fe}' is not registered in timm/lazyslide.")
+    def validate_feature_extractors(cls, v: list[str]) -> list[str]:
+        for fe in v: 
+            if not is_feature_extractor_available(fe): 
+                raise ValueError(
+                f"Feature extractor '{fe}' is not registered. "
+                f"Available feature extractors: {sorted(all_feature_extractor_names())}"
+            )
+
         return v
 
     @field_validator('mil')
@@ -163,10 +169,9 @@ class BenchmarkParameters(BaseModel):
         for model_name in v:
             if not MODELS.is_available(model_name):
                 raise ValueError(f"MIL model '{model_name}' not found in registry.")
-            
+
             # Check Inheritance
             model_cls = MODELS.get(model_name)
-            # If the registry returns a class, we check subclass
             if isinstance(model_cls, type):
                 if not issubclass(model_cls, MILModelBase):
                     raise ValueError(f"Model '{model_name}' does not inherit from MILModelBase.")
@@ -206,6 +211,7 @@ class Config(BaseModel):
     datasets: List[DatasetEntry] = Field(default_factory=list)
     benchmark_parameters: BenchmarkParameters = Field(default_factory=BenchmarkParameters)
     
+    #TODO: Do we still need these? 
     weights_dir: str = "./pretrained_weights"
     hf_key: Optional[str] = None
 

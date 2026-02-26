@@ -1,7 +1,19 @@
 __pycache__/
 *.pyc
 uv.lock
-.env
 .cache/
 
+.venv/
+venv/
+.env/
+
 experiments/
+
+user_configs/
+
+*.egg-info/
+.eggs/
+build/
+dist/
+
+.pytest_cache/

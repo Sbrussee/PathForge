@@ -1,0 +1,34 @@
+experiment:
+  project_name: cbir_example
+  annotation_file: /path/to/annotations.csv
+  task: null
+  mode: feature_extraction
+  report: true
+  mixed_precision: true
+  num_workers: 8
+
+slide_processing:
+  backend: lazyslide
+  
+datasets:
+  - name: Example-Dataset
+    slides_dir: /path/to/data/Example-Dataset/slides
+    artifacts_dir: /path/to/data/Example-Dataset/artifacts
+    tissue_annotations_dir: null   # optional external ROI/tissue files (e.g., ASAP XML)
+    used_for: testing
+
+benchmark_parameters:
+  tile_px:
+    - 256
+
+  tile_mpp:
+    - 128
+
+  normalization:
+    - reinhard
+
+  feature_extraction:
+    - resnet50
+
+weights_dir: ./pretrained_weights
+

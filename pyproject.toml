@@ -1,31 +1,61 @@
 # pyproject.toml
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "pathbench"
 version = "0.1.0"
 description = "PathBench 2.0"
-authors = [{name = "Siemen Brussee"}]
+authors = [{ name = "Siemen Brussee" }]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
+    "pandas",
     "scikit-learn",
-    "torch",
-    "pytorch-lightning", # Training
-    "optuna",            # Optimization
-    "pyYAML",
-    "lazyslide",
+    "PyYAML",
     "pydantic>=2.5,<3.0",
+    "h5py",
+    "tqdm",
+    "torch",
+    "pytorch-lightning",
+    "optuna",
+    "shapely",
+    "transformers[torch]>=5.2.0",
+    "pillow>=12.0.0",
+    "reportlab>=4.4.10",
+]
+
+[project.optional-dependencies]
+# ---- backends / heavier stacks ----
+lazyslide = [
+    "lazyslide",
+    "wsidata",
+    "timm",
+    "geopandas",
     "anndata>=0.10.9",
 ]
 
+cu128 = [
+    "torch==2.9.1",
+    "torchvision==0.24.1",
+    "torchaudio==2.9.1",
+]
 
-[project.optional-dependencies]
-# Opt-in heavy deps
 survival = ["scikit-survival"]
 gnn = ["torch-geometric>=2.5"]
-hf = ["huggingface_hub>=0.25"]
+hf = [
+    "huggingface_hub>=1.0",
+    "typer",
+]
 docs = ["mkdocs-material>=9.5"]
 
+dev = [
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+]
 
 [project.scripts]
 pathbench-benchmark = "pathbench.cli.benchmark:main"
@@ -33,6 +63,20 @@ pathbench-optimize = "pathbench.cli.optimize:main"
 pathbench-features = "pathbench.cli.feature_extract:main"
 pathbench-infer = "pathbench.cli.inference:main"
 
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-q"
+testpaths = ["tests"]
+markers = [
+    "smoke: quick high-level sanity checks",
+]
 
-#[tool.uv]
-#resolver = "lowest-compatible"
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", extra = "cu128" }]
+torchvision = [{ index = "pytorch-cu128", extra = "cu128" }]
+torchaudio = [{ index = "pytorch-cu128", extra = "cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
