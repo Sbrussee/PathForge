@@ -52,18 +52,49 @@ class LazySlideProcessor(SlideProcessorBase):
     # Conversions: backend -> policy
     # ---------------------------------------------------------------------
 
-    def _backend_tissues_to_policy(self, tissues_table: Any) -> List[np.ndarray]:
-        """Convert lazyslide tissues table -> policy tissues list[np.ndarray] (N,2), level-0 pixel coords."""
+    def _backend_tissues_to_policy(self, tissues_table: Any) -> list[list[list[list[float]]]]:
+        """
+        Convert lazyslide tissues table -> internal nested-rings contract:
+
+            [
+                [outer_ring, hole1, ...],   # polygon 1
+                [outer_ring],               # polygon 2
+            ]
+
+        No holes are dropped.
+        """
         df = tissues_table
         if "geometry" not in df.columns:
             raise ValueError("[LazySlide] wsi['tissues'] missing 'geometry' column.")
 
-        polygons: List[np.ndarray] = []
+        def _polygon_to_rings(geom: Polygon) -> list[list[list[float]]]:
+            rings: list[list[list[float]]] = []
+
+            outer = [[float(x), float(y)] for x, y, *_ in geom.exterior.coords]
+            rings.append(outer)
+
+            for interior in geom.interiors:
+                hole = [[float(x), float(y)] for x, y, *_ in interior.coords]
+                rings.append(hole)
+
+            return rings
+
+        polygons: list[list[list[list[float]]]] = []
+
         for geom in df["geometry"].tolist():
             if geom is None:
                 continue
-            coords = np.asarray(geom.exterior.coords, dtype=np.float32)  # includes closing point
-            polygons.append(coords[:, :2])
+
+            if geom.geom_type == "Polygon":
+                polygons.append(_polygon_to_rings(geom))
+
+            elif geom.geom_type == "MultiPolygon":
+                for part in geom.geoms:
+                    polygons.append(_polygon_to_rings(part))
+
+            else:
+                raise ValueError(f"[LazySlide] Unsupported tissue geometry type: {geom.geom_type}")
+
         return polygons
 
 
@@ -162,20 +193,58 @@ class LazySlideProcessor(SlideProcessorBase):
     # Conversions: policy -> backend
     # ---------------------------------------------------------------------
 
-    def _policy_tissues_to_backend(self, tissues: List[np.ndarray]):
-        """Convert policy tissues list[np.ndarray] -> lazyslide ShapesModel."""
+    def _policy_ring_to_numpy(self, ring: Any, *, context: str) -> np.ndarray:
+        """
+        Convert one internal ring into an (N,2) float64 array without altering geometry.
+        """
+        arr = np.asarray(ring, dtype=np.float64)
+
+        if arr.ndim != 2 or arr.shape[1] < 2:
+            raise ValueError(f"[LazySlide] {context}: expected (N,2)-like ring, got {arr.shape}")
+
+        arr = arr[:, :2]
+
+        if arr.shape[0] < 4:
+            raise ValueError(f"[LazySlide] {context}: linear ring must have at least 4 points")
+
+        if not np.array_equal(arr[0], arr[-1]):
+            raise ValueError(f"[LazySlide] {context}: linear ring must already be closed")
+
+        return arr
+
+    def _policy_tissues_to_backend(self, tissues: list[list[list[list[float]]]]):
+        """
+        Convert internal nested-rings contract -> lazyslide ShapesModel.
+
+        Important:
+        - Preserves outer ring and holes.
+        - Does not auto-close rings.
+        - Does not round coordinates.
+        """
         rows: list[int] = []
         geoms: list[Polygon] = []
-        for i, poly in enumerate(tissues):
-            arr = np.asarray(poly, dtype=np.float32)
-            if arr.ndim != 2 or arr.shape[1] != 2 or arr.shape[0] < 3:
+
+        for i, polygon_rings in enumerate(tissues):
+            if not isinstance(polygon_rings, (list, tuple)) or len(polygon_rings) == 0:
                 raise ValueError(
-                    f"[LazySlide] Invalid tissue polygon at index {i}: expected (N,2), got {arr.shape}"
+                    f"[LazySlide] Invalid tissue polygon at index {i}: expected list of rings"
                 )
-            if not np.allclose(arr[0], arr[-1]):
-                arr = np.vstack([arr, arr[0]])
+
+            shell = self._policy_ring_to_numpy(
+                polygon_rings[0],
+                context=f"tissue polygon {i} outer ring",
+            )
+
+            holes = [
+                self._policy_ring_to_numpy(
+                    ring,
+                    context=f"tissue polygon {i} hole {j}",
+                )
+                for j, ring in enumerate(polygon_rings[1:], start=1)
+            ]
+
             rows.append(i)
-            geoms.append(Polygon(arr))
+            geoms.append(Polygon(shell=shell, holes=holes if holes else None))
 
         gdf = gpd.GeoDataFrame({"tissue_id": rows}, geometry=geoms)
         return ShapesModel.parse(gdf)
@@ -437,7 +506,7 @@ class LazySlideProcessor(SlideProcessorBase):
 
         return thumb, downscale_x, downscale_y
 
-    def segment_tissue(self, wsi: WSI, config: Dict[str, Any]) -> List[np.ndarray]:
+    def segment_tissue(self, wsi: WSI, config: Dict[str, Any]) -> list[list[list[list[float]]]]:
         method = config.get("method", "otsu")
         params = dict(config.get("params", {}))
 
@@ -453,7 +522,7 @@ class LazySlideProcessor(SlideProcessorBase):
 
         return self._backend_tissues_to_policy(wsi.obj["tissues"])
 
-    def extract_patches(self, wsi: WSI, tissues: List[np.ndarray], config: Dict[str, Any]):
+    def extract_patches(self, wsi: WSI, tissues: list[list[list[list[float]]]], config: Dict[str, Any]):
         """
         Produce:
         - coords: (N,5) int32 [x0,y0,read_w,read_h,level]
@@ -583,9 +652,6 @@ class LazySlideProcessor(SlideProcessorBase):
 
         return features_matrix
 
-    # ---------------------------------------------------------------------
-    # Optional / legacy methods kept as-is
-    # ---------------------------------------------------------------------
 
     def extract_cells(self, wsi: WSI, config: Dict[str, Any]) -> Any:
         cell_cfg = config.get("cell_segmentation", None)

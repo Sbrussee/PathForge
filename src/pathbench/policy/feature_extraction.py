@@ -239,7 +239,7 @@ class FeatureExtractionPolicy(PolicyBase):
         slide_artifact: Any,
         slide_processor: SlideProcessorBase,
         segmentation_config: dict[str, Any],
-    ) -> list[np.ndarray]:
+    ) -> tissue_io.TissuePolygons:
         slide_id = wsi.slide
 
         # 1) Cache first 
