@@ -1,4 +1,3 @@
-# src/pathbench/core/visualization/tiling.py
 from __future__ import annotations
 
 from io import BytesIO
@@ -51,18 +50,27 @@ def render_tiles_overview_image(
     downscale_x: float,
     downscale_y: float,
     slide_id: str,  # kept for call-site compatibility (unused)
-    tiling_spec: dict[str, Any] | None = None,  # kept for call-site compatibility (unused)
+    tiling_spec: dict[str, Any] | None = None,
+    base_mpp: float | None = None,
     jpeg_quality: int = 65,
     max_long_side: int | None = 1200,
 ) -> bytes:
     """
     Render a tile overview image (thumbnail + tile grid overlay) and return JPEG bytes.
 
+    The tile overlay size is computed exactly from:
+    - tile_px (output tile width in pixels at target mpp)
+    - tile_mpp (target microns-per-pixel)
+    - base_mpp (slide level-0 microns-per-pixel)
+
+    So:
+        tile_size_um = tile_px * tile_mpp
+        tile_size_level0_px = tile_size_um / base_mpp
+
     Notes:
+    - `coords[:, 0:2]` are level-0 top-left coordinates.
+    - `read_w/read_h/read_level` are not used for overlay sizing.
     - No title/text is drawn here (PDF draws text consistently).
-    - `slide_id` and `tiling_spec` are kept in the signature so existing policy code
-      does not need to change.
-    - `max_long_side` reduces stored image size substantially for large thumbnails.
     """
     # ---- validate coords ----
     coords = np.asarray(coords_array)
@@ -81,6 +89,44 @@ def render_tiles_overview_image(
             f"downscale_x and downscale_y must be > 0, got {downscale_x}, {downscale_y}"
         )
 
+    # ---- validate tiling spec + base mpp ----
+    if tiling_spec is None:
+        raise ValueError("tiling_spec is required to render the tile overlay.")
+    if base_mpp is None:
+        raise ValueError("base_mpp is required to render the tile overlay.")
+
+    try:
+        tile_px = int(tiling_spec["tile_px"])
+        tile_mpp = float(tiling_spec["tile_mpp"])
+    except KeyError as e:
+        raise ValueError(
+            "tiling_spec must contain 'tile_px' and 'tile_mpp' to render the tile overlay."
+        ) from e
+
+    if tile_px <= 0 or tile_mpp <= 0:
+        raise ValueError(
+            f"tiling_spec values must be > 0, got tile_px={tile_px}, tile_mpp={tile_mpp}"
+        )
+
+    try:
+        base_mpp = float(base_mpp)
+    except Exception as e:
+        raise ValueError("base_mpp must be numeric") from e
+
+    if base_mpp <= 0:
+        raise ValueError(f"base_mpp must be > 0, got {base_mpp}")
+
+    coord_space = tiling_spec.get("coord_space")
+    if coord_space is not None and str(coord_space) != "level0":
+        raise ValueError(
+            f"Unsupported coord_space for tile overlay: {coord_space!r}. Expected 'level0'."
+        )
+
+    # ---- compute exact tile footprint in level-0 pixels ----
+    tile_size_um = float(tile_px) * float(tile_mpp)
+    tile_w_l0 = max(1.0, tile_size_um / float(base_mpp))
+    tile_h_l0 = max(1.0, tile_size_um / float(base_mpp))
+
     # ---- normalize thumbnail to RGB PIL image ----
     pil_img = _to_pil_rgb(thumbnail_image)
 
@@ -93,7 +139,6 @@ def render_tiles_overview_image(
             new_w = max(1, int(round(img_w0 * resize_scale)))
             new_h = max(1, int(round(img_h0 * resize_scale)))
 
-            # Pillow compatibility (older/newer versions)
             try:
                 resample = Image.Resampling.BILINEAR  # Pillow >= 9
             except AttributeError:
@@ -108,39 +153,49 @@ def render_tiles_overview_image(
     draw = ImageDraw.Draw(pil_img)
     img_w, img_h = pil_img.size
 
-    # ---- draw tile grid (black outlines) ----
-    # coords columns: [x, y, read_w, read_h, read_level]
-    # x/y are level-0 coordinates. We map them to thumbnail space using the
-    # provided downscale factors.
-    for row in coords:
-        x0 = int(round(float(row[0]) / downscale_x))
-        y0 = int(round(float(row[1]) / downscale_y))
-        w0 = max(1, int(round(float(row[2]) / downscale_x)))
-        h0 = max(1, int(round(float(row[3]) / downscale_y)))
+    # ---- precompute thumbnail-space tile size ----
+    tile_w_thumb = max(1, int(round(tile_w_l0 / downscale_x)))
+    tile_h_thumb = max(1, int(round(tile_h_l0 / downscale_y)))
 
-        x1 = x0 + w0
-        y1 = y0 + h0
+    # ---- draw tile grid ----
+    # coords columns: [x, y, read_w, read_h, read_level]
+    # x/y are authoritative level-0 top-left coordinates.
+    for row in coords:
+        x_l0 = float(row[0])
+        y_l0 = float(row[1])
+
+        x0 = int(round(x_l0 / downscale_x))
+        y0 = int(round(y_l0 / downscale_y))
+
+        # Pillow rectangles are inclusive, so subtract 1 for exact size.
+        x1 = x0 + tile_w_thumb - 1
+        y1 = y0 + tile_h_thumb - 1
 
         # Skip tiles completely outside thumbnail bounds
         if x1 < 0 or y1 < 0 or x0 >= img_w or y0 >= img_h:
             continue
 
-        draw.rectangle([x0, y0, x1, y1], outline=(0, 0, 0), width=1)
+        # Clip partially visible tiles
+        x0_clip = max(0, x0)
+        y0_clip = max(0, y0)
+        x1_clip = min(img_w - 1, x1)
+        y1_clip = min(img_h - 1, y1)
 
-    # ---- encode JPEG (small storage footprint) ----
+        draw.rectangle([x0_clip, y0_clip, x1_clip, y1_clip], outline=(0, 0, 0), width=1)
+
+    # ---- encode JPEG ----
     buf = BytesIO()
     save_kwargs = {
         "format": "JPEG",
         "quality": int(jpeg_quality),
         "optimize": True,
-        "subsampling": 2,   # 4:2:0 (smaller files)
+        "subsampling": 2,
         "progressive": False,
     }
 
     try:
         pil_img.save(buf, **save_kwargs)
     except TypeError:
-        # Fallback for older Pillow versions that may not support some kwargs
         save_kwargs.pop("subsampling", None)
         save_kwargs.pop("progressive", None)
         pil_img.save(buf, **save_kwargs)

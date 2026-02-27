@@ -21,6 +21,15 @@ class SlideProcessorBase(ABC):
         Close the backend-native slide object (if needed) and clear it from the WSI.
         """
         pass
+    
+    def get_base_mpp(self, wsi: WSI) -> float:
+        """
+        Return the level-0 microns-per-pixel (MPP) as a scalar.
+
+        This should represent the slide's base resolution used to convert
+        physical tile size to level-0 pixels.
+        """
+        raise NotImplementedError
 
     @abstractmethod
     def get_thumbnail(self, wsi: WSI, level: int = -1) -> Tuple[Any, float, float]:
