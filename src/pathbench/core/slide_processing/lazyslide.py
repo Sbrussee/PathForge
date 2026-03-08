@@ -473,35 +473,45 @@ class LazySlideProcessor(SlideProcessorBase):
     
     def get_base_mpp(self, wsi: WSI) -> float:
         """
-        Return the level-0 MPP as a scalar.
+        Return the base MPP for this slide.
+
+        Priority:
+        1. MPP from the loaded slide object (wsi.obj.properties.mpp)
+        2. fallback_mpp from the PathBench WSI dataclass
         """
         if getattr(wsi, "_obj", None) is None:
             raise RuntimeError("[LazySlide] WSI not loaded. Call load_wsi(wsi) first.")
 
+        # First try the MPP from the loaded LazySlide/WSIData object
         props = getattr(wsi.obj, "properties", None)
         if props is None:
-            raise RuntimeError("[LazySlide] Missing slide properties; cannot determine base MPP.")
+            slide_mpp = None
+        else:
+            slide_mpp = getattr(props, "mpp", None)
 
-        mpp = getattr(props, "mpp", None)
-        if mpp is None:
+        # If the loaded slide object has no MPP, fall back to the PathBench WSI metadata
+        if slide_mpp is None:
+            slide_mpp = wsi.fallback_mpp
+
+        if slide_mpp is None:
             raise RuntimeError(
-                "[LazySlide] Slide base MPP is missing (wsi.obj.properties.mpp is None)."
+                "[LazySlide] Slide base MPP is missing and no fallback_mpp was provided."
             )
 
-        if isinstance(mpp, (tuple, list)):
+        if isinstance(slide_mpp, (tuple, list)):
             raise RuntimeError(
-                f"[LazySlide] Expected scalar base MPP, got sequence: {mpp!r}"
+                f"[LazySlide] Expected scalar base MPP, got sequence: {slide_mpp!r}"
             )
 
         try:
-            mpp = float(mpp)
+            slide_mpp = float(slide_mpp)
         except Exception as e:
-            raise RuntimeError(f"[LazySlide] Invalid base MPP value: {mpp!r}") from e
+            raise RuntimeError(f"[LazySlide] Invalid base MPP value: {slide_mpp!r}") from e
 
-        if mpp <= 0:
-            raise RuntimeError(f"[LazySlide] Base MPP must be > 0, got {mpp}.")
+        if slide_mpp <= 0:
+            raise RuntimeError(f"[LazySlide] Base MPP must be > 0, got {slide_mpp}.")
 
-        return mpp
+        return slide_mpp
 
     # ---------------------------------------------------------------------
     # Policy methods
@@ -571,6 +581,8 @@ class LazySlideProcessor(SlideProcessorBase):
             params.setdefault("tile_px", tile_px)
         if tile_mpp is not None:
             params.setdefault("mpp", tile_mpp)
+
+        params.setdefault("slide_mpp", self.get_base_mpp(wsi))
 
         logger.info("[LazySlide] Tiling tissues with params=%s", params)
         zs.pp.tile_tissues(wsi=wsi.obj, **params)

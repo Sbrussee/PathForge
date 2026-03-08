@@ -1,12 +1,9 @@
-# tests/unit/test_policy_resolve_tissue.py
-
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from types import MethodType
 
-import numpy as np
 import pytest
 
 from pathbench.core.io.h5.base import FileHandleH5
@@ -37,9 +34,13 @@ class FakeSlideProcessor:
     def close_wsi(self, wsi: DummyWSI) -> None:
         self.close_calls += 1
 
-    def segment_tissue(self, wsi: DummyWSI, config) -> list[np.ndarray]:
+    def segment_tissue(self, wsi: DummyWSI, config):
         self.segment_calls += 1
-        return [np.array([[0, 0], [10, 0], [10, 10], [0, 0]], dtype=np.float32)]
+        return [
+            [
+                [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 0.0]],
+            ]
+        ]
 
 
 def _make_policy_shim() -> FeatureExtractionPolicy:
@@ -101,7 +102,11 @@ def test_resolve_tissue_cache_first_does_not_touch_external_or_backend(tmp_path:
         encoding="utf-8",
     )
 
-    cached = [np.array([[0, 0], [2, 0], [2, 2], [0, 0]], dtype=np.float32)]
+    cached = [
+        [
+            [[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 0.0]],
+        ]
+    ]
 
     # If external loader gets called, fail
     def _boom(_p: Path):
@@ -130,7 +135,7 @@ def test_resolve_tissue_cache_first_does_not_touch_external_or_backend(tmp_path:
     assert backend.load_calls == 0
     assert backend.close_calls == 0
     assert len(out) == 1
-    np.testing.assert_allclose(out[0], cached[0])
+    assert out == cached
 
 
 def test_resolve_tissue_uses_external_when_no_cache_and_writes_to_h5(tmp_path: Path) -> None:
@@ -180,7 +185,7 @@ def test_resolve_tissue_uses_external_when_no_cache_and_writes_to_h5(tmp_path: P
     assert backend.segment_calls == 0
     assert len(out) == 1
     assert len(cached) == 1
-    np.testing.assert_allclose(out[0], cached[0])
+    assert out == cached
 
 
 def test_resolve_tissue_falls_back_to_backend_when_no_cache_and_no_external(tmp_path: Path) -> None:
@@ -210,4 +215,4 @@ def test_resolve_tissue_falls_back_to_backend_when_no_cache_and_no_external(tmp_
     assert backend.load_calls == 1
     assert backend.close_calls == 1
     assert len(out) == 1
-    np.testing.assert_allclose(out[0], cached[0])
+    assert out == cached

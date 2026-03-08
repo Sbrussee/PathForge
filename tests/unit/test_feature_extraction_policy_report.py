@@ -44,6 +44,9 @@ class _FakeSlideProcessor:
     def close_wsi(self, wsi: WSI) -> None:
         self.close_calls += 1
 
+    def get_base_mpp(self, wsi: WSI) -> float:
+        return 0.5
+
     def get_thumbnail(self, wsi: WSI, level: int = -1):
         self.get_thumbnail_calls += 1
         return self.thumbnail.copy(), 10.0, 10.0
@@ -178,7 +181,6 @@ def _install_common_mocks(
 
     def _write_tiles_overview(*args, **kwargs) -> None:
         state["write_tiles_overview_calls"] += 1
-        # args: (slide_artifact, bag_id, image_bytes)
         if len(args) >= 3:
             state["last_written_overview"] = args[2]
         else:
@@ -206,6 +208,7 @@ def _render_stub(state: dict[str, Any], **kwargs) -> bytes:
     assert "coords_array" in kwargs
     assert "downscale_x" in kwargs
     assert "downscale_y" in kwargs
+    assert "base_mpp" in kwargs
     return b"\xff\xd8mockjpg"
 
 
@@ -232,7 +235,7 @@ def test_report_false_no_overview_generation_attempt(monkeypatch: pytest.MonkeyP
 
     state = _install_common_mocks(
         monkeypatch,
-        features_exist_sequence=[False, False],  # early skip check, later features check
+        features_exist_sequence=[False, False],
         coords_are_valid=True,
         overview_exists_sequence=[],
     )
@@ -242,7 +245,7 @@ def test_report_false_no_overview_generation_attempt(monkeypatch: pytest.MonkeyP
     assert processor.get_thumbnail_calls == 0
     assert state["render_calls"] == 0
     assert state["write_tiles_overview_calls"] == 0
-    assert state["write_features_calls"] == 1  # feature extraction still runs
+    assert state["write_features_calls"] == 1
 
 
 def test_report_true_tiles_reused_overview_missing_generates_and_writes(
@@ -255,7 +258,7 @@ def test_report_true_tiles_reused_overview_missing_generates_and_writes(
         monkeypatch,
         features_exist_sequence=[False, False],
         coords_are_valid=True,
-        overview_exists_sequence=[False],  # missing -> generate
+        overview_exists_sequence=[False],
     )
 
     _execute(policy, processor, tmp_path)
@@ -278,7 +281,7 @@ def test_report_true_tiles_reused_overview_exists_skips_generation(
         monkeypatch,
         features_exist_sequence=[False, False],
         coords_are_valid=True,
-        overview_exists_sequence=[True],  # already exists -> skip
+        overview_exists_sequence=[True],
     )
 
     _execute(policy, processor, tmp_path)
@@ -297,14 +300,13 @@ def test_report_true_features_exist_but_overview_missing_still_generates_overvie
 
     state = _install_common_mocks(
         monkeypatch,
-        features_exist_sequence=[True, True],  # early check true, later check true -> no feature extraction
+        features_exist_sequence=[True, True],
         coords_are_valid=True,
-        overview_exists_sequence=[False],  # missing -> should still generate
+        overview_exists_sequence=[False],
     )
 
     _execute(policy, processor, tmp_path)
 
-    # Important regression guard: do not early-return before overview generation
     assert processor.get_thumbnail_calls == 1
     assert state["render_calls"] == 1
     assert state["write_tiles_overview_calls"] == 1
@@ -318,14 +320,13 @@ def test_report_true_tiles_newly_created_always_writes_overview_even_if_exists(
     policy = _make_policy(report=True)
     processor = _FakeSlideProcessor()
 
-    # Avoid touching tissue loading/segmentation path
     monkeypatch.setattr(policy, "_resolve_tissue_polygons", lambda **kwargs: [])
 
     state = _install_common_mocks(
         monkeypatch,
         features_exist_sequence=[False, False],
-        coords_are_valid=False,            # force tiling recompute
-        overview_exists_sequence=[True],   # even if exists, newly created tiles should still write
+        coords_are_valid=False,
+        overview_exists_sequence=[True],
     )
 
     _execute(policy, processor, tmp_path)
@@ -333,8 +334,6 @@ def test_report_true_tiles_newly_created_always_writes_overview_even_if_exists(
     assert processor.extract_patches_calls == 1
     assert state["write_coords_calls"] == 1
     assert state["write_tiling_spec_calls"] == 1
-
-    # New tiles -> always write overview
     assert processor.get_thumbnail_calls == 1
     assert state["render_calls"] == 1
     assert state["write_tiles_overview_calls"] == 1
