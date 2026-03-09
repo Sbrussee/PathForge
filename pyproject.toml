@@ -10,7 +10,7 @@ version = "0.1.0"
 description = "PathBench 2.0"
 authors = [{ name = "Siemen Brussee" }]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "numpy",
     "pandas",
@@ -33,7 +33,7 @@ dependencies = [
 [project.optional-dependencies]
 # ---- backends / heavier stacks ----
 lazyslide = [
-    "lazyslide",
+    "lazyslide>=0.10.0",
     "wsidata",
     "timm",
     "geopandas",
