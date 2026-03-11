@@ -113,11 +113,24 @@ class FeatureExtractionPolicy(PolicyBase):
 
         report_enabled = bool(self.config.experiment.report)
 
+        try:
+            slide_processor.load_wsi(wsi)
+            try:
+                _ = slide_processor.get_base_mpp(wsi)
+            finally:
+                slide_processor.close_wsi(wsi)
+        except Exception:
+            logger.warning(
+                "[Policy] Skipping slide %s because no valid base MPP is available.",
+                slide_id,
+            )
+            return
+
         expected_tiling_spec = {
             "tile_px": tile_px,
             "tile_mpp": tile_mpp,
-            "stride_px": tile_px, 
-            "coord_space": "level0" 
+            "stride_px": tile_px,
+            "coord_space": "level0"
         }
 
         try:
@@ -180,7 +193,7 @@ class FeatureExtractionPolicy(PolicyBase):
 
                 if coords_array is None or tiling_spec is None:
                     raise RuntimeError("[Policy] Internal error: coords_array/tiling_spec not resolved.")
-                
+
                 # ---- tiles_overview (optional report visualization) ----
                 if report_enabled:
                     should_write_tiles_overview = tiles_newly_created or (

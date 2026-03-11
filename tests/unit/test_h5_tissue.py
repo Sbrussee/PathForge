@@ -1,11 +1,8 @@
-# tests/unit/test_h5_tissue.py
-
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from pathbench.core.io.h5.base import FileHandleH5
@@ -16,8 +13,12 @@ def test_h5_tissue_roundtrip(tmp_path: Path) -> None:
     h5_path = tmp_path / "S1.h5"
 
     polys_in = [
-        np.array([[0, 0], [10, 0], [10, 10], [0, 0]], dtype=np.float32),
-        np.array([[5, 5], [6, 5], [6, 6], [5, 5]], dtype=np.float32),
+        [
+            [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 0.0]],
+        ],
+        [
+            [[5.0, 5.0], [6.0, 5.0], [6.0, 6.0], [5.0, 5.0]],
+        ],
     ]
 
     with FileHandleH5(h5_path, mode="a") as f:
@@ -28,8 +29,7 @@ def test_h5_tissue_roundtrip(tmp_path: Path) -> None:
         assert isinstance(polys_out, list)
         assert len(polys_out) == 2
 
-        np.testing.assert_allclose(polys_out[0], polys_in[0])
-        np.testing.assert_allclose(polys_out[1], polys_in[1])
+        assert polys_out == polys_in
 
 
 def test_load_external_tissue_polygons_geojson_polygon_and_multipolygon(tmp_path: Path) -> None:
@@ -72,9 +72,14 @@ def test_load_external_tissue_polygons_geojson_polygon_and_multipolygon(tmp_path
     polys = tissue_io.load_external_tissue_polygons(geojson_path)
 
     assert len(polys) == 3
-    for p in polys:
-        assert isinstance(p, np.ndarray)
-        assert p.ndim == 2 and p.shape[1] == 2
+    for poly in polys:
+        assert isinstance(poly, list)
+        assert len(poly) >= 1
+
+        outer_ring = poly[0]
+        assert isinstance(outer_ring, list)
+        assert len(outer_ring) >= 4
+        assert all(len(pt) == 2 for pt in outer_ring)
 
 
 def test_load_external_tissue_polygons_unsupported_suffix_raises(tmp_path: Path) -> None:

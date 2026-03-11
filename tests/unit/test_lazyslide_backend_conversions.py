@@ -1,5 +1,3 @@
-# tests/unit/test_lazyslide_backend_conversions.py
-
 from __future__ import annotations
 
 from importlib import import_module
@@ -115,10 +113,14 @@ def test_backend_tissues_to_policy() -> None:
     assert isinstance(tissues, list)
     assert len(tissues) == 1
 
-    arr = tissues[0]
-    assert isinstance(arr, np.ndarray)
-    assert arr.ndim == 2 and arr.shape[1] == 2
-    assert arr.dtype == np.float32
+    polygon = tissues[0]
+    assert isinstance(polygon, list)
+    assert len(polygon) == 1
+
+    outer_ring = polygon[0]
+    assert isinstance(outer_ring, list)
+    assert len(outer_ring) >= 4
+    assert all(len(pt) == 2 for pt in outer_ring)
 
 
 def test_validate_tile_spec() -> None:

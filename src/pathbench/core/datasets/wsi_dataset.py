@@ -22,6 +22,7 @@ class WSI:
     category: str
     path: Path  # slide image path
     artifact_path: Path  # per-slide .h5 path
+    fallback_mpp: Optional[float] = None
 
     _obj: Optional[Any] = field(default=None, repr=False)
 
@@ -157,6 +158,26 @@ class WSIDataset(DatasetBase):
             patient = str(row["patient"])
             category = str(row["category"])
 
+            fallback_mpp = None
+            if "fallback_mpp" in df.columns and pd.notna(row["fallback_mpp"]):
+                try:
+                    fallback_mpp = float(row["fallback_mpp"])
+                    if fallback_mpp <= 0:
+                        logger.warning(
+                            "[%s] Invalid fallback_mpp for slide '%s': %r. Ignoring it.",
+                            self.name,
+                            slide_id,
+                            row["fallback_mpp"],
+                        )
+                        fallback_mpp = None
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "[%s] Could not parse fallback_mpp for slide '%s': %r. Ignoring it.",
+                        self.name,
+                        slide_id,
+                        row["fallback_mpp"],
+                    )
+
             logger.debug(
                 "[%s] (%d/%d) slide_id='%s' (patient=%s, category=%s)",
                 self.name,
@@ -178,6 +199,7 @@ class WSIDataset(DatasetBase):
                     category=category,
                     path=slide_path,
                     artifact_path=self.slide_artifact_path(slide_id),
+                    fallback_mpp=fallback_mpp,
                 )
             )
 
