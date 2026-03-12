@@ -11,12 +11,13 @@ import inspect
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
 
 # Internal Imports
-from pathbench.utils.constants import TASK_TYPES, MODE_TYPES, EXPERIMENTS_DIR
+from pathbench.utils.constants import TASK_TYPES, MODE_TYPES, EXPERIMENTS_DIR, AGGREGATION_LEVELS
 from pathbench.utils.registries import MODELS, FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES, is_feature_extractor_available, all_feature_extractor_names
 from pathbench.core.models.mil_base import MILModelBase
 
 TaskType = Literal[tuple(TASK_TYPES)]
 ModeType = Literal[tuple(MODE_TYPES)]
+AggregationLevel = Literal[tuple(AGGREGATION_LEVELS)]
 
 # ---------------------------------------------------------------------------
 # Config Sections
@@ -36,7 +37,7 @@ class ExperimentConfig(BaseModel):
     # Task + Mode
     task: Optional[TaskType] = None
     mode: ModeType = "benchmark"
-    aggregation_level: Literal["slide", "patient"] = "slide"
+    aggregation_level: AggregationLevel = "slide"
 
     # Global behavior
     report: bool = False

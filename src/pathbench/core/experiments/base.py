@@ -14,6 +14,7 @@ import pandas as pd
 from ...config.config import Config
 from ...utils.constants import EXPERIMENTS_DIR
 from pathbench.core.datasets.wsi_dataset import WSIDataset
+from pathbench.core.datasets.bag_dataset import BagDataset
 
 logger = logging.getLogger(__name__)
 
@@ -248,4 +249,43 @@ class Experiment:
             if ds.used_for == "ignore":
                 continue
             datasets.append(WSIDataset(ds, annotations))
+        return datasets
+
+    def build_bag_datasets(
+        self,
+        combo_cfg: ComboConfig,
+        target_column: str | None = None,
+    ) -> list[BagDataset]:
+        """
+        Build BagDataset instances for all datasets in cfg.datasets.
+
+        Args:
+            combo_cfg: Active benchmark combination.
+            target_column: Optional override for the target/category column.
+
+        Returns:
+            List of BagDataset instances.
+        """
+        if self.project_root is None:
+            raise RuntimeError("project_root is not set.")
+
+        annotations = self.load_annotations()
+
+        datasets: list[BagDataset] = []
+        for ds in self.cfg.datasets:
+            if ds.used_for == "ignore":
+                continue
+
+            kwargs = {
+                "ds_cfg": ds,
+                "annotations_df": annotations,
+                "combo_cfg": combo_cfg,
+                "aggregation_level": self.cfg.experiment.aggregation_level,
+            }
+
+            if target_column is not None:
+                kwargs["target_column"] = target_column
+
+            datasets.append(BagDataset(**kwargs))
+
         return datasets
