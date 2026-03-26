@@ -3,7 +3,13 @@
 
 DEFAULT_WEIGHTS_DIR = "./pretrained_weights"
 
-TASK_TYPES = ["classification", "regression", "survival", "survival_discrete"]
+TASK_TYPES = [
+    "classification",
+    "regression",
+    "survival",
+    "survival_discrete",
+    "slide_retrieval",
+]
 MODE_TYPES = ["benchmark", "optimization", "feature_extraction"]
 
 AGGREGATION_LEVELS = ["slide", "case", "patient"]

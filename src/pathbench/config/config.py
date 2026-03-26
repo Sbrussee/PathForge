@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import os
+from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
-from typing import Any, Literal, List, Optional, Dict, Union
+from typing import Any, ClassVar, Literal, List, Optional, Dict
 import yaml
 import torch
 import inspect
 
 # Pydantic Imports
-from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Internal Imports
 from pathbench.utils.constants import TASK_TYPES, MODE_TYPES, EXPERIMENTS_DIR, AGGREGATION_LEVELS
@@ -18,6 +18,27 @@ from pathbench.core.models.mil_base import MILModelBase
 TaskType = Literal[tuple(TASK_TYPES)]
 ModeType = Literal[tuple(MODE_TYPES)]
 AggregationLevel = Literal[tuple(AGGREGATION_LEVELS)]
+
+BenchmarkScalar = int | float | str
+BenchmarkParamMapping = dict[BenchmarkScalar, dict[str, Any]]
+BenchmarkParamInput = BenchmarkScalar | BenchmarkParamMapping
+
+
+@dataclass(frozen=True, slots=True)
+class BenchmarkParamEntry:
+    """
+    Normalized benchmark-parameter entry used for combo expansion.
+
+    Inputs:
+    - `value`: base benchmark value consumed by existing code paths.
+    - `hyperparams`: optional hyperparameter mapping attached to that value.
+
+    Returns:
+    - Immutable normalized entry for one benchmark-parameter option.
+    """
+
+    value: BenchmarkScalar
+    hyperparams: dict[str, Any] = dataclass_field(default_factory=dict)
 
 # ---------------------------------------------------------------------------
 # Config Sections
@@ -120,78 +141,274 @@ class DatasetEntry(BaseModel):
     slides_dir: str
     artifacts_dir: str
     tissue_annotations_dir: Optional[str] = None
-    used_for: Literal["training", "testing", "validation", "ignore", "all"]
+    used_for: str
+
+    @field_validator("used_for")
+    @classmethod
+    def validate_used_for(cls, value: str) -> str:
+        normalized_value = str(value).strip().lower()
+        if not normalized_value:
+            raise ValueError("datasets[].used_for must be a non-empty string.")
+        return normalized_value
 
 class BenchmarkParameters(BaseModel):
     """
     Grid search parameters.
     Pydantic validators enforce logic previously implemented manually.
     """
-    tile_px: List[int] = Field(default_factory=lambda: [256])
-    tile_mpp: List[float] = Field(default_factory=lambda: [0.5])
-    feature_extraction: List[str] = Field(default_factory=list)
-    normalization: Optional[List[str]] = None  # TODO: Do we want to keep this and is it available in lazyslide?
-    mil: List[str] = Field(default_factory=list)
-    loss: List[str] = Field(default_factory=list)
-    activation_function: List[str] = Field(default_factory=list)
-    optimizer: List[str] = Field(default_factory=list)
+    tile_px: List[BenchmarkParamInput] = Field(default_factory=lambda: [256])
+    tile_mpp: List[BenchmarkParamInput] = Field(default_factory=lambda: [0.5])
+    feature_extraction: List[BenchmarkParamInput] = Field(default_factory=list)
+    normalization: Optional[List[BenchmarkParamInput]] = None  # TODO: Do we want to keep this and is it available in lazyslide?
+    mil: List[BenchmarkParamInput] = Field(default_factory=list)
+    loss: List[BenchmarkParamInput] = Field(default_factory=list)
+    activation_function: List[BenchmarkParamInput] = Field(default_factory=list)
+    optimizer: List[BenchmarkParamInput] = Field(default_factory=list)
+    search_strategy: Optional[List[BenchmarkParamInput]] = None
+    retrieval_representation: Optional[List[BenchmarkParamInput]] = None
+
+    _FIELD_TYPES: ClassVar[dict[str, type[int] | type[float] | type[str]]] = {
+        "tile_px": int,
+        "tile_mpp": float,
+        "feature_extraction": str,
+        "normalization": str,
+        "mil": str,
+        "loss": str,
+        "activation_function": str,
+        "optimizer": str,
+        "search_strategy": str,
+        "retrieval_representation": str,
+    }
+    @classmethod
+    def _normalize_entry(
+        cls,
+        entry: BenchmarkParamInput,
+        *,
+        field_name: str,
+    ) -> BenchmarkParamEntry:
+        expected_type = cls._FIELD_TYPES[field_name]
+
+        if isinstance(entry, dict):
+            if len(entry) != 1:
+                raise ValueError(
+                    f"benchmark_parameters.{field_name} mapping entries must contain "
+                    "exactly one value->params pair."
+                )
+
+            value, params = next(iter(entry.items()))
+            if not isinstance(params, dict):
+                raise ValueError(
+                    f"benchmark_parameters.{field_name} params must be a mapping."
+                )
+        else:
+            value = entry
+            params = {}
+
+        if expected_type is int and isinstance(value, bool):
+            raise ValueError(
+                f"benchmark_parameters.{field_name} values must be {expected_type.__name__}."
+            )
+
+        if expected_type is float and isinstance(value, bool):
+            raise ValueError(
+                f"benchmark_parameters.{field_name} values must be float."
+            )
+
+        if expected_type is int and not isinstance(value, int):
+            raise ValueError(
+                f"benchmark_parameters.{field_name} values must be int. Got {value!r}."
+            )
+        elif expected_type is float and not isinstance(value, (int, float)):
+            raise ValueError(
+                f"benchmark_parameters.{field_name} values must be float. Got {value!r}."
+            )
+        elif expected_type is str and not isinstance(value, str):
+            raise ValueError(
+                f"benchmark_parameters.{field_name} values must be str. Got {value!r}."
+            )
+
+        normalized_value = float(value) if expected_type is float else value
+        return BenchmarkParamEntry(
+            value=normalized_value,
+            hyperparams=dict(params),
+        )
+
+    @classmethod
+    def _normalize_entries(
+        cls,
+        value: list[BenchmarkParamInput] | None,
+        *,
+        field_name: str,
+    ) -> list[BenchmarkParamEntry]:
+        if value is None:
+            return []
+        return [
+            cls._normalize_entry(entry, field_name=field_name)
+            for entry in value
+        ]
+
+    def get_entries(self, field_name: str) -> list[BenchmarkParamEntry]:
+        """Return normalized benchmark entries for one benchmark-parameter field."""
+        if field_name not in self._FIELD_TYPES:
+            raise AttributeError(f"benchmark_parameters has no field '{field_name}'")
+
+        return self._normalize_entries(
+            getattr(self, field_name, None),
+            field_name=field_name,
+        )
+
+    def get_values(self, field_name: str) -> list[BenchmarkScalar]:
+        """Return only the base values for one benchmark-parameter field."""
+        return [entry.value for entry in self.get_entries(field_name)]
+
+    @model_validator(mode="after")
+    def validate_strategy_hyperparams(self) -> "BenchmarkParameters":
+        """Validate slide-retrieval hyperparameter names when provided."""
+        self._validate_search_strategy_hyperparams()
+        self._validate_retrieval_representation_hyperparams()
+        return self
+
+    def _validate_search_strategy_hyperparams(self) -> None:
+        if not self.search_strategy:
+            return
+
+        from pathbench.slide_retrieval.search_strategies.registry import (
+            get_search_strategy_hyperparams,
+            import_search_strategy_modules,
+            is_search_strategy_available,
+        )
+
+        import_search_strategy_modules()
+        for entry in self.get_entries("search_strategy"):
+            strategy_name = str(entry.value)
+            if not is_search_strategy_available(strategy_name):
+                raise ValueError(f"Search strategy '{strategy_name}' is not registered.")
+
+            declared_params = get_search_strategy_hyperparams(strategy_name)
+            self._validate_declared_hyperparams(
+                field_name="search_strategy",
+                value_name=strategy_name,
+                provided_params=entry.hyperparams,
+                declared_params=declared_params,
+            )
+
+    def _validate_retrieval_representation_hyperparams(self) -> None:
+        if not self.retrieval_representation:
+            return
+
+        from pathbench.slide_retrieval.representation_strategies.registry import (
+            get_representation_strategy_hyperparams,
+            import_representation_strategy_modules,
+            is_representation_strategy_available,
+        )
+
+        import_representation_strategy_modules()
+        for entry in self.get_entries("retrieval_representation"):
+            strategy_name = str(entry.value)
+            if not is_representation_strategy_available(strategy_name):
+                raise ValueError(
+                    f"Retrieval representation '{strategy_name}' is not registered."
+                )
+
+            declared_params = get_representation_strategy_hyperparams(strategy_name)
+            self._validate_declared_hyperparams(
+                field_name="retrieval_representation",
+                value_name=strategy_name,
+                provided_params=entry.hyperparams,
+                declared_params=declared_params,
+            )
+
+    @staticmethod
+    def _validate_declared_hyperparams(
+        *,
+        field_name: str,
+        value_name: str,
+        provided_params: dict[str, Any],
+        declared_params: dict[str, dict[str, Any]],
+    ) -> None:
+        unknown_params = sorted(set(provided_params) - set(declared_params))
+        if unknown_params:
+            raise ValueError(
+                f"benchmark_parameters.{field_name} entry '{value_name}' defines "
+                f"unknown hyperparams {unknown_params}. Allowed hyperparams: "
+                f"{sorted(declared_params)}"
+            )
 
     @field_validator('tile_px')
     @classmethod
-    def validate_tile_px(cls, v: List[int]) -> List[int]:
-        for px in v:
+    def validate_tile_px(cls, v: List[BenchmarkParamInput]) -> List[BenchmarkParamInput]:
+        for entry in cls._normalize_entries(v, field_name="tile_px"):
+            px = int(entry.value)
             if px % 2 != 0:
                 raise ValueError(f"Invalid tile_px: {px}. Must be divisible by 2.")
         return v
 
     @field_validator('tile_mpp')
     @classmethod
-    def validate_tile_mpp(cls, v: List[float]) -> List[float]:
-        for mpp in v:
+    def validate_tile_mpp(cls, v: List[BenchmarkParamInput]) -> List[BenchmarkParamInput]:
+        for entry in cls._normalize_entries(v, field_name="tile_mpp"):
+            mpp = float(entry.value)
             if mpp <= 0:
                 raise ValueError(f"Invalid tile_mpp: {mpp}. Must be > 0.")
         return v
 
     @field_validator("feature_extraction")
     @classmethod
-    def validate_feature_extractors(cls, v: list[str]) -> list[str]:
-        for fe in v: 
-            if not is_feature_extractor_available(fe): 
+    def validate_feature_extractors(
+        cls,
+        v: list[BenchmarkParamInput],
+    ) -> list[BenchmarkParamInput]:
+        for entry in cls._normalize_entries(v, field_name="feature_extraction"):
+            fe = str(entry.value)
+            if not is_feature_extractor_available(fe):
                 raise ValueError(
-                f"Feature extractor '{fe}' is not registered. "
-                f"Available feature extractors: {sorted(all_feature_extractor_names())}"
-            )
-
+                    f"Feature extractor '{fe}' is not registered. "
+                    f"Available feature extractors: {sorted(all_feature_extractor_names())}"
+                )
         return v
 
     @field_validator('mil')
     @classmethod
-    def validate_mil_models(cls, v: List[str]) -> List[str]:
-        for model_name in v:
+    def validate_mil_models(cls, v: List[BenchmarkParamInput]) -> List[BenchmarkParamInput]:
+        for entry in cls._normalize_entries(v, field_name="mil"):
+            model_name = str(entry.value)
             if not MODELS.is_available(model_name):
                 raise ValueError(f"MIL model '{model_name}' not found in registry.")
 
-            # Check Inheritance
             model_cls = MODELS.get(model_name)
-            if isinstance(model_cls, type):
-                if not issubclass(model_cls, MILModelBase):
-                    raise ValueError(f"Model '{model_name}' does not inherit from MILModelBase.")
+            if isinstance(model_cls, type) and not issubclass(model_cls, MILModelBase):
+                raise ValueError(f"Model '{model_name}' does not inherit from MILModelBase.")
         return v
 
     @field_validator('activation_function')
     @classmethod
-    def validate_activations(cls, v: List[str]) -> List[str]:
-        valid_activations = {name for name, _ in inspect.getmembers(torch.nn.modules.activation, inspect.isclass)}
-        for act in v:
+    def validate_activations(
+        cls,
+        v: List[BenchmarkParamInput],
+    ) -> List[BenchmarkParamInput]:
+        valid_activations = {
+            name
+            for name, _ in inspect.getmembers(torch.nn.modules.activation, inspect.isclass)
+        }
+        for entry in cls._normalize_entries(v, field_name="activation_function"):
+            act = str(entry.value)
             if act not in valid_activations and not hasattr(torch.nn, act):
                 raise ValueError(f"Activation '{act}' not found in torch.nn.")
         return v
 
     @field_validator('optimizer')
     @classmethod
-    def validate_optimizers(cls, v: List[str]) -> List[str]:
-        valid_optimizers = {name for name, _ in inspect.getmembers(torch.optim, inspect.isclass) if name != "Optimizer"}
-        for opt in v:
+    def validate_optimizers(
+        cls,
+        v: List[BenchmarkParamInput],
+    ) -> List[BenchmarkParamInput]:
+        valid_optimizers = {
+            name
+            for name, _ in inspect.getmembers(torch.optim, inspect.isclass)
+            if name != "Optimizer"
+        }
+        for entry in cls._normalize_entries(v, field_name="optimizer"):
+            opt = str(entry.value)
             if opt not in valid_optimizers:
                 raise ValueError(f"Optimizer '{opt}' not found in torch.optim.")
         return v
@@ -223,7 +440,7 @@ class Config(BaseModel):
         the backend is set to 'lazyslide'.
         """
         backend = self.slide_processing.backend
-        fe_list = self.benchmark_parameters.feature_extraction
+        fe_list = self.benchmark_parameters.get_values("feature_extraction")
         
         for fe in fe_list:
             if fe in LAZYSLIDE_MODEL_NAMES and backend != "lazyslide":
@@ -232,10 +449,78 @@ class Config(BaseModel):
                     f"Current backend: '{backend}'."
                 )
         
-        if self.experiment.mode == "benchmark" and not self.benchmark_parameters.mil:
-             raise ValueError("Mode is 'benchmark' but no MIL models specified in benchmark_parameters.")
+        if (
+            self.experiment.mode == "benchmark"
+            and self.experiment.task != "slide_retrieval"
+            and not self.benchmark_parameters.mil
+        ):
+            raise ValueError(
+                "Mode is 'benchmark' but no MIL models specified in benchmark_parameters."
+            )
+
+        self._validate_dataset_use_semantics()
+        self._validate_task_evaluation_metrics()
              
         return self
+
+    def _validate_dataset_use_semantics(self) -> None:
+        if self.experiment.mode != "benchmark" or self.experiment.task is None:
+            return
+
+        from pathbench.benchmarking.registry import (
+            get_task_allowed_dataset_uses,
+            import_task_modules,
+            is_task_available,
+        )
+
+        import_task_modules()
+        if not is_task_available(self.experiment.task):
+            return
+
+        allowed_task_uses = get_task_allowed_dataset_uses(self.experiment.task)
+        if allowed_task_uses is None:
+            return
+
+        allowed_uses = set(allowed_task_uses) | {"ignore"}
+
+        invalid_uses = sorted(
+            {
+                ds_cfg.used_for
+                for ds_cfg in self.datasets
+                if ds_cfg.used_for not in allowed_uses
+            }
+        )
+        if invalid_uses:
+            raise ValueError(
+                f"Invalid dataset used_for values for task '{self.experiment.task}': "
+                f"{invalid_uses}. Allowed values: {sorted(allowed_uses)}"
+            )
+
+    def _validate_task_evaluation_metrics(self) -> None:
+        if self.experiment.mode != "benchmark":
+            return
+
+        if self.experiment.task != "slide_retrieval":
+            return
+
+        if not self.experiment.evaluation:
+            return
+
+        from pathbench.slide_retrieval.validation.registry import (
+            import_validation_metric_modules,
+            is_validation_metric_available,
+            parse_validation_metric_name,
+        )
+
+        import_validation_metric_modules()
+        for metric_name in self.experiment.evaluation:
+            request = parse_validation_metric_name(metric_name)
+            if not is_validation_metric_available(request.registry_key):
+                raise ValueError(
+                    f"Slide-retrieval evaluation metric '{metric_name}' is not "
+                    f"registered. Expected one of the registered metric families "
+                    f"matching '<metric>_at_<k>'."
+                )
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":

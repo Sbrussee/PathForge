@@ -88,6 +88,14 @@ def list_tasks() -> list[str]:
     return sorted(_TASK_REGISTRY.keys())
 
 
+def get_task_allowed_dataset_uses(name: str) -> frozenset[str] | None:
+    """
+    Return the allowed dataset-use semantics for one task.
+    """
+    task_cls = get_task(name)
+    return task_cls.get_allowed_dataset_uses()
+
+
 def import_task_modules(package_name: str = "pathbench.benchmarking.tasks") -> None:
     """
     Import all modules inside the benchmarking.tasks package so that

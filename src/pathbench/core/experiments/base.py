@@ -11,7 +11,7 @@ from typing import Any, List
 
 import pandas as pd
 
-from ...config.config import Config
+from ...config.config import BenchmarkParamEntry, Config
 from ...utils.constants import EXPERIMENTS_DIR
 from pathbench.core.datasets.wsi_dataset import WSIDataset
 from pathbench.core.datasets.bag_dataset import BagDataset
@@ -34,11 +34,33 @@ class ComboConfig:
 
     @classmethod
     def from_keys_values(cls, keys: list[str], values: list[object]) -> "ComboConfig":
-        data = {k: v for k, v in zip(keys, values)}
+        data: dict[str, object] = {}
+        for key, value in zip(keys, values):
+            if isinstance(value, BenchmarkParamEntry):
+                data[key] = value.value
+                data[f"{key}_params"] = dict(value.hyperparams)
+            else:
+                data[key] = value
+                data[f"{key}_params"] = {}
         return cls(**data)
 
     def to_dict(self) -> dict[str, object]:
         return dict(self.__dict__)
+
+    def get(self, key: str, default: object = None) -> object:
+        """Return one combo value by key with a dict-like fallback default."""
+        return getattr(self, key, default)
+
+    def get_hyperparams(
+        self,
+        key: str,
+        default: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Return the hyperparameters attached to one combo value."""
+        params = getattr(self, f"{key}_params", None)
+        if params is None:
+            return {} if default is None else dict(default)
+        return dict(params)
 
 
 @dataclass(slots=True)
@@ -221,7 +243,7 @@ class Experiment:
         for key in keys:
             if not hasattr(bp, key):
                 raise AttributeError(f"benchmark_parameters has no field '{key}'")
-            values = getattr(bp, key)
+            values = bp.get_entries(key)
 
             if not values:
                 raise ValueError(f"benchmark_parameters.{key} is empty; cannot build grid.")
@@ -236,6 +258,7 @@ class Experiment:
     def build_datasets(self) -> list[WSIDataset]:
         """
         Build WSIDataset instances for all datasets in cfg.datasets.
+
         Returns:
             List of SlideDataset instances.
         """

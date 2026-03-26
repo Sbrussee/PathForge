@@ -9,6 +9,7 @@ import pytest
 
 from pathbench.config.config import Config
 from pathbench.core.experiments.base import Experiment
+from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.policy.feature_extraction import FeatureExtractionPolicy
 from pathbench.core.io.h5.base import FileHandleH5
 from pathbench.core.io.h5.layout import DEFAULT_LAYOUT
@@ -128,11 +129,11 @@ def test_smoke_feature_extraction_lazyslide(tmp_path: Path, monkeypatch: pytest.
     # ---- assertions: H5 exists + layout is consistent ----
     assert wsi.artifact_path.exists()
 
-    bag_id = f"{tile_px}px_{tile_mpp:g}mpp"
-    coords_path = DEFAULT_LAYOUT.coords_dataset(bag_id)
-    tiling_path = DEFAULT_LAYOUT.tiling_spec_dataset(bag_id)
-    overview_path = DEFAULT_LAYOUT.tiles_overview_dataset(bag_id)  # <-- new
-    feats_path = DEFAULT_LAYOUT.features_dataset(bag_id, extractor)
+    tiling_id = build_tiling_id(combo)
+    coords_path = DEFAULT_LAYOUT.coords_dataset(tiling_id)
+    tiling_path = DEFAULT_LAYOUT.tiling_spec_dataset(tiling_id)
+    overview_path = DEFAULT_LAYOUT.tiles_overview_dataset(tiling_id)  # <-- new
+    feats_path = DEFAULT_LAYOUT.features_dataset(tiling_id, extractor)
 
     with FileHandleH5(wsi.artifact_path, mode="r") as fh:
         assert DEFAULT_LAYOUT.tissue_dataset in fh.h5

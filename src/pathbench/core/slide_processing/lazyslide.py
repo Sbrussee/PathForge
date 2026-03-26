@@ -453,6 +453,19 @@ class LazySlideProcessor(SlideProcessorBase):
 
         return arr
 
+    def _region_to_rgb_uint8_numpy(self, region_obj: Any) -> np.ndarray:
+        """
+        Convert one backend region read into an `HxWx3 uint8` RGB array.
+
+        Inputs:
+        - `region_obj`: backend-native region payload returned by
+          `wsi.obj.read_region(...)`.
+
+        Returns:
+        - `np.ndarray` with shape `(H, W, 3)` and dtype `uint8`.
+        """
+        return self._thumbnail_to_rgb_uint8_numpy(region_obj)
+
     # ---------------------------------------------------------------------
     # SlideProcessorBase API
     # ---------------------------------------------------------------------
@@ -695,6 +708,46 @@ class LazySlideProcessor(SlideProcessorBase):
             )
 
         return features_matrix
+
+    def read_patch_region(
+        self,
+        wsi: WSI,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        level: int,
+    ) -> np.ndarray:
+        """
+        Read one patch region from the LazySlide backend as an RGB uint8 array.
+
+        Inputs:
+        - `wsi`: loaded slide wrapper exposing `wsi.obj.read_region(...)`.
+        - `x`: level-0 left coordinate.
+        - `y`: level-0 top coordinate.
+        - `width`: region width in pixels at `level`.
+        - `height`: region height in pixels at `level`.
+        - `level`: slide pyramid level used for the read.
+
+        Returns:
+        - `np.ndarray[uint8]` with shape `(H, W, 3)`.
+        """
+        if getattr(wsi, "_obj", None) is None:
+            raise RuntimeError("[LazySlide] WSI not loaded. Call load_wsi(wsi) first.")
+
+        if not hasattr(wsi.obj, "read_region"):
+            raise RuntimeError(
+                "[LazySlide] Loaded WSI object does not expose read_region(...)."
+            )
+
+        region = wsi.obj.read_region(
+            int(x),
+            int(y),
+            int(width),
+            int(height),
+            level=int(level),
+        )
+        return self._region_to_rgb_uint8_numpy(region)
 
 
     def extract_cells(self, wsi: WSI, config: Dict[str, Any]) -> Any:

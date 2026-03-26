@@ -10,7 +10,9 @@ import numpy as np
 from tqdm import tqdm
 
 from pathbench.policy.base import PolicyBase
+from pathbench.core.datasets.factory import build_wsi_datasets
 from pathbench.core.experiments.base import ComboConfig, Experiment
+from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.datasets.wsi_dataset import WSI, WSIDataset
 from pathbench.core.slide_processing.base import SlideProcessorBase
 from pathbench.utils.registries import SLIDE_PROCESSORS
@@ -31,7 +33,10 @@ class FeatureExtractionPolicy(PolicyBase):
 
     def __init__(self, experiment: Experiment):
         super().__init__(experiment)
-        self.datasets: list[WSIDataset] = self.experiment.build_datasets()
+        self.datasets: list[WSIDataset] = build_wsi_datasets(
+            cfg=self.experiment.cfg,
+            annotations_df=self.experiment.load_annotations(),
+        )
         self.combos: list[ComboConfig] = self.experiment.build_combinations(
             ["feature_extraction", "tile_px", "tile_mpp"]
         )
@@ -109,7 +114,8 @@ class FeatureExtractionPolicy(PolicyBase):
         tile_px: int = int(tiling_config["tile_px"])
         tile_mpp: float = float(tiling_config["tile_mpp"])
         extractor_name: str = str(feature_config["model"])
-        bag_id = self._bag_id(tile_px=tile_px, tile_mpp=tile_mpp)
+        combo_cfg = ComboConfig(tile_px=tile_px, tile_mpp=tile_mpp)
+        tiling_id = build_tiling_id(combo_cfg)
 
         report_enabled = bool(self.config.experiment.report)
 
@@ -136,24 +142,24 @@ class FeatureExtractionPolicy(PolicyBase):
         try:
             with FileHandleH5(artifact_path, mode="a") as slide_artifact:
                 # ---- Fast skip if features already valid (no slide open) ----
-                coords_row_count = tiles_io.coords_num_rows(slide_artifact, bag_id)
+                coords_row_count = tiles_io.coords_num_rows(slide_artifact, tiling_id)
                 features_already_exist = features_io.features_exist(
                     slide_artifact,
-                    bag_id=bag_id,
+                    bag_id=tiling_id,
                     extractor_name=extractor_name,
                     expected_rows=coords_row_count,
                 )
 
                 # Only skip immediately if we do NOT need to create a missing tiles_overview
                 if features_already_exist:
-                    if (not report_enabled) or tiles_io.tiles_overview_exists(slide_artifact, bag_id):
-                        logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, bag_id, extractor_name)
+                    if (not report_enabled) or tiles_io.tiles_overview_exists(slide_artifact, tiling_id):
+                        logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, tiling_id, extractor_name)
                         return
 
                 # ---- Coords reuse or recompute ----
-                coords_are_valid = tiles_io.coords_exist(slide_artifact, bag_id) and tiles_io.tiling_spec_matches(
+                coords_are_valid = tiles_io.coords_exist(slide_artifact, tiling_id) and tiles_io.tiling_spec_matches(
                     slide_artifact,
-                    bag_id=bag_id,
+                    bag_id=tiling_id,
                     expected_tiling_spec=expected_tiling_spec,
                 )
 
@@ -162,8 +168,8 @@ class FeatureExtractionPolicy(PolicyBase):
                 tiles_newly_created = False
 
                 if coords_are_valid:
-                    coords_array = tiles_io.read_coords(slide_artifact, bag_id)
-                    tiling_spec = tiles_io.read_tiling_spec(slide_artifact, bag_id)
+                    coords_array = tiles_io.read_coords(slide_artifact, tiling_id)
+                    tiling_spec = tiles_io.read_tiling_spec(slide_artifact, tiling_id)
                 else:
                     tissue_polygons = self._resolve_tissue_polygons(
                         dataset=dataset,
@@ -187,8 +193,8 @@ class FeatureExtractionPolicy(PolicyBase):
                     coords_array = self._ensure_coords_array(coords_array)
                     tiling_spec = self._ensure_tiling_spec_dict(tiling_spec, expected_tiling_spec=expected_tiling_spec)
 
-                    tiles_io.write_coords(slide_artifact, bag_id, coords_array)
-                    tiles_io.write_tiling_spec(slide_artifact, bag_id, tiling_spec)
+                    tiles_io.write_coords(slide_artifact, tiling_id, coords_array)
+                    tiles_io.write_tiling_spec(slide_artifact, tiling_id, tiling_spec)
                     tiles_newly_created = True
 
                 if coords_array is None or tiling_spec is None:
@@ -197,7 +203,7 @@ class FeatureExtractionPolicy(PolicyBase):
                 # ---- tiles_overview (optional report visualization) ----
                 if report_enabled:
                     should_write_tiles_overview = tiles_newly_created or (
-                        not tiles_io.tiles_overview_exists(slide_artifact, bag_id)
+                        not tiles_io.tiles_overview_exists(slide_artifact, tiling_id)
                     )
 
                     if should_write_tiles_overview:
@@ -218,16 +224,16 @@ class FeatureExtractionPolicy(PolicyBase):
                         finally:
                             slide_processor.close_wsi(wsi)
 
-                        tiles_io.write_tiles_overview(slide_artifact, bag_id, tiles_overview_bytes)
+                        tiles_io.write_tiles_overview(slide_artifact, tiling_id, tiles_overview_bytes)
 
                 # ---- Features reuse or recompute ----
                 if features_io.features_exist(
                     slide_artifact,
-                    bag_id=bag_id,
+                    bag_id=tiling_id,
                     extractor_name=extractor_name,
                     expected_rows=int(coords_array.shape[0]),
                 ):
-                    logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, bag_id, extractor_name)
+                    logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, tiling_id, extractor_name)
                     return
 
                 slide_processor.load_wsi(wsi)
@@ -242,7 +248,7 @@ class FeatureExtractionPolicy(PolicyBase):
                     slide_processor.close_wsi(wsi)
 
                 feature_matrix = self._ensure_feature_matrix(feature_matrix, expected_rows=int(coords_array.shape[0]))
-                features_io.write_features(slide_artifact, bag_id, extractor_name, feature_matrix)
+                features_io.write_features(slide_artifact, tiling_id, extractor_name, feature_matrix)
 
         except Exception:
             logger.exception("[Policy] Error processing slide %s", slide_id)
@@ -327,9 +333,6 @@ class FeatureExtractionPolicy(PolicyBase):
     def _build_feat_config(self, combo_cfg: ComboConfig) -> dict[str, Any]:
         return {"model": combo_cfg.feature_extraction, "params": {}}
 
-    def _bag_id(self, *, tile_px: int, tile_mpp: float) -> str:
-        return f"{tile_px}px_{tile_mpp:g}mpp"
-
     def _ensure_coords_array(self, coords_array: Any) -> np.ndarray:
         coords_array = np.asarray(coords_array, dtype=np.int32)
         if coords_array.ndim != 2 or coords_array.shape[1] != 5:
@@ -395,21 +398,18 @@ class FeatureExtractionPolicy(PolicyBase):
         """
         Deduplicate bag_ids across combos while preserving order.
 
-        Important: bag_id depends only on tile_px + tile_mpp, so multiple feature
+        Important: tiling_id depends only on tile_px + tile_mpp, so multiple feature
         extractors should map to the same report target.
         """
         seen: set[str] = set()
         bag_ids: list[str] = []
 
         for combo_cfg in self.combos:
-            bag_id = self._bag_id(
-                tile_px=int(combo_cfg.tile_px),
-                tile_mpp=float(combo_cfg.tile_mpp),
-            )
-            if bag_id in seen:
+            tiling_id = build_tiling_id(combo_cfg)
+            if tiling_id in seen:
                 continue
-            seen.add(bag_id)
-            bag_ids.append(bag_id)
+            seen.add(tiling_id)
+            bag_ids.append(tiling_id)
 
         return bag_ids
 

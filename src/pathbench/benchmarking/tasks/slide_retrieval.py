@@ -1,217 +1,483 @@
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
 from pathbench.benchmarking.registry import register_task
 from pathbench.benchmarking.tasks.base import TaskBase
+from pathbench.core.datasets.bag_dataset import BagDataset, BagSample
 from pathbench.core.experiments.base import ComboConfig
+from pathbench.core.io.h5.base import FileHandleH5
+from pathbench.slide_retrieval.search_strategies.registry import (
+    build_search_strategy,
+    import_search_strategy_modules,
+)
+from pathbench.slide_retrieval.search_strategies.types import SearchResult
+from pathbench.slide_retrieval.representation_strategies.registry import (
+    build_representation_strategy,
+    import_representation_strategy_modules,
+)
+from pathbench.slide_retrieval.representation_strategies.types import RetrievalRepresentation
 
-# Assumed helpers/registries to add or connect
-from pathbench.slide_retrieval.representation.registry import build_slide_representation_method
-from pathbench.slide_retrieval.search.registry import build_search_method
-from pathbench.slide_retrieval.evaluation import evaluate_retrieval_metrics
+from pathbench.slide_retrieval.types import (
+    RetrievalItemMetadata,
+    SlideRetrievalRunSpec,
+)
+from pathbench.slide_retrieval.representation_strategies.storage import (
+    build_retrieval_representation_artifact_path,
+    build_retrieval_representation_entry_id,
+    build_retrieval_representation_id,
+)
 
+from pathbench.slide_retrieval.io import (
+    load_slide_retrieval_representation,
+    save_slide_retrieval_representation,
+    write_slide_retrieval_eval_outputs,
+)
+from pathbench.slide_retrieval.validation.registry import (
+    get_validation_metric,
+    import_validation_metric_modules,
+    parse_validation_metric_name,
+)
+from pathbench.slide_retrieval.validation.types import (
+    NormalizedSearchHit,
+    NormalizedSearchResult,
+)
 
 logger = logging.getLogger(__name__)
+
+_VALID_RETRIEVAL_USES = {"reference", "query", "query_reference"}
 
 
 @register_task("slide_retrieval")
 class SlideRetrievalTask(TaskBase):
     """
-    Slide-level retrieval task.
+    Run slide retrieval from bag-level features.
 
     Flow:
-    - choose atlas/query datasets from datasets_by_use
-    - build one representation per sample from BagDataset
-    - run search
-    - evaluate retrieval results
-    - save outputs
+    - ensure retrieval representations exist for all relevant samples
+    - split representations into reference/query sets
+    - build the search database once
+    - run retrieval for each query
+    - evaluate and persist outputs
     """
 
-    # Rename these to match your config field names
     grid_keys = [
         "feature_extraction",
         "tile_px",
         "tile_mpp",
-        "slide_representation_method",
-        "search_method",
+        "retrieval_representation",
+        "search_strategy",
     ]
 
-    def run(
+    def execute(
         self,
         combo_cfg: ComboConfig,
-        datasets_by_use: dict[str, list[Any]],
-    ) -> None:
-        atlas_datasets, query_datasets = self._resolve_atlas_and_query_datasets(datasets_by_use)
+        datasets_by_use: dict[str, list[BagDataset]],
+    ) -> dict[str, Any]:
+        import_representation_strategy_modules()
+        import_search_strategy_modules()
 
-        representation_method = self._build_representation_method(combo_cfg)
-        atlas_items = self._build_sample_representations(
-            datasets=atlas_datasets,
-            representation_method=representation_method,
-            combo_cfg=combo_cfg,
+        self.bag_id, self.aggregation_level = self._infer_dataset_context(
+            datasets_by_use=datasets_by_use
         )
-        query_items = self._build_sample_representations(
-            datasets=query_datasets,
-            representation_method=representation_method,
-            combo_cfg=combo_cfg,
-        )
+        exclude_same_patient = bool(getattr(combo_cfg, "exclude_same_patient", True))
 
-        search_method = self._build_search_method(combo_cfg)
-        results = search_method.search(
-            query_items=query_items,
-            atlas_items=atlas_items,
+        self.retrieval_representation_strategy = build_representation_strategy(
+            combo_cfg.retrieval_representation,
+            params=combo_cfg.get_hyperparams("retrieval_representation"),
+            bag_id=self.bag_id,
+            config=getattr(self.experiment, "cfg", None),
+        )
+        slide_representation_params = dict(
+            self.retrieval_representation_strategy.hyperparam_values()
         )
 
-        metric_names = list(getattr(self.cfg.experiment, "evaluation", []) or [])
-        metrics = evaluate_retrieval_metrics(results, metric_names) if metric_names else {}
+        self.search_strategy = build_search_strategy(
+            combo_cfg.search_strategy,
+            params=combo_cfg.get_hyperparams("search_strategy"),
+            config=getattr(self.experiment, "cfg", None),
+        )
+        search_params = dict(self.search_strategy.hyperparam_values())
 
-        self._save_outputs(
+        is_valid, reason = self._validate_combo_compatibility(datasets_by_use=datasets_by_use)
+        if not is_valid:
+            logger.warning("[SlideRetrieval] Skipping combo: %s", reason)
+            return {
+                "status": "skipped_incompatible_combo",
+                "reason": reason,
+            }
+
+        self.representation_id = build_retrieval_representation_id(
+            feature_extraction=str(combo_cfg.feature_extraction),
+            retrieval_representation=str(combo_cfg.retrieval_representation),
+            params=self.retrieval_representation_strategy.hyperparam_values(),
+        )
+        self.run_spec = SlideRetrievalRunSpec(
+            project_root=Path(self.experiment.project_root),
+            bag_id=self.bag_id,
+            aggregation_level=self.aggregation_level,
+            feature_extraction=str(combo_cfg.feature_extraction),
+            slide_representation=str(combo_cfg.retrieval_representation),
+            slide_representation_params=slide_representation_params,
+            search_method=str(combo_cfg.search_strategy),
+            search_params=search_params,
+            representation_id=self.representation_id,
+            exclude_same_patient=exclude_same_patient,
+        )
+
+        representations_by_use = self._ensure_representations(
+            datasets_by_use=datasets_by_use,
             combo_cfg=combo_cfg,
+        )
+
+        reference_representations, query_representations = (
+            self._split_representations_by_use(
+                representations_by_use=representations_by_use
+            )
+        )
+
+        if not reference_representations:
+            raise ValueError("No reference representations found for slide retrieval.")
+        if not query_representations:
+            raise ValueError("No query representations found for slide retrieval.")
+
+        self.search_strategy.build_database(reference_representations)
+
+        results: list[SearchResult] = []
+        for query_representation in query_representations:
+            result = self.search_strategy.search(
+                query_representation=query_representation,
+                filter_same_patient=self.run_spec.exclude_same_patient,
+            )
+            results.append(result)
+
+        metrics = self._evaluate_results(
+            results=results,
+            query_representations=query_representations,
+        )
+
+        output_dir = self._write_outputs(
             results=results,
             metrics=metrics,
         )
 
+        return {
+            "output_dir": str(output_dir),
+            "num_queries": len(query_representations),
+            "num_reference_items": len(reference_representations),
+            "metrics": metrics,
+        }
+
+    allowed_dataset_uses = frozenset(_VALID_RETRIEVAL_USES)
+
     # ------------------------------------------------------------------
-    # Dataset selection
+    # Representation creation / loading
     # ------------------------------------------------------------------
 
-    def _resolve_atlas_and_query_datasets(
+    def _infer_dataset_context(
         self,
-        datasets_by_use: dict[str, list[Any]],
-    ) -> tuple[list[Any], list[Any]]:
-        if "training" in datasets_by_use:
-            atlas_datasets = datasets_by_use["training"]
-        elif "all" in datasets_by_use:
-            atlas_datasets = datasets_by_use["all"]
-        else:
-            atlas_datasets = [ds for group in datasets_by_use.values() for ds in group]
+        *,
+        datasets_by_use: dict[str, list[BagDataset]],
+    ) -> tuple[str, str]:
+        bag_id: str | None = None
+        aggregation_level: str | None = None
 
-        if "testing" in datasets_by_use:
-            query_datasets = datasets_by_use["testing"]
-        elif "validation" in datasets_by_use:
-            query_datasets = datasets_by_use["validation"]
-        elif "all" in datasets_by_use:
-            query_datasets = datasets_by_use["all"]
-        else:
-            query_datasets = [ds for group in datasets_by_use.values() for ds in group]
+        for bag_datasets in datasets_by_use.values():
+            for bag_dataset in bag_datasets:
+                current_bag_id = str(bag_dataset.tiling_id)
+                current_aggregation_level = str(bag_dataset.aggregation_level)
 
-        if not atlas_datasets:
-            raise ValueError("No atlas datasets available for slide retrieval.")
-        if not query_datasets:
-            raise ValueError("No query datasets available for slide retrieval.")
+                if bag_id is None:
+                    bag_id = current_bag_id
+                elif bag_id != current_bag_id:
+                    raise ValueError(
+                        "Slide retrieval requires all datasets in one run to share "
+                        f"the same bag_id. Got '{bag_id}' and '{current_bag_id}'."
+                    )
 
-        return atlas_datasets, query_datasets
+                if aggregation_level is None:
+                    aggregation_level = current_aggregation_level
+                elif aggregation_level != current_aggregation_level:
+                    raise ValueError(
+                        "Slide retrieval requires all datasets in one run to share "
+                        "the same aggregation_level. "
+                        f"Got '{aggregation_level}' and '{current_aggregation_level}'."
+                    )
 
-    # ------------------------------------------------------------------
-    # Representation building
-    # ------------------------------------------------------------------
+        if bag_id is None or aggregation_level is None:
+            raise ValueError("No bag datasets were provided for slide retrieval.")
 
-    def _build_representation_method(self, combo_cfg: ComboConfig) -> Any:
-        method_name = str(combo_cfg.slide_representation_method)
-        return build_slide_representation_method(
-            name=method_name,
-            config=self.cfg,
-            combo_cfg=combo_cfg,
-        )
+        return bag_id, aggregation_level
 
-    def _build_sample_representations(
+    def _ensure_representations(
         self,
-        datasets: list[Any],
-        representation_method: Any,
+        datasets_by_use: dict[str, list[BagDataset]],
         combo_cfg: ComboConfig,
-    ) -> list[dict[str, Any]]:
-        items: list[dict[str, Any]] = []
+    ) -> dict[str, list[RetrievalRepresentation]]:
+        representations_by_use: dict[str, list[RetrievalRepresentation]] = {}
 
-        for dataset in datasets:
-            for index in range(len(dataset)):
-                bag, category = dataset[index]
-                sample = dataset.get_sample(index)
-
-                representation = representation_method.run(
-                    bag=bag,
-                    sample=sample,
-                    combo_cfg=combo_cfg,
+        for use, bag_datasets in datasets_by_use.items():
+            if use not in _VALID_RETRIEVAL_USES:
+                raise ValueError(
+                    f"Unsupported retrieval dataset use '{use}'. "
+                    f"Expected one of: {sorted(_VALID_RETRIEVAL_USES)}"
                 )
 
-                items.append(
-                    {
-                        "sample_id": sample.sample_id,
-                        "patient_id": sample.patient_id,
-                        "case_id": sample.case_id,
-                        "category": category,
-                        "slide_ids": sample.slide_ids,
-                        "dataset_name": dataset.name,
-                        "dataset_use": dataset.ds_cfg.used_for,
-                        "metadata": sample.metadata,
-                        "representation": representation,
-                    }
-                )
+            representations_by_use.setdefault(use, [])
 
-        return items
+            for bag_dataset in bag_datasets:
+                for index in range(bag_dataset.num_bags):
+                    bag, sample = bag_dataset.get_bag_sample(index)
 
-    # ------------------------------------------------------------------
-    # Search
-    # ------------------------------------------------------------------
+                    representation = self._load_or_compute_representation(
+                        bag_dataset=bag_dataset,
+                        bag=bag,
+                        sample=sample,
+                        combo_cfg=combo_cfg,
+                    )
 
-    def _build_search_method(self, combo_cfg: ComboConfig) -> Any:
-        method_name = str(combo_cfg.search_method)
-        return build_search_method(
-            name=method_name,
-            config=self.cfg,
-            combo_cfg=combo_cfg,
+                    representations_by_use[use].append(representation)
+
+        return representations_by_use
+
+    def _load_or_compute_representation(
+        self,
+        bag_dataset: BagDataset,
+        bag: Any,
+        sample: BagSample,
+        combo_cfg: ComboConfig,
+    ) -> RetrievalRepresentation:
+        artifact_path = build_retrieval_representation_artifact_path(
+            artifacts_dir=bag_dataset.artifacts_dir,
+            aggregation_level=bag_dataset.aggregation_level,
+            sample_id=sample.sample_id,
+        )
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+
+        entry_id = build_retrieval_representation_entry_id(sorted(sample.slide_ids))
+
+        with FileHandleH5(artifact_path, mode="a") as slide_artifact:
+            representation = self._load_representation_if_exists(
+                slide_artifact=slide_artifact,
+                bag_id=bag_dataset.tiling_id,
+                representation_id=self.representation_id,
+                entry_id=entry_id,
+            )
+            if representation is not None:
+                return representation
+
+            representation = self.retrieval_representation_strategy.run(
+                bag=bag,
+                sample=sample,
+                bag_dataset=bag_dataset,
+                combo_cfg=combo_cfg,
+            )
+            representation.metadata = self._build_representation_metadata(
+                sample=sample,
+                strategy_metadata=representation.metadata,
+            )
+
+            save_slide_retrieval_representation(
+                slide_artifact=slide_artifact,
+                bag_id=bag_dataset.tiling_id,
+                representation_id=self.representation_id,
+                entry_id=entry_id,
+                representation=representation,
+                params=self.retrieval_representation_strategy.hyperparam_values(),
+                slide_ids=sample.slide_ids,
+            )
+
+            return representation
+
+    def _build_representation_metadata(
+        self,
+        sample: BagSample,
+        strategy_metadata: RetrievalItemMetadata | dict[str, Any] | None = None,
+    ) -> RetrievalItemMetadata:
+        normalized_strategy_metadata = RetrievalItemMetadata.from_any(strategy_metadata)
+        return RetrievalItemMetadata.from_dict(
+            {
+                **dict(sample.metadata),
+                **dict(normalized_strategy_metadata),
+                "category": sample.category,
+                "patient_id": sample.patient_id,
+                "case_id": sample.case_id,
+                "member_ids": list(sample.slide_ids),
+            }
+        )
+
+    def _load_representation_if_exists(
+        self,
+        slide_artifact: FileHandleH5,
+        bag_id: str,
+        representation_id: str,
+        entry_id: str,
+    ) -> RetrievalRepresentation | None:
+        """Load a retrieval representation if it already exists."""
+        return load_slide_retrieval_representation(
+            slide_artifact=slide_artifact,
+            bag_id=bag_id,
+            representation_id=representation_id,
+            entry_id=entry_id,
         )
 
     # ------------------------------------------------------------------
-    # Saving
+    # Use splitting
     # ------------------------------------------------------------------
 
-    def _save_outputs(
+    def _split_representations_by_use(
         self,
-        combo_cfg: ComboConfig,
-        results: list[dict[str, Any]],
-        metrics: dict[str, Any],
-    ) -> None:
-        output_dir = self._build_output_dir(combo_cfg)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        representations_by_use: dict[str, list[RetrievalRepresentation]],
+    ) -> tuple[list[RetrievalRepresentation], list[RetrievalRepresentation]]:
+        reference_representations: list[RetrievalRepresentation] = []
+        query_representations: list[RetrievalRepresentation] = []
 
-        results_path = output_dir / "retrieval_results.json"
-        metrics_path = output_dir / "retrieval_metrics.json"
-        combo_path = output_dir / "combo_config.json"
+        reference_representations.extend(representations_by_use.get("reference", []))
+        reference_representations.extend(representations_by_use.get("query_reference", []))
 
-        with results_path.open("w", encoding="utf-8") as f:
-            json.dump(results, f, indent=2, default=self._json_default)
+        query_representations.extend(representations_by_use.get("query", []))
+        query_representations.extend(representations_by_use.get("query_reference", []))
 
-        with metrics_path.open("w", encoding="utf-8") as f:
-            json.dump(metrics, f, indent=2, default=self._json_default)
+        return reference_representations, query_representations
 
-        with combo_path.open("w", encoding="utf-8") as f:
-            json.dump(combo_cfg.to_dict(), f, indent=2, default=self._json_default)
+    # ------------------------------------------------------------------
+    # Evaluation / persistence
+    # ------------------------------------------------------------------
 
-        logger.info("[SlideRetrievalTask] Saved outputs to %s", output_dir)
+    def _evaluate_results(
+        self,
+        results: list[SearchResult],
+        query_representations: list[RetrievalRepresentation],
+    ) -> dict[str, Any]:
+        evaluation_metric_names = list(self.cfg.experiment.evaluation or [])
+        if not evaluation_metric_names:
+            return {}
 
-    def _build_output_dir(self, combo_cfg: ComboConfig) -> Path:
-        if self.experiment.project_root is None:
-            raise RuntimeError("project_root is not set.")
+        import_validation_metric_modules()
+        normalized_results = self._normalize_results_for_validation(
+            results=results,
+            query_representations=query_representations,
+        )
 
-        combo_id = self._build_combo_id(combo_cfg)
-        return Path(self.experiment.project_root) / "slide_retrieval" / combo_id
+        metrics: dict[str, Any] = {}
+        for metric_name in evaluation_metric_names:
+            request = parse_validation_metric_name(metric_name)
+            metric_fn = get_validation_metric(request.registry_key)
+            metrics.update(metric_fn(normalized_results, k=request.k))
 
-    @staticmethod
-    def _build_combo_id(combo_cfg: ComboConfig) -> str:
-        parts: list[str] = []
+        return metrics
 
-        for key, value in combo_cfg.to_dict().items():
-            parts.append(f"{key}-{value}")
+    def _normalize_results_for_validation(
+        self,
+        *,
+        results: list[SearchResult],
+        query_representations: list[RetrievalRepresentation],
+    ) -> list[NormalizedSearchResult]:
+        """
+        Normalize retrieval outputs into scalar evaluation records.
 
-        return "__".join(parts)
+        Inputs:
+        - `results`: `list[SearchResult]` produced by the active search
+          strategy. Each result contains ranked hits for one query.
+        - `query_representations`: `list[RetrievalRepresentation]` aligned with
+          `results` by query identifier.
 
-    @staticmethod
-    def _json_default(obj: Any) -> Any:
-        if hasattr(obj, "tolist"):
-            return obj.tolist()
-        if hasattr(obj, "item"):
-            return obj.item()
-        return str(obj)
+        Returns:
+        - `list[NormalizedSearchResult]` used by the validation metrics.
+
+        Example:
+            ```python
+            normalized = self._normalize_results_for_validation(
+                results=results,
+                query_representations=query_representations,
+            )
+            ```
+        """
+
+        query_metadata_by_id = {
+            representation.sample_id: representation.metadata
+            for representation in query_representations
+        }
+        normalized_results: list[NormalizedSearchResult] = []
+
+        for result in results:
+            query_metadata = query_metadata_by_id.get(result.query_id, result.metadata)
+            hits = [
+                NormalizedSearchHit(
+                    item_id=hit.item_id,
+                    label=hit.metadata.category,
+                    patient_id=hit.metadata.patient_id,
+                    score=hit.score,
+                    rank=hit.rank,
+                )
+                for hit in result.hits
+            ]
+            normalized_results.append(
+                NormalizedSearchResult(
+                    query_id=result.query_id,
+                    query_label=query_metadata.category,
+                    query_patient_id=query_metadata.patient_id,
+                    hits=hits,
+                    available_k=len(hits),
+                )
+            )
+
+        return normalized_results
+
+    def _write_outputs(
+        self,
+        results: list[SearchResult],
+        metrics: dict[str, float],
+    ) -> Path:
+        _ = metrics
+
+        if not hasattr(self, "run_spec") or self.run_spec is None:
+            raise ValueError("Slide retrieval context was not initialized.")
+
+        return write_slide_retrieval_eval_outputs(
+            run_spec=self.run_spec,
+            results=results,
+            reference_items=self.search_strategy.search_database,
+            metrics=metrics,
+        )
+    
+    def _validate_combo_compatibility(
+        self,
+        *,
+        datasets_by_use: dict[str, list[BagDataset]],
+    ) -> tuple[bool, str]:
+        feature_levels = {
+            bag_dataset.get_feature_level()
+            for bag_datasets in datasets_by_use.values()
+            for bag_dataset in bag_datasets
+        }
+
+        if "invalid" in feature_levels:
+            return False, "Invalid feature structure detected in one or more bag datasets."
+
+        if "unknown" in feature_levels:
+            return False, "Could not determine feature level for one or more bag datasets."
+
+        if len(feature_levels) != 1:
+            return False, f"Inconsistent feature levels across datasets: {sorted(feature_levels)}"
+
+        feature_level = next(iter(feature_levels))
+
+        if feature_level not in self.retrieval_representation_strategy.supported_feature_levels:
+            return (
+                False,
+                f"Representation strategy '{self.retrieval_representation_strategy.name}' "
+                f"does not support feature level '{feature_level}'.",
+            )
+
+        representation_kind = self.retrieval_representation_strategy.output_representation_kind
+        if representation_kind not in self.search_strategy.supported_representation_kinds:
+            return (
+                False,
+                f"Search strategy '{self.search_strategy.name}' does not support "
+                f"representation kind '{representation_kind}'.",
+            )
+
+        return True, ""
