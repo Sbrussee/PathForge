@@ -40,7 +40,7 @@ class _BaseSPLICEStrategy(BaseRetrievalRepresentationStrategy):
     """Shared compatibility contract for SPLICE retrieval representations."""
 
     supported_feature_levels = frozenset({"patch"})
-    output_representation_kind = "multi_vector"
+    output_representation_kind = "patch_vector"
     percentile_threshold = HyperParam(
         float,
         default=25.0,
@@ -235,7 +235,7 @@ class SPLICERGB(_BaseSPLICEStrategy):
         )
         coords = load_sample_patch_coords(
             sample=sample,
-            bag_id=tiling_id,
+            tile_id=tiling_id,
         )
         color_features, coords = self._prepare_selection_inputs(
             features=color_features,
@@ -372,7 +372,7 @@ class SPLICEFeatures(_BaseSPLICEStrategy):
         )
         coords = load_sample_patch_coords(
             sample=sample,
-            bag_id=tiling_id,
+            tile_id=tiling_id,
         )
         features, coords = self._prepare_selection_inputs(
             features=features,

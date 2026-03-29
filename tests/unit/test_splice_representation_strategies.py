@@ -161,7 +161,7 @@ def test_splice_features_selects_expected_rows_and_groups(tmp_path: Path) -> Non
         np.array([[10, 11], [30, 31]], dtype=np.int64),
     )
     assert representation.metadata["groups"] == {"0": [0, 1], "1": [2]}
-    assert representation.representation_type == "multi_vector"
+    assert representation.representation_type == "patch_vector"
     assert representation.sample_id == "sample-1"
 
 

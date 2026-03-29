@@ -115,7 +115,7 @@ class RetCCLSearch(BaseSearchStrategy):
     """
 
     name = "retccl"
-    supported_representation_kinds = frozenset({"multi_vector"})
+    supported_representation_kinds = frozenset({"multi_vector", "patch_vector"})
     k = HyperParam(int, default=5, min=1, help="retrieval depth")
     cosine_threshold = HyperParam(
         float,

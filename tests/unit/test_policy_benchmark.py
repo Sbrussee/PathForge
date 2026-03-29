@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 import pathbench.policy.benchmarking as benchmark_mod
-from pathbench.core.experiments.base import ComboConfig
+from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.policy.benchmarking import BenchmarkingPolicy
 
 
@@ -46,7 +46,6 @@ def _make_experiment() -> SimpleNamespace:
     return SimpleNamespace(
         cfg=cfg,
         load_annotations=lambda: annotations_df,
-        build_combinations=lambda keys: [],
     )
 
 
@@ -75,7 +74,7 @@ def test_group_combos_by_bag_source_groups_matching_feature_sources(
     assert grouped["256px_0.5mpp__gigapath"] == [combo_c]
 
 
-def test_complete_feature_extraction_extracts_only_datasets_with_missing_features(
+def test_ensure_bag_features_exist_extracts_only_datasets_with_missing_features(
     benchmark_policy: BenchmarkingPolicy,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -118,14 +117,14 @@ def test_complete_feature_extraction_extracts_only_datasets_with_missing_feature
     )
     monkeypatch.setattr(benchmark_mod, "build_wsi_dataset", fake_build_wsi_dataset)
 
-    benchmark_policy.complete_feature_extraction(combo_cfg=combo_cfg)
+    benchmark_policy.ensure_bag_features_exist(combo_cfg=combo_cfg)
 
     assert benchmark_policy.feature_policy.calls == [
         (subset_datasets["train_ds"], combo_cfg),
     ]
 
 
-def test_execute_combination_prepares_bag_group_and_runs_one_task(
+def test_execute_combination_resolves_features_builds_datasets_and_runs_one_task(
     benchmark_policy: BenchmarkingPolicy,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -136,28 +135,55 @@ def test_execute_combination_prepares_bag_group_and_runs_one_task(
         mil="attention_mil",
     )
     datasets_by_use = {"training": [SimpleNamespace(name="train_bag")]}
-    prepare_calls: list[ComboConfig] = []
+    feature_resolution_calls: list[ComboConfig] = []
+    build_calls: list[ComboConfig] = []
+    group_calls: list[list[object]] = []
+    bag_datasets = [SimpleNamespace(name="train_bag")]
 
-    def fake_prepare_bag_group(
+    def fake_ensure_bag_features_exist(
         *,
         combo_cfg: ComboConfig,
         annotations_df: pd.DataFrame | None = None,
-    ) -> dict[str, list[object]]:
-        prepare_calls.append(combo_cfg)
+    ) -> None:
+        feature_resolution_calls.append(combo_cfg)
         assert annotations_df is not None
+    
+    def fake_build_bag_datasets_for_combo(
+        *,
+        combo_cfg: ComboConfig,
+        annotations_df: pd.DataFrame | None = None,
+    ) -> list[object]:
+        build_calls.append(combo_cfg)
+        assert annotations_df is not None
+        return bag_datasets
+
+    def fake_group_bag_datasets_by_use(
+        bag_datasets_input: list[object],
+    ) -> dict[str, list[object]]:
+        group_calls.append(bag_datasets_input)
         return datasets_by_use
 
-    monkeypatch.setattr(benchmark_policy, "prepare_bag_group", fake_prepare_bag_group)
+    monkeypatch.setattr(
+        benchmark_policy,
+        "ensure_bag_features_exist",
+        fake_ensure_bag_features_exist,
+    )
+    monkeypatch.setattr(
+        benchmark_policy,
+        "build_bag_datasets_for_combo",
+        fake_build_bag_datasets_for_combo,
+    )
+    monkeypatch.setattr(
+        benchmark_policy,
+        "group_bag_datasets_by_use",
+        fake_group_bag_datasets_by_use,
+    )
 
     output = benchmark_policy.execute_combination(full_combo)
 
-    assert len(prepare_calls) == 1
-    prepared_combo = prepare_calls[0]
-    assert prepared_combo.to_dict() == {
-        "feature_extraction": "uni",
-        "tile_px": 256,
-        "tile_mpp": 0.5,
-    }
+    assert feature_resolution_calls == [full_combo]
+    assert build_calls == [full_combo]
+    assert group_calls == [bag_datasets]
     assert output["status"] == "benchmark_done"
     assert output["num_runs"] == 1
     assert output["task_output"]["combo"] is full_combo
@@ -188,22 +214,3 @@ def test_build_feature_extraction_dataset_raises_runtime_error_for_missing_slide
             missing_slide_ids=["S1"],
             combo_cfg=combo_cfg,
         )
-
-
-def test_project_bag_source_combo_keeps_only_bag_fields(
-    benchmark_policy: BenchmarkingPolicy,
-) -> None:
-    full_combo = ComboConfig(
-        feature_extraction="uni",
-        tile_px=256,
-        tile_mpp=0.5,
-        mil="attention_mil",
-    )
-
-    bag_combo = benchmark_policy._project_bag_source_combo(full_combo)
-
-    assert bag_combo.to_dict() == {
-        "feature_extraction": "uni",
-        "tile_px": 256,
-        "tile_mpp": 0.5,
-    }

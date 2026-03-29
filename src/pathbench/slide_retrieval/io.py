@@ -28,7 +28,7 @@ from pathbench.slide_retrieval.types import (
 def load_sample_patch_coords(
     *,
     sample: Any,
-    bag_id: str,
+    tile_id: str,
     dtype: np.dtype | type[np.integer[Any]] = np.int32,
 ) -> np.ndarray:
     """
@@ -38,7 +38,7 @@ def load_sample_patch_coords(
         sample:
             Sample-like object exposing ``artifact_paths`` aligned with the bag
             rows.
-        bag_id:
+        tile_id:
             Canonical tiling identifier used in the slide H5 layout.
         dtype:
             Integer dtype used for the returned ``(x, y)`` coordinate matrix.
@@ -49,7 +49,7 @@ def load_sample_patch_coords(
 
     Example:
         ```python
-        coords = load_sample_patch_coords(sample=sample, bag_id="256px_0.5mpp")
+        coords = load_sample_patch_coords(sample=sample, tile_id="256px_0.5mpp")
         ```
     """
     if sample is None:
@@ -62,7 +62,7 @@ def load_sample_patch_coords(
     coords_parts: list[np.ndarray] = []
     for artifact_path in artifact_paths:
         with FileHandleH5(artifact_path, mode="r") as slide_artifact:
-            slide_coords = tiles_io.read_coords(slide_artifact, bag_id=bag_id)
+            slide_coords = tiles_io.read_coords(slide_artifact, bag_id=tile_id)
         coords_parts.append(np.asarray(slide_coords[:, :2], dtype=dtype))
 
     if not coords_parts:
@@ -116,14 +116,14 @@ def write_slide_retrieval_eval_outputs(
 def load_slide_retrieval_representation(
     *,
     slide_artifact: FileHandleH5,
-    bag_id: str,
+    tile_id: str,
     representation_id: str,
     entry_id: str,
 ) -> RetrievalRepresentation | None:
     """Load one retrieval representation from the shared H5 storage schema."""
     if not retrieval_representations_io.retrieval_representation_item_exists(
         slide_artifact=slide_artifact,
-        bag_id=bag_id,
+        bag_id=tile_id,
         representation_id=representation_id,
         entry_id=entry_id,
     ):
@@ -131,7 +131,7 @@ def load_slide_retrieval_representation(
 
     additional_group_path = (
         retrieval_representations_io.DEFAULT_LAYOUT.retrieval_representation_additional_data_group(
-            bag_id,
+            tile_id,
             representation_id,
             entry_id,
         )
@@ -142,7 +142,7 @@ def load_slide_retrieval_representation(
             additional_data[name] = (
                 retrieval_representations_io.read_additional_retrieval_representation_data(
                     slide_artifact=slide_artifact,
-                    bag_id=bag_id,
+                    bag_id=tile_id,
                     representation_id=representation_id,
                     entry_id=entry_id,
                     name=name,
@@ -152,26 +152,26 @@ def load_slide_retrieval_representation(
     return RetrievalRepresentation(
         sample_id=retrieval_representations_io.read_retrieval_representation_sample_id(
             slide_artifact=slide_artifact,
-            bag_id=bag_id,
+            bag_id=tile_id,
             representation_id=representation_id,
             entry_id=entry_id,
         ),
         representation_type=retrieval_representations_io.read_retrieval_representation_type(
             slide_artifact=slide_artifact,
-            bag_id=bag_id,
+            bag_id=tile_id,
             representation_id=representation_id,
             entry_id=entry_id,
         ),
         data=retrieval_representations_io.read_retrieval_representation(
             slide_artifact=slide_artifact,
-            bag_id=bag_id,
+            bag_id=tile_id,
             representation_id=representation_id,
             entry_id=entry_id,
         ),
         metadata=RetrievalItemMetadata.from_dict(
             retrieval_representations_io.read_retrieval_representation_metadata(
                 slide_artifact=slide_artifact,
-                bag_id=bag_id,
+                bag_id=tile_id,
                 representation_id=representation_id,
                 entry_id=entry_id,
             )
@@ -183,7 +183,7 @@ def load_slide_retrieval_representation(
 def save_slide_retrieval_representation(
     *,
     slide_artifact: FileHandleH5,
-    bag_id: str,
+    tile_id: str,
     representation_id: str,
     entry_id: str,
     representation: RetrievalRepresentation,
@@ -193,42 +193,42 @@ def save_slide_retrieval_representation(
     """Persist one retrieval representation using the shared H5 storage schema."""
     retrieval_representations_io.write_retrieval_representation_sample_id(
         slide_artifact=slide_artifact,
-        bag_id=bag_id,
+        bag_id=tile_id,
         representation_id=representation_id,
         entry_id=entry_id,
         sample_id=representation.sample_id,
     )
     retrieval_representations_io.write_retrieval_representation_type(
         slide_artifact=slide_artifact,
-        bag_id=bag_id,
+        bag_id=tile_id,
         representation_id=representation_id,
         entry_id=entry_id,
         representation_type=representation.representation_type,
     )
     retrieval_representations_io.write_retrieval_representation(
         slide_artifact=slide_artifact,
-        bag_id=bag_id,
+        bag_id=tile_id,
         representation_id=representation_id,
         entry_id=entry_id,
         data=representation.data,
     )
     retrieval_representations_io.write_retrieval_representation_metadata(
         slide_artifact=slide_artifact,
-        bag_id=bag_id,
+        bag_id=tile_id,
         representation_id=representation_id,
         entry_id=entry_id,
         metadata=representation.metadata.to_dict(),
     )
     retrieval_representations_io.write_retrieval_representation_params(
         slide_artifact=slide_artifact,
-        bag_id=bag_id,
+        bag_id=tile_id,
         representation_id=representation_id,
         entry_id=entry_id,
         params=dict(params or {}),
     )
     retrieval_representations_io.write_retrieval_representation_slide_ids(
         slide_artifact=slide_artifact,
-        bag_id=bag_id,
+        bag_id=tile_id,
         representation_id=representation_id,
         entry_id=entry_id,
         slide_ids=list(slide_ids or []),
@@ -236,7 +236,7 @@ def save_slide_retrieval_representation(
 
     additional_group_path = (
         retrieval_representations_io.DEFAULT_LAYOUT.retrieval_representation_additional_data_group(
-            bag_id,
+            tile_id,
             representation_id,
             entry_id,
         )
@@ -247,7 +247,7 @@ def save_slide_retrieval_representation(
     for name, value in representation.additional_data.items():
         retrieval_representations_io.write_additional_retrieval_representation_data(
             slide_artifact=slide_artifact,
-            bag_id=bag_id,
+            bag_id=tile_id,
             representation_id=representation_id,
             entry_id=entry_id,
             name=name,

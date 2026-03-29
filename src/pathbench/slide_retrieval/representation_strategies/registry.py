@@ -13,6 +13,7 @@ _RETRIEVAL_REPRESENTATION_REGISTRY: dict[
     str,
     type["BaseRetrievalRepresentationStrategy"],
 ] = {}
+_REPRESENTATION_STRATEGIES_IMPORTED = False
 
 
 def _normalize_representation_strategy_name(name: str) -> str:
@@ -64,6 +65,9 @@ def get_representation_strategy(
     normalized_name = _normalize_representation_strategy_name(name)
 
     if normalized_name not in _RETRIEVAL_REPRESENTATION_REGISTRY:
+        import_representation_strategy_modules()
+
+    if normalized_name not in _RETRIEVAL_REPRESENTATION_REGISTRY:
         available = ", ".join(list_representation_strategies()) or "none"
         raise ValueError(
             f"Retrieval representation '{normalized_name}' is not registered. "
@@ -101,6 +105,11 @@ def import_representation_strategy_modules(
     import_representation_strategy_modules()
     ```
     """
+    global _REPRESENTATION_STRATEGIES_IMPORTED
+
+    if _REPRESENTATION_STRATEGIES_IMPORTED:
+        return
+
     package = import_module(package_name)
 
     if not hasattr(package, "__path__"):
@@ -109,6 +118,7 @@ def import_representation_strategy_modules(
     # Import the explicit strategy package so registration is driven by one
     # authoritative module list instead of filesystem discovery.
     import_module(f"{package_name}.strategies")
+    _REPRESENTATION_STRATEGIES_IMPORTED = True
 
 
 def get_representation_strategy_hyperparams(name: str) -> dict[str, Any]:

@@ -47,7 +47,7 @@ def _make_representation(
 
     Output:
         RetrievalRepresentation:
-            Multi-vector retrieval representation with SISH auxiliary arrays in
+            Patch-vector retrieval representation with SISH auxiliary arrays in
             ``additional_data``.
     """
     feature_array = np.asarray(features, dtype=np.float32)
@@ -56,7 +56,7 @@ def _make_representation(
 
     return RetrievalRepresentation(
         sample_id=sample_id,
-        representation_type="multi_vector",
+        representation_type="patch_vector",
         data=feature_array,
         metadata=RetrievalItemMetadata(
             category=category,
@@ -147,7 +147,7 @@ def test_sish_search_ranks_hits_and_excludes_same_patient(
 def test_sish_build_database_rejects_missing_patch_indices_and_mosaic_path() -> None:
     representation = RetrievalRepresentation(
         sample_id="slide-a",
-        representation_type="multi_vector",
+        representation_type="patch_vector",
         data=np.asarray([[1.0, -1.0, 1.0]], dtype=np.float32),
         metadata=RetrievalItemMetadata(category="tumor", patient_id="patient-a"),
         additional_data={},

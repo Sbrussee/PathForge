@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 
 _SEARCH_STRATEGY_REGISTRY: dict[str, type["BaseSearchStrategy"]] = {}
+_SEARCH_STRATEGIES_IMPORTED = False
 
 
 def _normalize_search_strategy_name(name: str) -> str:
@@ -54,6 +55,9 @@ def get_search_strategy(name: str) -> type["BaseSearchStrategy"]:
     normalized_name = _normalize_search_strategy_name(name)
 
     if normalized_name not in _SEARCH_STRATEGY_REGISTRY:
+        import_search_strategy_modules()
+
+    if normalized_name not in _SEARCH_STRATEGY_REGISTRY:
         available = ", ".join(list_search_strategies()) or "none"
         raise ValueError(
             f"Search strategy '{normalized_name}' is not registered. "
@@ -87,12 +91,18 @@ def import_search_strategy_modules(
     Returns:
     - `None`. Import side effects register all search strategies.
     """
+    global _SEARCH_STRATEGIES_IMPORTED
+
+    if _SEARCH_STRATEGIES_IMPORTED:
+        return
+
     package = import_module(package_name)
 
     if not hasattr(package, "__path__"):
         raise ValueError(f"Package '{package_name}' does not have a __path__ attribute.")
 
     import_module(f"{package_name}.strategies")
+    _SEARCH_STRATEGIES_IMPORTED = True
 
 
 def get_search_strategy_supports(name: str) -> set[str]:

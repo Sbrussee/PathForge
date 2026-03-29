@@ -4,7 +4,8 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from pathbench.config.config import Config
-from pathbench.core.experiments.base import ComboConfig, Experiment
+from pathbench.core.experiments.base import Experiment
+from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.core.datasets.bag_dataset import BagDataset
 
 

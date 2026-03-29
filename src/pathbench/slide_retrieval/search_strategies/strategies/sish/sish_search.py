@@ -160,8 +160,8 @@ class SISHSearch(BaseSearchStrategy):
     """
 
     name = "sish"
-    supports = {"multi_vector"}
-    supported_representation_kinds = frozenset({"multi_vector"})
+    supports = {"patch_vector"}
+    supported_representation_kinds = frozenset({"patch_vector"})
 
     k = HyperParam(int, default=10, min=1, help="top-k retrieval depth")
     seed_interval_c = HyperParam(int, default=50, min=1, help="seed index stride")

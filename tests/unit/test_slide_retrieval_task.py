@@ -7,7 +7,7 @@ import pytest
 
 from pathbench.benchmarking.tasks.slide_retrieval import SlideRetrievalTask
 import pathbench.benchmarking.tasks.slide_retrieval as slide_retrieval_task_module
-from pathbench.core.experiments.base import ComboConfig
+from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
@@ -169,16 +169,6 @@ def test_execute_reads_strategy_hyperparams_from_combo_cfg(
         captured["search_strategy_params"] = kwargs.get("params")
         return _FakeStrategy(**kwargs)
 
-    monkeypatch.setattr(
-        slide_retrieval_task_module,
-        "import_representation_strategy_modules",
-        lambda: None,
-    )
-    monkeypatch.setattr(
-        slide_retrieval_task_module,
-        "import_search_strategy_modules",
-        lambda: None,
-    )
     monkeypatch.setattr(
         slide_retrieval_task_module,
         "build_representation_strategy",

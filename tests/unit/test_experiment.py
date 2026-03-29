@@ -10,7 +10,8 @@ import pytest
 
 from pathbench.config.config import BenchmarkParamEntry, Config
 from pathbench.core.datasets.factory import build_wsi_datasets
-from pathbench.core.experiments.base import ComboConfig, Experiment
+from pathbench.core.experiments.base import Experiment
+from pathbench.core.experiments.combinations import ComboConfig, build_combinations
 from pathbench.utils.registries import FEATURE_EXTRACTORS
 
 
@@ -219,7 +220,10 @@ def test_build_combinations_builds_expected_grid(tmp_path: Path) -> None:
     )
     exp = Experiment(cfg)
 
-    combos = exp.build_combinations(["feature_extraction", "tile_px", "tile_mpp"])
+    combos = build_combinations(
+        cfg=exp.cfg,
+        keys=["feature_extraction", "tile_px", "tile_mpp"],
+    )
     assert len(combos) == 2 * 2 * 2  # 8
 
     # spot-check attributes exist
@@ -242,7 +246,7 @@ def test_build_combinations_missing_key_raises(tmp_path: Path) -> None:
     exp = Experiment(cfg)
 
     with pytest.raises(AttributeError):
-        exp.build_combinations(["does_not_exist"])
+        build_combinations(cfg=exp.cfg, keys=["does_not_exist"])
 
 
 def test_build_combinations_empty_values_raises(tmp_path: Path) -> None:
@@ -264,7 +268,7 @@ def test_build_combinations_empty_values_raises(tmp_path: Path) -> None:
     exp = Experiment(cfg)
 
     with pytest.raises(ValueError) as excinfo:
-        exp.build_combinations(["tile_px"])
+        build_combinations(cfg=exp.cfg, keys=["tile_px"])
     assert "is empty" in str(excinfo.value)
 
 
@@ -295,7 +299,10 @@ def test_build_combinations_preserves_hyperparams_on_combo_cfg(tmp_path: Path) -
     )
     exp = Experiment(cfg)
 
-    combos = exp.build_combinations(["search_strategy", "retrieval_representation"])
+    combos = build_combinations(
+        cfg=exp.cfg,
+        keys=["search_strategy", "retrieval_representation"],
+    )
 
     assert len(combos) == 4
     assert {combo.get_hyperparams("search_strategy")["k"] for combo in combos} == {3, 5}

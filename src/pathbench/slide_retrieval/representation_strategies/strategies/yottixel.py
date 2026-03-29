@@ -60,7 +60,7 @@ class _BaseYottixelRepresentationStrategy(BaseRetrievalRepresentationStrategy):
     """
 
     supported_feature_levels = frozenset({"patch"})
-    output_representation_kind = "multi_vector"
+    output_representation_kind = "patch_vector"
     n_clusters = HyperParam(
         int,
         default=9,
@@ -137,7 +137,7 @@ class _BaseYottixelRepresentationStrategy(BaseRetrievalRepresentationStrategy):
         )
         coords = load_sample_patch_coords(
             sample=sample,
-            bag_id=tiling_id,
+            tile_id=tiling_id,
             dtype=np.int32,
         )
         self.random_state = self._resolve_random_state(combo_cfg)
@@ -342,7 +342,7 @@ class YottixelFeatures(_BaseYottixelRepresentationStrategy):
     Example:
         >>> strategy = YottixelFeatures(params={"n_clusters": 9})
         >>> strategy.output_representation_kind
-        'multi_vector'
+        'patch_vector'
     """
 
     name = "Yottixel_features"

@@ -66,7 +66,7 @@ def test_hshr_features_selects_one_feature_per_cluster_and_loads_coords(
     )
 
     assert representation.sample_id == "sample-1"
-    assert representation.representation_type == "multi_vector"
+    assert representation.representation_type == "patch_vector"
     assert representation.data.shape == (2, 2)
     np.testing.assert_array_equal(
         np.sort(representation.additional_data["selected_indices"]),
@@ -87,7 +87,7 @@ def test_hshr_features_selects_one_feature_per_cluster_and_loads_coords(
     assert group_ids[0] != group_ids[2]
 
 
-def test_hshr_features_returns_empty_multi_vector_for_empty_bag() -> None:
+def test_hshr_features_returns_empty_patch_vector_for_empty_bag() -> None:
     strategy = HSHRFeatures(params={"n_patches": 3})
 
     representation = strategy.run(
@@ -97,7 +97,7 @@ def test_hshr_features_returns_empty_multi_vector_for_empty_bag() -> None:
     )
 
     assert representation.sample_id == ""
-    assert representation.representation_type == "multi_vector"
+    assert representation.representation_type == "patch_vector"
     assert representation.data.shape == (0, 0)
     assert representation.additional_data["selected_indices"].shape == (0,)
     assert representation.additional_data["group_ids"].shape == (0,)

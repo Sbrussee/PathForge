@@ -139,7 +139,7 @@ def test_yottixel_features_selects_first_member_when_one_rep_per_cluster(
     representation = strategy.run(bag=bag, sample=sample, combo_cfg=combo_cfg)
 
     assert representation.sample_id == "sample-1"
-    assert representation.representation_type == "multi_vector"
+    assert representation.representation_type == "patch_vector"
     np.testing.assert_array_equal(
         representation.additional_data["selected_indices"],
         np.array([0, 2], dtype=np.int32),
@@ -204,7 +204,7 @@ def test_yottixel_rgb_returns_selected_patch_rows_and_auxiliary_arrays(
     representation = strategy.run(bag=bag, sample=sample, combo_cfg=combo_cfg)
 
     assert representation.sample_id == "sample-1"
-    assert representation.representation_type == "multi_vector"
+    assert representation.representation_type == "patch_vector"
     np.testing.assert_array_equal(
         representation.additional_data["selected_indices"],
         np.array([0, 1], dtype=np.int32),

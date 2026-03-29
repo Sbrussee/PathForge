@@ -47,7 +47,7 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
 
     Outputs:
         Returns a ``RetrievalRepresentation`` with:
-        - ``representation_type="multi_vector"``
+        - ``representation_type="patch_vector"``
         - ``data`` of shape ``(K, D)``
         - ``additional_data["selected_indices"]`` of shape ``(K,)``
         - ``additional_data["group_ids"]`` of shape ``(N,)``
@@ -76,7 +76,7 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
         help="Desired number of patches to select (k in k-means).",
     )
     supported_feature_levels = frozenset({"patch"})
-    output_representation_kind = "multi_vector"
+    output_representation_kind = "patch_vector"
 
     def __init__(
         self,
@@ -216,7 +216,7 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
 
         return RetrievalRepresentation(
             sample_id=self._resolve_sample_id(sample=sample),
-            representation_type="multi_vector",
+            representation_type=self.output_representation_kind,
             data=selected_features,
             additional_data={
                 "selected_indices": selected_indices,
@@ -256,7 +256,7 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
         )
         all_coords = load_sample_patch_coords(
             sample=sample,
-            bag_id=tiling_id,
+            tile_id=tiling_id,
         )
         if int(all_coords.shape[0]) != num_patches:
             raise ValueError(

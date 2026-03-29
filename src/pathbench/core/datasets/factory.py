@@ -5,7 +5,7 @@ import pandas as pd
 from pathbench.core.datasets.bag_dataset import BagDataset
 from pathbench.core.datasets.wsi_dataset import WSIDataset
 from pathbench.config.config import Config, DatasetEntry
-from pathbench.core.experiments.base import ComboConfig
+from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.utils.constants import DATASET_COL, SLIDE_ID_COL
 
 

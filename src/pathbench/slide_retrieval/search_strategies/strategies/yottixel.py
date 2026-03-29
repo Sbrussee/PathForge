@@ -168,8 +168,8 @@ class YottixelSearch(BaseSearchStrategy):
     """
 
     name = "yottixel"
-    supports = {"single_vector", "multi_vector"}
-    supported_representation_kinds = frozenset({"single_vector", "multi_vector"})
+    supports = {"single_vector", "multi_vector", "patch_vector"}
+    supported_representation_kinds = frozenset({"single_vector", "multi_vector", "patch_vector"})
     k = HyperParam(int, default=10, min=1, help="retrieval depth (top-k)")
 
     def build_database_item(

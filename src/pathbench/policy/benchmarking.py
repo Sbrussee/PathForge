@@ -9,7 +9,8 @@ from pathbench.benchmarking.registry import build_task, import_task_modules
 from pathbench.config.config import DatasetEntry
 from pathbench.core.datasets.factory import build_bag_datasets, build_wsi_dataset
 from pathbench.core.datasets.utils import group_datasets_by_use
-from pathbench.core.experiments.base import ComboConfig, Experiment
+from pathbench.core.experiments.base import Experiment
+from pathbench.core.experiments.combinations import ComboConfig, build_combinations
 from pathbench.core.experiments.combo_ids import build_bag_id
 from pathbench.core.features.utils import find_slides_with_missing_features
 from pathbench.core.datasets.wsi_dataset import WSIDataset
@@ -35,8 +36,6 @@ class BenchmarkingPolicy(PolicyBase):
             - ``num_runs`` (int)
     """
 
-    BAG_SOURCE_KEYS = ("feature_extraction", "tile_px", "tile_mpp")
-
     def __init__(self, experiment: Experiment):
         super().__init__(experiment)
 
@@ -48,67 +47,69 @@ class BenchmarkingPolicy(PolicyBase):
         self.task = build_task(self.task_name, self.experiment)
         self.feature_policy = FeatureExtractionPolicy(self.experiment)
 
-    def execute(self, combo_cfg: ComboConfig | None = None) -> dict[str, Any]:
+    def execute(self) -> dict[str, Any]:
         """
-        Execute the benchmarking workflow for one combo or the full task grid.
-
-        Inputs:
-            combo_cfg (ComboConfig | None):
-                Optional single combination to execute. When omitted, the full
-                task grid is executed.
+        Execute the full benchmarking workflow over the task grid.
 
         Outputs:
             dict[str, Any]:
                 Summary dictionary with the number of executed task runs.
 
         """
-        if combo_cfg is not None:
-            return self.execute_combination(combo_cfg)
-
-        full_combos = self.experiment.build_combinations(self.task.get_grid_keys())
-        if not full_combos:
+        combinations = build_combinations(
+            cfg=self.experiment.cfg,
+            keys=self.task.get_grid_keys(),
+        )
+        if not combinations:
             logger.warning("[Benchmark] No benchmark combinations found.")
             return {"status": "no_combos", "num_runs": 0}
 
-        grouped_combos = self._group_combos_by_bag_source(full_combos)
+        combinations_by_bag_id = self._group_combos_by_bag_source(combinations)
         annotations_df = self.experiment.load_annotations()
 
         logger.info(
             "[Benchmark] Task='%s' | %d full combos grouped into %d bag groups.",
             self.task_name,
-            len(full_combos),
-            len(grouped_combos),
+            len(combinations),
+            len(combinations_by_bag_id),
         )
 
         num_runs = 0
 
-        for group_index, group_combos in enumerate(grouped_combos.values(), start=1):
-            representative_combo = group_combos[0]
+        # Reuse one prepared bag dataset set per bag_id, then run all full combos in that group.
+        for bag_group_index, (bag_id, combinations_for_bag_id) in enumerate(combinations_by_bag_id.items(), start=1):
+            bag_source_combo = combinations_for_bag_id[0]
 
             logger.info(
-                "[Benchmark] === Bag group %d/%d | extractor=%s, tile_px=%s, tile_mpp=%s | %d inner combos ===",
-                group_index,
-                len(grouped_combos),
-                representative_combo.feature_extraction,
-                representative_combo.tile_px,
-                representative_combo.tile_mpp,
-                len(group_combos),
+                "[Benchmark] === Bag group %d/%d | bag_id=%s | extractor=%s, tile_px=%s, tile_mpp=%s | %d full combos ===",
+                bag_group_index,
+                len(combinations_by_bag_id),
+                bag_id,
+                bag_source_combo.feature_extraction,
+                bag_source_combo.tile_px,
+                bag_source_combo.tile_mpp,
+                len(combinations_for_bag_id),
             )
 
-            datasets_by_use = self.prepare_bag_group(
-                combo_cfg=representative_combo,
+            self.ensure_bag_features_exist(
+                combo_cfg=bag_source_combo,
                 annotations_df=annotations_df,
-            )   
+            )
+            bag_datasets = self.build_bag_datasets_for_combo(
+                combo_cfg=bag_source_combo,
+                annotations_df=annotations_df,
+            )
+            datasets_by_use = self.group_bag_datasets_by_use(bag_datasets)
 
             self._validate_dataset_uses(datasets_by_use=datasets_by_use)
 
-            for combo_index, combo_cfg in enumerate(group_combos, start=1):
-                self._execute_group_combination(
-                    combo_cfg=combo_cfg,
-                    datasets_by_use=datasets_by_use,
-                    combo_index=combo_index,
-                    num_group_combos=len(group_combos),
+            for combo_index, full_combo_cfg in enumerate(combinations_for_bag_id, start=1,):
+                logger.info(
+                    "[Benchmark] Running combo %d/%d in current bag group.",
+                    combo_index,
+                    len(combinations_for_bag_id),
                 )
+                self.task.execute(combo_cfg=full_combo_cfg, datasets_by_use=datasets_by_use)
                 num_runs += 1
 
         logger.info("[Benchmark] Benchmarking complete. Total runs: %d", num_runs)
@@ -127,12 +128,16 @@ class BenchmarkingPolicy(PolicyBase):
                 Summary dictionary for the single executed run.
 
         """
-        bag_combo_cfg = self._project_bag_source_combo(combo_cfg)
         annotations_df = self.experiment.load_annotations()
-        datasets_by_use = self.prepare_bag_group(
-            combo_cfg=bag_combo_cfg,
+        self.ensure_bag_features_exist(
+            combo_cfg=combo_cfg,
             annotations_df=annotations_df,
         )
+        bag_datasets = self.build_bag_datasets_for_combo(
+            combo_cfg=combo_cfg,
+            annotations_df=annotations_df,
+        )
+        datasets_by_use = self.group_bag_datasets_by_use(bag_datasets)
         task_output = self.task.execute(
             combo_cfg=combo_cfg,
             datasets_by_use=datasets_by_use,
@@ -143,14 +148,14 @@ class BenchmarkingPolicy(PolicyBase):
             "task_output": task_output,
         }
 
-    def prepare_bag_group(
+    def ensure_bag_features_exist(
         self,
         *,
         combo_cfg: ComboConfig,
         annotations_df: pd.DataFrame | None = None,
-    ) -> dict[str, list[Any]]:
+    ) -> None:
         """
-        Prepare reusable datasets for one bag-defining combination.
+        Ensure bag-source features exist for one bag-defining combination.
 
         Inputs:
             combo_cfg (ComboConfig):
@@ -160,44 +165,6 @@ class BenchmarkingPolicy(PolicyBase):
                 - ``tile_mpp`` (float)
             annotations_df (pandas.DataFrame | None):
                 Optional annotations table to reuse in batch execution.
-
-        Outputs:
-            dict[str, list[Any]]:
-                Bag datasets grouped by their configured use.
-
-        """
-        if annotations_df is None:
-            annotations_df = self.experiment.load_annotations()
-
-        self.complete_feature_extraction(
-            combo_cfg=combo_cfg,
-            annotations_df=annotations_df,
-        )
-
-        bag_datasets = build_bag_datasets(
-            cfg=self.experiment.cfg,
-            annotations_df=annotations_df,
-            combo_cfg=combo_cfg,
-        )
-        return group_datasets_by_use(bag_datasets)
-
-    def complete_feature_extraction(
-        self,
-        *,
-        combo_cfg: ComboConfig,
-        annotations_df: pd.DataFrame | None = None,
-    ) -> None:
-        """
-        Ensure every non-ignored dataset has features for one bag-defining combo.
-
-        Inputs:
-            combo_cfg (ComboConfig):
-                Combination containing at least:
-                - ``feature_extraction`` (str)
-                - ``tile_px`` (int)
-                - ``tile_mpp`` (float)
-            annotations_df (pandas.DataFrame | None):
-                Optional annotations table to reuse across multiple calls.
 
         Outputs:
             None:
@@ -243,39 +210,56 @@ class BenchmarkingPolicy(PolicyBase):
             )
             self.feature_policy.execute_dataset(dataset=subset_dataset, combo_cfg=combo_cfg)
 
-    def _execute_group_combination(
+    def build_bag_datasets_for_combo(
         self,
         *,
         combo_cfg: ComboConfig,
-        datasets_by_use: dict[str, list[Any]],
-        combo_index: int,
-        num_group_combos: int,
-    ) -> dict[str, Any]:
+        annotations_df: pd.DataFrame | None = None,
+    ) -> list[Any]:
         """
-        Execute one benchmark combination inside an already prepared bag group.
+        Build bag datasets for one bag-defining combination.
 
         Inputs:
             combo_cfg (ComboConfig):
-                Active benchmark combination for the task execution.
-            datasets_by_use (dict[str, list[Any]]):
-                Prepared bag datasets grouped by configured use.
-            combo_index (int):
-                One-based index of the current combo inside the bag group.
-            num_group_combos (int):
-                Total number of combos in the current bag group.
+                Combination containing at least:
+                - ``feature_extraction`` (str)
+                - ``tile_px`` (int)
+                - ``tile_mpp`` (float)
+            annotations_df (pandas.DataFrame | None):
+                Optional annotations table to reuse in batch execution.
 
         Outputs:
-            dict[str, Any]:
-                Task-specific result dictionary returned by the benchmarking
-                task implementation.
+            list[Any]:
+                Bag datasets for the provided bag-source combination.
 
         """
-        logger.info(
-            "[Benchmark] Running combo %d/%d in current bag group.",
-            combo_index,
-            num_group_combos,
+        if annotations_df is None:
+            annotations_df = self.experiment.load_annotations()
+
+        return build_bag_datasets(
+            cfg=self.experiment.cfg,
+            annotations_df=annotations_df,
+            combo_cfg=combo_cfg,
         )
-        return self.task.execute(combo_cfg=combo_cfg, datasets_by_use=datasets_by_use)
+
+    def group_bag_datasets_by_use(
+        self,
+        bag_datasets: list[Any],
+    ) -> dict[str, list[Any]]:
+        """
+        Group bag datasets by their configured use labels.
+
+        Inputs:
+            bag_datasets (list[Any]):
+                Bag datasets built for one bag-defining combination.
+
+        Outputs:
+            dict[str, list[Any]]:
+                Mapping from dataset use labels to bag dataset lists.
+
+        """
+        return group_datasets_by_use(bag_datasets)
+        
 
     def _build_feature_extraction_dataset(
         self,
@@ -344,26 +328,6 @@ class BenchmarkingPolicy(PolicyBase):
             grouped.setdefault(bag_id, []).append(combo_cfg)
 
         return grouped
-
-    def _project_bag_source_combo(self, combo_cfg: ComboConfig) -> ComboConfig:
-        """
-        Project a full combo onto the bag-defining fields.
-
-        Inputs:
-            combo_cfg (ComboConfig):
-                Full benchmark combination.
-
-        Outputs:
-            ComboConfig:
-                Reduced combination containing only the bag source fields.
-
-        """
-        bag_source_data = {
-            key: getattr(combo_cfg, key)
-            for key in self.BAG_SOURCE_KEYS
-        }
-        return ComboConfig(**bag_source_data)
-
 
     def _validate_dataset_uses(
         self,

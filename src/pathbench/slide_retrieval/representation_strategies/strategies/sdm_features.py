@@ -52,7 +52,7 @@ class SDMFeatures(BaseRetrievalRepresentationStrategy):
 
     Outputs:
         RetrievalRepresentation:
-            - ``representation_type``: ``"multi_vector"``
+            - ``representation_type``: ``"patch_vector"``
             - ``data``: selected feature matrix with shape ``(G, D)``
             - ``additional_data["selected_indices"]``: shape ``(G,)``
             - ``additional_data["group_ids"]``: shape ``(N,)``
@@ -66,7 +66,7 @@ class SDMFeatures(BaseRetrievalRepresentationStrategy):
 
     name = "sdm_features"
     supported_feature_levels = frozenset({"patch"})
-    output_representation_kind = "multi_vector"
+    output_representation_kind = "patch_vector"
 
     def run(
         self,
@@ -317,6 +317,6 @@ class SDMFeatures(BaseRetrievalRepresentationStrategy):
 
         return load_sample_patch_coords(
             sample=sample,
-            bag_id=tiling_id,
+            tile_id=tiling_id,
             dtype=np.int64,
         )

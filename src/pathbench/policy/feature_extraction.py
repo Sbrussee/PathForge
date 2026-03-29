@@ -11,7 +11,8 @@ from tqdm import tqdm
 
 from pathbench.policy.base import PolicyBase
 from pathbench.core.datasets.factory import build_wsi_datasets
-from pathbench.core.experiments.base import ComboConfig, Experiment
+from pathbench.core.experiments.base import Experiment
+from pathbench.core.experiments.combinations import ComboConfig, build_combinations
 from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.datasets.wsi_dataset import WSI, WSIDataset
 from pathbench.core.slide_processing.base import SlideProcessorBase
@@ -37,8 +38,9 @@ class FeatureExtractionPolicy(PolicyBase):
             cfg=self.experiment.cfg,
             annotations_df=self.experiment.load_annotations(),
         )
-        self.combos: list[ComboConfig] = self.experiment.build_combinations(
-            ["feature_extraction", "tile_px", "tile_mpp"]
+        self.combos: list[ComboConfig] = build_combinations(
+            cfg=self.experiment.cfg,
+            keys=["feature_extraction", "tile_px", "tile_mpp"],
         )
         self.config = experiment.cfg
         self.backend_name = self.config.slide_processing.backend

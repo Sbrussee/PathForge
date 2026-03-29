@@ -53,7 +53,7 @@ def test_sdm_features_run_wraps_original_outputs_for_repo_contract(
     )
 
     assert representation.sample_id == "sample-1"
-    assert representation.representation_type == "multi_vector"
+    assert representation.representation_type == "patch_vector"
     np.testing.assert_allclose(
         representation.data,
         np.array(

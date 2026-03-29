@@ -16,7 +16,7 @@ def test_sish_precompute_enriches_representation_with_indices_and_packed_bits(
 ) -> None:
     representation = RetrievalRepresentation(
         sample_id="slide-1",
-        representation_type="multi_vector",
+        representation_type="patch_vector",
         data=np.asarray(
             [
                 [1.0, -1.0, 1.0, -1.0],

@@ -7,16 +7,14 @@ from typing import Any
 from pathbench.benchmarking.registry import register_task
 from pathbench.benchmarking.tasks.base import TaskBase
 from pathbench.core.datasets.bag_dataset import BagDataset, BagSample
-from pathbench.core.experiments.base import ComboConfig
+from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.core.io.h5.base import FileHandleH5
 from pathbench.slide_retrieval.search_strategies.registry import (
     build_search_strategy,
-    import_search_strategy_modules,
 )
 from pathbench.slide_retrieval.search_strategies.types import SearchResult
 from pathbench.slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
-    import_representation_strategy_modules,
 )
 from pathbench.slide_retrieval.representation_strategies.types import RetrievalRepresentation
 
@@ -76,16 +74,11 @@ class SlideRetrievalTask(TaskBase):
         combo_cfg: ComboConfig,
         datasets_by_use: dict[str, list[BagDataset]],
     ) -> dict[str, Any]:
-        import_representation_strategy_modules()
-        import_search_strategy_modules()
-
-        self.bag_id, self.aggregation_level = self._infer_dataset_context(
-            datasets_by_use=datasets_by_use
-        )
-        exclude_same_patient = bool(getattr(combo_cfg, "exclude_same_patient", True))
+        self.bag_id, self.aggregation_level = self._infer_dataset_context(datasets_by_use=datasets_by_use)
+        exclude_same_patient = bool(combo_cfg.get("exclude_same_patient", True))
 
         self.retrieval_representation_strategy = build_representation_strategy(
-            combo_cfg.retrieval_representation,
+            str(combo_cfg.get("retrieval_representation")),
             params=combo_cfg.get_hyperparams("retrieval_representation"),
             bag_id=self.bag_id,
             config=getattr(self.experiment, "cfg", None),
@@ -95,7 +88,7 @@ class SlideRetrievalTask(TaskBase):
         )
 
         self.search_strategy = build_search_strategy(
-            combo_cfg.search_strategy,
+            str(combo_cfg.get("search_strategy")),
             params=combo_cfg.get_hyperparams("search_strategy"),
             config=getattr(self.experiment, "cfg", None),
         )
@@ -110,18 +103,18 @@ class SlideRetrievalTask(TaskBase):
             }
 
         self.representation_id = build_retrieval_representation_id(
-            feature_extraction=str(combo_cfg.feature_extraction),
-            retrieval_representation=str(combo_cfg.retrieval_representation),
+            feature_extraction=str(combo_cfg.get("feature_extraction")),
+            retrieval_representation=str(combo_cfg.get("retrieval_representation")),
             params=self.retrieval_representation_strategy.hyperparam_values(),
         )
         self.run_spec = SlideRetrievalRunSpec(
             project_root=Path(self.experiment.project_root),
             bag_id=self.bag_id,
             aggregation_level=self.aggregation_level,
-            feature_extraction=str(combo_cfg.feature_extraction),
-            slide_representation=str(combo_cfg.retrieval_representation),
+            feature_extraction=str(combo_cfg.get("feature_extraction")),
+            slide_representation=str(combo_cfg.get("retrieval_representation")),
             slide_representation_params=slide_representation_params,
-            search_method=str(combo_cfg.search_strategy),
+            search_method=str(combo_cfg.get("search_strategy")),
             search_params=search_params,
             representation_id=self.representation_id,
             exclude_same_patient=exclude_same_patient,
@@ -181,35 +174,33 @@ class SlideRetrievalTask(TaskBase):
         *,
         datasets_by_use: dict[str, list[BagDataset]],
     ) -> tuple[str, str]:
-        bag_id: str | None = None
-        aggregation_level: str | None = None
-
-        for bag_datasets in datasets_by_use.values():
-            for bag_dataset in bag_datasets:
-                current_bag_id = str(bag_dataset.tiling_id)
-                current_aggregation_level = str(bag_dataset.aggregation_level)
-
-                if bag_id is None:
-                    bag_id = current_bag_id
-                elif bag_id != current_bag_id:
-                    raise ValueError(
-                        "Slide retrieval requires all datasets in one run to share "
-                        f"the same bag_id. Got '{bag_id}' and '{current_bag_id}'."
-                    )
-
-                if aggregation_level is None:
-                    aggregation_level = current_aggregation_level
-                elif aggregation_level != current_aggregation_level:
-                    raise ValueError(
-                        "Slide retrieval requires all datasets in one run to share "
-                        "the same aggregation_level. "
-                        f"Got '{aggregation_level}' and '{current_aggregation_level}'."
-                    )
-
-        if bag_id is None or aggregation_level is None:
+        all_bag_datasets = [
+            bag_dataset
+            for bag_datasets in datasets_by_use.values()
+            for bag_dataset in bag_datasets
+        ]
+        if not all_bag_datasets:
             raise ValueError("No bag datasets were provided for slide retrieval.")
 
-        return bag_id, aggregation_level
+        bag_ids = {str(bag_dataset.tiling_id) for bag_dataset in all_bag_datasets}
+        if len(bag_ids) != 1:
+            raise ValueError(
+                "Slide retrieval requires all datasets in one run to share "
+                f"the same bag_id. Got {sorted(bag_ids)}."
+            )
+
+        aggregation_levels = {
+            str(bag_dataset.aggregation_level)
+            for bag_dataset in all_bag_datasets
+        }
+        if len(aggregation_levels) != 1:
+            raise ValueError(
+                "Slide retrieval requires all datasets in one run to share "
+                "the same aggregation_level. "
+                f"Got {sorted(aggregation_levels)}."
+            )
+
+        return next(iter(bag_ids)), next(iter(aggregation_levels))
 
     def _ensure_representations(
         self,
@@ -259,9 +250,9 @@ class SlideRetrievalTask(TaskBase):
         entry_id = build_retrieval_representation_entry_id(sorted(sample.slide_ids))
 
         with FileHandleH5(artifact_path, mode="a") as slide_artifact:
-            representation = self._load_representation_if_exists(
+            representation = load_slide_retrieval_representation(
                 slide_artifact=slide_artifact,
-                bag_id=bag_dataset.tiling_id,
+                tile_id=bag_dataset.tiling_id,
                 representation_id=self.representation_id,
                 entry_id=entry_id,
             )
@@ -274,6 +265,7 @@ class SlideRetrievalTask(TaskBase):
                 bag_dataset=bag_dataset,
                 combo_cfg=combo_cfg,
             )
+            
             representation.metadata = self._build_representation_metadata(
                 sample=sample,
                 strategy_metadata=representation.metadata,
@@ -281,7 +273,7 @@ class SlideRetrievalTask(TaskBase):
 
             save_slide_retrieval_representation(
                 slide_artifact=slide_artifact,
-                bag_id=bag_dataset.tiling_id,
+                tile_id=bag_dataset.tiling_id,
                 representation_id=self.representation_id,
                 entry_id=entry_id,
                 representation=representation,
@@ -306,21 +298,6 @@ class SlideRetrievalTask(TaskBase):
                 "case_id": sample.case_id,
                 "member_ids": list(sample.slide_ids),
             }
-        )
-
-    def _load_representation_if_exists(
-        self,
-        slide_artifact: FileHandleH5,
-        bag_id: str,
-        representation_id: str,
-        entry_id: str,
-    ) -> RetrievalRepresentation | None:
-        """Load a retrieval representation if it already exists."""
-        return load_slide_retrieval_representation(
-            slide_artifact=slide_artifact,
-            bag_id=bag_id,
-            representation_id=representation_id,
-            entry_id=entry_id,
         )
 
     # ------------------------------------------------------------------

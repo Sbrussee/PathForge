@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from pathbench.config.config import DatasetEntry
-from pathbench.core.experiments.base import ComboConfig
+from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.io.h5.base import FileHandleH5
 from pathbench.core.io.h5 import features as features_io

@@ -2,65 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from itertools import product
 import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Any, List
 
 import pandas as pd
 
-from ...config.config import BenchmarkParamEntry, Config
+from ...config.config import Config
 from ...utils.constants import EXPERIMENTS_DIR
-from pathbench.core.datasets.wsi_dataset import WSIDataset
-from pathbench.core.datasets.bag_dataset import BagDataset
 
 logger = logging.getLogger(__name__)
-
-
-class ComboConfig:
-    """
-    Generic, dynamically-populated combo.
-
-    Any key you pass in becomes an attribute:
-        Combo(feature_extraction="virchow", tile_px=256)
-        -> combo.feature_extraction, combo.tile_px
-    """
-
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-    @classmethod
-    def from_keys_values(cls, keys: list[str], values: list[object]) -> "ComboConfig":
-        data: dict[str, object] = {}
-        for key, value in zip(keys, values):
-            if isinstance(value, BenchmarkParamEntry):
-                data[key] = value.value
-                data[f"{key}_params"] = dict(value.hyperparams)
-            else:
-                data[key] = value
-                data[f"{key}_params"] = {}
-        return cls(**data)
-
-    def to_dict(self) -> dict[str, object]:
-        return dict(self.__dict__)
-
-    def get(self, key: str, default: object = None) -> object:
-        """Return one combo value by key with a dict-like fallback default."""
-        return getattr(self, key, default)
-
-    def get_hyperparams(
-        self,
-        key: str,
-        default: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Return the hyperparameters attached to one combo value."""
-        params = getattr(self, f"{key}_params", None)
-        if params is None:
-            return {} if default is None else dict(default)
-        return dict(params)
 
 
 @dataclass(slots=True)
@@ -72,8 +24,11 @@ class Experiment:
     - project.json
     - annotations.csv (copied into project_root)
 
-    Provides helpers to load annotations, build parameter combos, and build datasets.
-    Dataset-scoped artifacts (per-slide .h5) are managed via dataset config, not here.
+    Provides helpers to load annotations.
+    Search-space materialization lives in
+    ``pathbench.core.experiments.combinations`` and dataset construction lives
+    in ``pathbench.core.datasets.factory`` so this layer stays focused on
+    project-scoped metadata.
     """
 
     cfg: Config
@@ -254,61 +209,3 @@ class Experiment:
             combos.append(ComboConfig.from_keys_values(keys, list(vals)))
 
         return combos
-
-    def build_datasets(self) -> list[WSIDataset]:
-        """
-        Build WSIDataset instances for all datasets in cfg.datasets.
-
-        Returns:
-            List of SlideDataset instances.
-        """
-        if self.project_root is None:
-            raise RuntimeError("project_root is not set.")
-
-        annotations = self.load_annotations()
-
-        datasets: list[WSIDataset] = []
-        for ds in self.cfg.datasets:
-            if ds.used_for == "ignore":
-                continue
-            datasets.append(WSIDataset(ds, annotations))
-        return datasets
-
-    def build_bag_datasets(
-        self,
-        combo_cfg: ComboConfig,
-        target_column: str | None = None,
-    ) -> list[BagDataset]:
-        """
-        Build BagDataset instances for all datasets in cfg.datasets.
-
-        Args:
-            combo_cfg: Active benchmark combination.
-            target_column: Optional override for the target/category column.
-
-        Returns:
-            List of BagDataset instances.
-        """
-        if self.project_root is None:
-            raise RuntimeError("project_root is not set.")
-
-        annotations = self.load_annotations()
-
-        datasets: list[BagDataset] = []
-        for ds in self.cfg.datasets:
-            if ds.used_for == "ignore":
-                continue
-
-            kwargs = {
-                "ds_cfg": ds,
-                "annotations_df": annotations,
-                "combo_cfg": combo_cfg,
-                "aggregation_level": self.cfg.experiment.aggregation_level,
-            }
-
-            if target_column is not None:
-                kwargs["target_column"] = target_column
-
-            datasets.append(BagDataset(**kwargs))
-
-        return datasets

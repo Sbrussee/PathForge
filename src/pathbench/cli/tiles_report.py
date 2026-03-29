@@ -8,7 +8,8 @@ from pathlib import Path
 
 from pathbench.config.config import Config
 from pathbench.core.datasets.factory import build_wsi_datasets
-from pathbench.core.experiments.base import ComboConfig, Experiment
+from pathbench.core.experiments.base import Experiment
+from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.reports.tiles_report_pdf import create_tiles_report_pdf
 

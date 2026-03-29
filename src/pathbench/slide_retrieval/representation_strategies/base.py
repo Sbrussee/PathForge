@@ -15,7 +15,7 @@ from pathbench.slide_retrieval.representation_strategies.types import (
 
 
 FeatureLevel = Literal["patch", "slide"]
-RepresentationKind = Literal["single_vector", "multi_vector"]
+RepresentationKind = Literal["single_vector", "multi_vector", "patch_vector"]
 
 
 class BaseRetrievalRepresentationStrategy:
