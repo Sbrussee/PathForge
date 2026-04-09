@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from pathbench.core.datasets.bag_dataset import BagDataset
+from pathbench.core.datasets.bag_dataset import (
+    BagDataset,
+    MILBagDataset,
+    SlideRetrievalBagDataset,
+)
 from pathbench.core.datasets.wsi_dataset import WSIDataset
 from pathbench.config.config import Config, DatasetEntry
 from pathbench.core.experiments.combinations import ComboConfig
@@ -67,6 +71,7 @@ def build_bag_dataset(
     annotations_df: pd.DataFrame,
     combo_cfg: ComboConfig,
     aggregation_level: str,
+    task: str,
     target_column: str | None = None,
     slide_ids: list[str] | None = None,
 ) -> BagDataset:
@@ -96,13 +101,20 @@ def build_bag_dataset(
     if target_column is not None:
         kwargs["target_column"] = target_column
 
-    return BagDataset(**kwargs)
+    dataset_cls: type[BagDataset]
+    if str(task) == "slide_retrieval":
+        dataset_cls = SlideRetrievalBagDataset
+    else:
+        dataset_cls = MILBagDataset
+
+    return dataset_cls(**kwargs)
 
 
 def build_bag_datasets(
     cfg: Config,
     annotations_df: pd.DataFrame,
     combo_cfg: ComboConfig,
+    task: str,
     target_column: str | None = None,
 ) -> list[BagDataset]:
     """Build BagDataset objects for all non-ignored datasets."""
@@ -118,6 +130,7 @@ def build_bag_datasets(
                 annotations_df=annotations_df,
                 combo_cfg=combo_cfg,
                 aggregation_level=cfg.experiment.aggregation_level,
+                task=task,
                 target_column=target_column,
             )
         )

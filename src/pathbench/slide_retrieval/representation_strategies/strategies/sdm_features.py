@@ -10,14 +10,16 @@ from __future__ import annotations
 #   No official code release; reference implementation provided in this script.
 # ------------------------------------------------------------------------------
 
-import logging
 from typing import Any
 
 import numpy as np
 import torch
 
+from pathbench.core.datasets.bag_dataset import BagSample
 from pathbench.core.experiments.combo_ids import build_tiling_id
-from pathbench.slide_retrieval.io import load_sample_patch_coords
+from pathbench.core.io.slide_artifacts import features as features_io
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.slide_retrieval.representation_strategies.base import (
     BaseRetrievalRepresentationStrategy,
 )
@@ -27,9 +29,6 @@ from pathbench.slide_retrieval.representation_strategies.registry import (
 from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.types import RetrievalItemMetadata
-
-logger = logging.getLogger(__name__)
 
 
 @register_representation_strategy("sdm_features")
@@ -52,7 +51,6 @@ class SDMFeatures(BaseRetrievalRepresentationStrategy):
 
     Outputs:
         RetrievalRepresentation:
-            - ``representation_type``: ``"patch_vector"``
             - ``data``: selected feature matrix with shape ``(G, D)``
             - ``additional_data["selected_indices"]``: shape ``(G,)``
             - ``additional_data["group_ids"]``: shape ``(N,)``
@@ -85,12 +83,8 @@ class SDMFeatures(BaseRetrievalRepresentationStrategy):
             RetrievalRepresentation: SDM-selected patch feature representation.
         """
         random_state = self._resolve_random_state(kwargs.get("combo_cfg"))
-        features, coords = self._prepare_selection_inputs(
-            bag=bag,
-            sample=sample,
-            bag_dataset=kwargs.get("bag_dataset"),
-            combo_cfg=kwargs.get("combo_cfg"),
-        )
+        features = self._to_numpy_features(bag)
+        coords = np.asarray(kwargs.get("coords"), dtype=np.int64)
 
         if len(features) == 0:
             return self._build_representation_from_indices(
@@ -138,43 +132,47 @@ class SDMFeatures(BaseRetrievalRepresentationStrategy):
             ),
         )
 
-    def _prepare_selection_inputs(
+    def load_sample(
         self,
         *,
-        bag: torch.Tensor,
-        sample: Any,
-        bag_dataset: Any | None,
-        combo_cfg: Any | None,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Prepare the aligned feature and coordinate arrays used by SDM.
+        index: int,
+        sample: BagSample,
+        base_dataset: Any,
+    ) -> dict[str, Any]:
+        """Load the feature bag and aligned coordinates for one SDM sample."""
+        del index
 
-        Args:
-            bag (torch.Tensor): Patch feature tensor with shape ``(N, D)``.
-            sample (Any): Sample object exposing ``sample_id`` and artifact paths.
+        bag_parts: list[np.ndarray] = []
+        coord_parts: list[np.ndarray] = []
+        for artifact_path in sample.artifact_paths:
+            with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                feature_matrix = features_io.read_features(
+                    slide_artifact,
+                    bag_id=base_dataset.tiling_id,
+                    extractor_name=base_dataset.extractor_name,
+                )
+                coords = tiles_io.read_coords(
+                    slide_artifact,
+                    bag_id=base_dataset.tiling_id,
+                )
+            bag_parts.append(np.asarray(feature_matrix, dtype=np.float32))
+            coord_parts.append(np.asarray(coords[:, :2], dtype=np.int64))
 
-        Returns:
-            tuple[np.ndarray, np.ndarray]:
-                Feature matrix with shape ``(N, D)`` and coordinate matrix with
-                shape ``(N, 2)``.
-        """
-        features = self._to_numpy_features(bag)
-        coords = self._read_sample_coords(
-            sample=sample,
-            bag_dataset=bag_dataset,
-            combo_cfg=combo_cfg,
-        )
+        if not bag_parts:
+            raise RuntimeError(f"No bags found for sample '{sample.sample_id}'.")
 
-        if features.shape[0] != coords.shape[0]:
-            raise ValueError(
-                "SDM requires one coordinate row per patch feature row. "
-                f"Got features={features.shape[0]} and coords={coords.shape[0]}."
-            )
-
-        if len(features) == 0:
-            logger.warning("Empty patch list provided to SDM.")
-
-        return features, coords
+        return {
+            "bag": (
+                np.concatenate(bag_parts, axis=0)
+                if bag_parts
+                else np.empty((0, 0), dtype=np.float32)
+            ),
+            "coords": (
+                np.concatenate(coord_parts, axis=0)
+                if coord_parts
+                else np.empty((0, 2), dtype=np.int64)
+            ),
+        }
 
     def _build_representation_from_indices(
         self,
@@ -216,21 +214,16 @@ class SDMFeatures(BaseRetrievalRepresentationStrategy):
 
         return RetrievalRepresentation(
             sample_id="" if sample is None else str(getattr(sample, "sample_id", "")),
-            representation_type=self.output_representation_kind,
             data=selected_features,
-            metadata=RetrievalItemMetadata(
-                extra={
-                    "groups": {
-                        str(group_id): member_indices.tolist()
-                        for group_id, member_indices in groups.items()
-                    }
-                }
-            ),
             additional_data={
                 "selected_indices": selected_array,
                 "group_ids": group_ids.astype(np.int64, copy=False),
                 "selected_coords": selected_coords,
                 "bag_id": str(bag_id),
+                "groups": {
+                    str(group_id): member_indices.tolist()
+                    for group_id, member_indices in groups.items()
+                },
             },
         )
 
@@ -271,52 +264,4 @@ class SDMFeatures(BaseRetrievalRepresentationStrategy):
         Returns:
             np.ndarray: Float feature matrix with shape ``(N, D)``.
         """
-        if isinstance(bag, torch.Tensor):
-            features = bag.detach().cpu().numpy()
-        else:
-            features = np.asarray(bag)
-        features = np.asarray(features)
-
-        if features.ndim != 2:
-            raise ValueError(
-                f"SDM expects a 2D patch feature matrix. Got shape {features.shape}."
-            )
-
-        return features
-
-    def _read_sample_coords(
-        self,
-        sample: Any,
-        bag_dataset: Any | None,
-        combo_cfg: Any | None,
-    ) -> np.ndarray:
-        """
-        Read and concatenate aligned patch coordinates for one sample.
-
-        Args:
-            sample (Any): Sample object exposing ``artifact_paths``.
-
-        Returns:
-            np.ndarray: Coordinate matrix with shape ``(N, 2)``.
-        """
-        if sample is None:
-            raise ValueError(
-                "SDM requires a sample with artifact_paths to load coordinates."
-            )
-
-        if bag_dataset is None and combo_cfg is None:
-            raise ValueError(
-                "SDM requires combo_cfg when bag_dataset is not provided."
-            )
-
-        tiling_id = (
-            str(bag_dataset.tiling_id)
-            if bag_dataset is not None
-            else build_tiling_id(combo_cfg)
-        )
-
-        return load_sample_patch_coords(
-            sample=sample,
-            tile_id=tiling_id,
-            dtype=np.int64,
-        )
+        return self.as_numpy_feature_matrix(bag)

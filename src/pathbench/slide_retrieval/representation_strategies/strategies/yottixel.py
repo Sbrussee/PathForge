@@ -27,11 +27,17 @@ import numpy as np
 from sklearn.cluster import KMeans
 import torch
 
-from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.datasets.bag_dataset import BagDataset, BagSample
+from pathbench.core.io.slide_artifacts import features as features_io
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.slide_retrieval.hyperparams import HyperParam
-from pathbench.slide_retrieval.io import load_sample_patch_coords
-from pathbench.slide_retrieval.mean_rgb import resolve_sample_patch_mean_rgb
+from pathbench.slide_retrieval.mean_rgb import (
+    _build_slide_processor,
+    _resolve_sample_slide_paths,
+    _slide_retrieval_artifact_path,
+    load_or_create_slide_patch_mean_rgb,
+)
 from pathbench.slide_retrieval.representation_strategies.base import (
     BaseRetrievalRepresentationStrategy,
 )
@@ -108,10 +114,9 @@ class _BaseYottixelRepresentationStrategy(BaseRetrievalRepresentationStrategy):
     def _prepare_selection_inputs(
         self,
         *,
-        bag: torch.Tensor,
+        bag: torch.Tensor | np.ndarray,
         sample: BagSample,
-        bag_dataset: BagDataset | None,
-        combo_cfg: Any,
+        coords: np.ndarray,
         selection_label: str,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
@@ -129,18 +134,8 @@ class _BaseYottixelRepresentationStrategy(BaseRetrievalRepresentationStrategy):
                 shape `(N, 2)`.
 
         """
-        bag_array = np.asarray(bag.detach().cpu().numpy(), dtype=float)
-        tiling_id = (
-            str(bag_dataset.tiling_id)
-            if bag_dataset is not None
-            else build_tiling_id(combo_cfg)
-        )
-        coords = load_sample_patch_coords(
-            sample=sample,
-            tile_id=tiling_id,
-            dtype=np.int32,
-        )
-        self.random_state = self._resolve_random_state(combo_cfg)
+        bag_array = self.as_numpy_feature_matrix(bag)
+        coords = np.asarray(coords, dtype=np.int32)
 
         if bag_array.ndim != 2:
             raise ValueError(f"bag must have shape (N, D). Got {bag_array.shape}.")
@@ -193,7 +188,6 @@ class _BaseYottixelRepresentationStrategy(BaseRetrievalRepresentationStrategy):
 
         return RetrievalRepresentation(
             sample_id=sample.sample_id,
-            representation_type=self.output_representation_kind,
             data=representation_data,
             additional_data={
                 "selected_indices": selected_indices,
@@ -248,23 +242,14 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
         if sample is None:
             raise ValueError("sample is required for Yottixel_rgb.")
 
-        bag_dataset = kwargs.get("bag_dataset")
         combo_cfg = kwargs.get("combo_cfg")
-        tiling_id = (
-            str(bag_dataset.tiling_id)
-            if bag_dataset is not None
-            else build_tiling_id(combo_cfg)
-        )
-        resolved_mean_rgb = resolve_sample_patch_mean_rgb(
-            sample=sample,
-            bag_id=tiling_id,
-            config=self.extra.get("config"),
-        )
+        self.random_state = self._resolve_random_state(combo_cfg)
+        tiling_id = str(kwargs.get("tiling_id"))
+        resolved_mean_rgb = np.asarray(kwargs.get("mean_rgb"), dtype=np.float32)
         bag_array, coords = self._prepare_selection_inputs(
-            bag=torch.as_tensor(resolved_mean_rgb, dtype=torch.float32),
+            bag=resolved_mean_rgb,
             sample=sample,
-            bag_dataset=bag_dataset,
-            combo_cfg=combo_cfg,
+            coords=np.asarray(kwargs.get("coords"), dtype=np.int32),
             selection_label="yottixel mean RGB",
         )
         if len(bag_array) == 0:
@@ -320,6 +305,63 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
             bag_id=tiling_id,
         )
 
+    def load_sample(
+        self,
+        *,
+        index: int,
+        sample: BagSample,
+        base_dataset: BagDataset,
+    ) -> dict[str, Any]:
+        """Load mean-RGB descriptors and coordinates for one Yottixel RGB item."""
+        _ = index
+        tiling_id = str(base_dataset.tiling_id)
+        slide_paths_by_id = _resolve_sample_slide_paths(
+            sample=sample,
+            config=self.extra.get("config"),
+        )
+        slide_processor = _build_slide_processor(config=self.extra.get("config"))
+        coord_parts: list[np.ndarray] = []
+        mean_rgb_parts: list[np.ndarray] = []
+
+        try:
+            for slide_id, artifact_path in zip(sample.slide_ids, sample.artifact_paths):
+                with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                    coords = tiles_io.read_coords(
+                        slide_artifact,
+                        bag_id=tiling_id,
+                    )
+                    mean_rgb = load_or_create_slide_patch_mean_rgb(
+                        slide_artifact=slide_artifact,
+                        retrieval_artifact_path=_slide_retrieval_artifact_path(
+                            slide_artifact_path=artifact_path,
+                            slide_id=str(slide_id),
+                        ),
+                        slide_path=slide_paths_by_id.get(str(slide_id)),
+                        bag_id=tiling_id,
+                        slide_processor=slide_processor,
+                        slide_id=str(slide_id),
+                    )
+                coord_parts.append(np.asarray(coords[:, :2], dtype=np.int32))
+                mean_rgb_parts.append(np.asarray(mean_rgb, dtype=np.float32))
+        finally:
+            close_fn = getattr(slide_processor, "close", None)
+            if callable(close_fn):
+                close_fn()
+
+        return {
+            "mean_rgb": (
+                np.concatenate(mean_rgb_parts, axis=0)
+                if mean_rgb_parts
+                else np.empty((0, 3), dtype=np.float32)
+            ),
+            "coords": (
+                np.concatenate(coord_parts, axis=0)
+                if coord_parts
+                else np.empty((0, 2), dtype=np.int32)
+            ),
+            "tiling_id": tiling_id,
+        }
+
 
 @register_representation_strategy("Yottixel_features")
 class YottixelFeatures(_BaseYottixelRepresentationStrategy):
@@ -368,11 +410,11 @@ class YottixelFeatures(_BaseYottixelRepresentationStrategy):
         if sample is None:
             raise ValueError("sample is required for Yottixel_features.")
 
+        self.random_state = self._resolve_random_state(kwargs.get("combo_cfg"))
         bag_array, coords = self._prepare_selection_inputs(
             bag=bag,
             sample=sample,
-            bag_dataset=kwargs.get("bag_dataset"),
-            combo_cfg=kwargs.get("combo_cfg"),
+            coords=np.asarray(kwargs.get("coords"), dtype=np.int32),
             selection_label="Yottixel feature",
         )
         if len(bag_array) == 0:
@@ -382,11 +424,7 @@ class YottixelFeatures(_BaseYottixelRepresentationStrategy):
                 selected=[],
                 group_ids=np.array([], dtype=np.int32),
                 coords=coords,
-                bag_id=(
-                    str(kwargs.get("bag_dataset").tiling_id)
-                    if kwargs.get("bag_dataset") is not None
-                    else build_tiling_id(kwargs.get("combo_cfg"))
-                ),
+                bag_id=str(kwargs.get("tiling_id")),
             )
 
         # Stage 1: cluster patches using learned feature embeddings.
@@ -434,9 +472,45 @@ class YottixelFeatures(_BaseYottixelRepresentationStrategy):
             selected=selected,
             group_ids=group_ids,
             coords=coords,
-            bag_id=(
-                str(kwargs.get("bag_dataset").tiling_id)
-                if kwargs.get("bag_dataset") is not None
-                else build_tiling_id(kwargs.get("combo_cfg"))
-            ),
+            bag_id=str(kwargs.get("tiling_id")),
         )
+
+    def load_sample(
+        self,
+        *,
+        index: int,
+        sample: BagSample,
+        base_dataset: BagDataset,
+    ) -> dict[str, Any]:
+        """Load feature bags and coordinates for one Yottixel feature item."""
+        del index
+        tiling_id = str(base_dataset.tiling_id)
+        bag_parts: list[np.ndarray] = []
+        coord_parts: list[np.ndarray] = []
+        for artifact_path in sample.artifact_paths:
+            with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                feature_matrix = features_io.read_features(
+                    slide_artifact,
+                    bag_id=tiling_id,
+                    extractor_name=base_dataset.extractor_name,
+                )
+                coords = tiles_io.read_coords(
+                    slide_artifact,
+                    bag_id=tiling_id,
+                )
+            bag_parts.append(np.asarray(feature_matrix, dtype=np.float32))
+            coord_parts.append(np.asarray(coords[:, :2], dtype=np.int32))
+
+        return {
+            "bag": (
+                np.concatenate(bag_parts, axis=0)
+                if bag_parts
+                else np.empty((0, 0), dtype=np.float32)
+            ),
+            "coords": (
+                np.concatenate(coord_parts, axis=0)
+                if coord_parts
+                else np.empty((0, 2), dtype=np.int32)
+            ),
+            "tiling_id": tiling_id,
+        }

@@ -7,7 +7,7 @@ uv.lock
 venv/
 .env/
 
-experiments/
+/experiments/
 
 user_configs/
 

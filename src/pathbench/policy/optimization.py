@@ -71,9 +71,11 @@ class OptimizationPolicy(PolicyBase):
         model_name = trial.suggest_categorical("model", ["AttentionMIL", "TransMIL"])
         
         # Apply to Config (Temporary for this trial)
-        self.config.mil.lr = lr
-        self.config.mil.dropout_p = dropout
-        self.config.mil.best_epoch_based_on = self.config.optimization.objective_metric
+        if self.config.classification is None:
+            raise ValueError("classification config is required for optimization.")
+        self.config.classification.lr = lr
+        self.config.classification.dropout_p = dropout
+        self.config.classification.best_epoch_based_on = self.config.optimization.objective_metric
         
         # 2. Instantiate Components
         # Use the registries and abstract factories

@@ -16,8 +16,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from pathbench.core.datasets.wsi_dataset import WSIDataset
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.io.h5 import tiles as tiles_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
 
 logger = logging.getLogger(__name__)
 

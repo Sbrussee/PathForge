@@ -16,11 +16,17 @@ from typing import Any
 import numpy as np
 import torch
 
-from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.datasets.bag_dataset import BagDataset, BagSample
+from pathbench.core.io.slide_artifacts import features as features_io
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.slide_retrieval.hyperparams import HyperParam
-from pathbench.slide_retrieval.io import load_sample_patch_coords
-from pathbench.slide_retrieval.mean_rgb import resolve_sample_patch_mean_rgb
+from pathbench.slide_retrieval.mean_rgb import (
+    _build_slide_processor,
+    _resolve_sample_slide_paths,
+    _slide_retrieval_artifact_path,
+    load_or_create_slide_patch_mean_rgb,
+)
 from pathbench.slide_retrieval.representation_strategies.base import (
     BaseRetrievalRepresentationStrategy,
 )
@@ -30,9 +36,6 @@ from pathbench.slide_retrieval.representation_strategies.registry import (
 from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.types import RetrievalItemMetadata
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -127,19 +130,14 @@ class _BaseSPLICEStrategy(BaseRetrievalRepresentationStrategy):
 
         return RetrievalRepresentation(
             sample_id="" if sample is None else str(sample.sample_id),
-            representation_type=self.output_representation_kind,
             data=features[selected_array].astype(np.float32, copy=False),
-            metadata=RetrievalItemMetadata(
-                extra={
-                    "groups": groups_payload,
-                    "selector_name": self.name,
-                }
-            ),
             additional_data={
                 "selected_indices": selected_array.astype(np.int64, copy=False),
                 "group_ids": group_ids.astype(np.int64, copy=False),
                 "selected_coords": selected_coords,
                 "bag_id": str(bag_id),
+                "groups": groups_payload,
+                "selector_name": self.name,
             },
         )
 
@@ -195,7 +193,7 @@ class SPLICERGB(_BaseSPLICEStrategy):
       - `additional_data["selected_indices"]`: shape `(K,)`
       - `additional_data["group_ids"]`: shape `(N,)`
       - `additional_data["selected_coords"]`: shape `(K, 2)`
-      - `metadata["groups"]`: group-to-member index mapping
+      - `additional_data["groups"]`: group-to-member index mapping
 
     Example:
     ```python
@@ -218,25 +216,9 @@ class SPLICERGB(_BaseSPLICEStrategy):
         sample: BagSample | None = None,
         **kwargs: Any,
     ) -> RetrievalRepresentation:
-        combo_cfg = self._resolve_combo_cfg(kwargs.get("combo_cfg"))
-        bag_dataset = kwargs.get("bag_dataset")
-        tiling_id = (
-            str(bag_dataset.tiling_id)
-            if bag_dataset is not None
-            else build_tiling_id(combo_cfg=combo_cfg)
-        )
-        color_features = np.asarray(
-            resolve_sample_patch_mean_rgb(
-                sample=sample,
-                bag_id=tiling_id,
-                config=self.extra.get("config"),
-            ),
-            dtype=float,
-        )
-        coords = load_sample_patch_coords(
-            sample=sample,
-            tile_id=tiling_id,
-        )
+        tiling_id = str(kwargs.get("tiling_id"))
+        color_features = np.asarray(kwargs.get("mean_rgb"), dtype=float)
+        coords = np.asarray(kwargs.get("coords"))
         color_features, coords = self._prepare_selection_inputs(
             features=color_features,
             coords=coords,
@@ -313,6 +295,63 @@ class SPLICERGB(_BaseSPLICEStrategy):
             bag_id=tiling_id,
         )
 
+    def load_sample(
+        self,
+        *,
+        index: int,
+        sample: BagSample,
+        base_dataset: BagDataset,
+    ) -> dict[str, Any]:
+        """Load mean-RGB descriptors and coordinates for one SPLICE RGB sample."""
+        _ = index
+        tiling_id = str(base_dataset.tiling_id)
+        slide_paths_by_id = _resolve_sample_slide_paths(
+            sample=sample,
+            config=self.extra.get("config"),
+        )
+        slide_processor = _build_slide_processor(config=self.extra.get("config"))
+        coord_parts: list[np.ndarray] = []
+        mean_rgb_parts: list[np.ndarray] = []
+
+        try:
+            for slide_id, artifact_path in zip(sample.slide_ids, sample.artifact_paths):
+                with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                    coords = tiles_io.read_coords(
+                        slide_artifact,
+                        bag_id=tiling_id,
+                    )
+                    mean_rgb = load_or_create_slide_patch_mean_rgb(
+                        slide_artifact=slide_artifact,
+                        retrieval_artifact_path=_slide_retrieval_artifact_path(
+                            slide_artifact_path=artifact_path,
+                            slide_id=str(slide_id),
+                        ),
+                        slide_path=slide_paths_by_id.get(str(slide_id)),
+                        bag_id=tiling_id,
+                        slide_processor=slide_processor,
+                        slide_id=str(slide_id),
+                    )
+                coord_parts.append(np.asarray(coords[:, :2], dtype=np.int64))
+                mean_rgb_parts.append(np.asarray(mean_rgb, dtype=np.float32))
+        finally:
+            close_fn = getattr(slide_processor, "close", None)
+            if callable(close_fn):
+                close_fn()
+
+        return {
+            "mean_rgb": (
+                np.concatenate(mean_rgb_parts, axis=0)
+                if mean_rgb_parts
+                else np.empty((0, 3), dtype=np.float32)
+            ),
+            "coords": (
+                np.concatenate(coord_parts, axis=0)
+                if coord_parts
+                else np.empty((0, 2), dtype=np.int64)
+            ),
+            "tiling_id": tiling_id,
+        }
+
 
 @register_representation_strategy("splice_features")
 class SPLICEFeatures(_BaseSPLICEStrategy):
@@ -339,7 +378,7 @@ class SPLICEFeatures(_BaseSPLICEStrategy):
       - `additional_data["selected_indices"]`: shape `(K,)`
       - `additional_data["group_ids"]`: shape `(N,)`
       - `additional_data["selected_coords"]`: shape `(K, 2)`
-      - `metadata["groups"]`: group-to-member index mapping
+      - `additional_data["groups"]`: group-to-member index mapping
 
     Example:
     ```python
@@ -362,18 +401,9 @@ class SPLICEFeatures(_BaseSPLICEStrategy):
         sample: BagSample | None = None,
         **kwargs: Any,
     ) -> RetrievalRepresentation:
-        combo_cfg = self._resolve_combo_cfg(kwargs.get("combo_cfg"))
-        bag_dataset = kwargs.get("bag_dataset")
-        features = np.asarray(bag.detach().cpu().numpy(), dtype=float)
-        tiling_id = (
-            str(bag_dataset.tiling_id)
-            if bag_dataset is not None
-            else build_tiling_id(combo_cfg=combo_cfg)
-        )
-        coords = load_sample_patch_coords(
-            sample=sample,
-            tile_id=tiling_id,
-        )
+        tiling_id = str(kwargs.get("tiling_id"))
+        features = self.as_numpy_feature_matrix(bag)
+        coords = np.asarray(kwargs.get("coords"))
         features, coords = self._prepare_selection_inputs(
             features=features,
             coords=coords,
@@ -449,3 +479,43 @@ class SPLICEFeatures(_BaseSPLICEStrategy):
             groups=groups,
             bag_id=tiling_id,
         )
+
+    def load_sample(
+        self,
+        *,
+        index: int,
+        sample: BagSample,
+        base_dataset: BagDataset,
+    ) -> dict[str, Any]:
+        """Load feature bags and coordinates for one SPLICE sample."""
+        del index
+        tiling_id = str(base_dataset.tiling_id)
+        bag_parts: list[np.ndarray] = []
+        coord_parts: list[np.ndarray] = []
+        for artifact_path in sample.artifact_paths:
+            with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                feature_matrix = features_io.read_features(
+                    slide_artifact,
+                    bag_id=tiling_id,
+                    extractor_name=base_dataset.extractor_name,
+                )
+                coords = tiles_io.read_coords(
+                    slide_artifact,
+                    bag_id=tiling_id,
+                )
+            bag_parts.append(np.asarray(feature_matrix, dtype=np.float32))
+            coord_parts.append(np.asarray(coords[:, :2], dtype=np.int64))
+
+        return {
+            "bag": (
+                np.concatenate(bag_parts, axis=0)
+                if bag_parts
+                else np.empty((0, 0), dtype=np.float32)
+            ),
+            "coords": (
+                np.concatenate(coord_parts, axis=0)
+                if coord_parts
+                else np.empty((0, 2), dtype=np.int64)
+            ),
+            "tiling_id": tiling_id,
+        }

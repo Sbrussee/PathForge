@@ -8,7 +8,7 @@ from pathbench.config.config import Config
 
 
 def test_from_yaml_loads_minimal_valid_config(tmp_path):
-    # Minimal config that satisfies validators (benchmark requires task + mil)
+    # Minimal config that satisfies validators (benchmark requires task + benchmark_parameters.mil)
     yaml_text = dedent("""
                         experiment:
                             project_name: testproj

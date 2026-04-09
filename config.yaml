@@ -7,6 +7,8 @@ experiment:
   report: true
   mixed_precision: true
   num_workers: 8
+
+classification:
   split_technique: k-fold
   val_fraction: 0.1
 
@@ -27,6 +29,3 @@ benchmark_parameters:
     - 0.25
   feature_extraction:
     - resnet50
-
-weights_dir: ./pretrained_weights
-hf_key: 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

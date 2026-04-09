@@ -240,6 +240,7 @@ class BenchmarkingPolicy(PolicyBase):
             cfg=self.experiment.cfg,
             annotations_df=annotations_df,
             combo_cfg=combo_cfg,
+            task=self.task_name,
         )
 
     def group_bag_datasets_by_use(

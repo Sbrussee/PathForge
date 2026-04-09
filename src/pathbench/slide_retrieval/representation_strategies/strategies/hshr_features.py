@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import numpy as np
@@ -9,8 +8,10 @@ from sklearn.cluster import KMeans
 
 from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.datasets.bag_dataset import BagDataset, BagSample
+from pathbench.core.io.slide_artifacts import features as features_io
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.slide_retrieval.hyperparams import HyperParam
-from pathbench.slide_retrieval.io import load_sample_patch_coords
 from pathbench.slide_retrieval.representation_strategies.base import (
     BaseRetrievalRepresentationStrategy,
 )
@@ -20,10 +21,6 @@ from pathbench.slide_retrieval.representation_strategies.registry import (
 from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-
-
-logger = logging.getLogger(__name__)
-
 
 @register_representation_strategy("hshr_features")
 class HSHRFeatures(BaseRetrievalRepresentationStrategy):
@@ -47,7 +44,6 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
 
     Outputs:
         Returns a ``RetrievalRepresentation`` with:
-        - ``representation_type="patch_vector"``
         - ``data`` of shape ``(K, D)``
         - ``additional_data["selected_indices"]`` of shape ``(K,)``
         - ``additional_data["group_ids"]`` of shape ``(N,)``
@@ -106,12 +102,8 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
             Retrieval representation with ``data`` shape ``(K, D)`` where
             ``K = min(max(n_patches, 1), N)``.
         """
-        features, coords = self._prepare_selection_inputs(
-            bag=bag,
-            sample=sample,
-            bag_dataset=kwargs.get("bag_dataset"),
-            combo_cfg=kwargs.get("combo_cfg"),
-        )
+        coords = np.asarray(kwargs.get("coords"), dtype=int)
+        features = self._as_feature_matrix(bag)
         bag_id = (
             str(kwargs.get("bag_dataset").tiling_id)
             if kwargs.get("bag_dataset") is not None
@@ -159,34 +151,47 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
             bag_id=bag_id,
         )
 
-    def _prepare_selection_inputs(
+    def load_sample(
         self,
         *,
-        bag: torch.Tensor | np.ndarray,
-        sample: BagSample | None,
-        bag_dataset: BagDataset | None,
-        combo_cfg: Any | None,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Prepare the aligned feature and coordinate arrays used by HSHR.
+        index: int,
+        sample: BagSample,
+        base_dataset: BagDataset,
+    ) -> dict[str, Any]:
+        """Load the bag tensor and aligned coordinates for one retrieval item."""
+        del index
 
-        Outputs:
-            tuple[np.ndarray, np.ndarray]:
-                Feature matrix with shape ``(N, D)`` and aligned coordinate
-                matrix with shape ``(N, 2)``.
-        """
-        features = self._as_feature_matrix(bag)
-        if len(features) == 0:
-            logger.warning("HSHRFeatures: empty patch list.")
-            return features, np.empty((0, 2), dtype=int)
+        bag_parts: list[np.ndarray] = []
+        coord_parts: list[np.ndarray] = []
+        for artifact_path in sample.artifact_paths:
+            with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                feature_matrix = features_io.read_features(
+                    slide_artifact,
+                    bag_id=base_dataset.tiling_id,
+                    extractor_name=base_dataset.extractor_name,
+                )
+                coords = tiles_io.read_coords(
+                    slide_artifact,
+                    bag_id=base_dataset.tiling_id,
+                )
+            bag_parts.append(np.asarray(feature_matrix, dtype=np.float32))
+            coord_parts.append(np.asarray(coords[:, :2], dtype=int))
 
-        coords = self._load_coords(
-            sample=sample,
-            bag_dataset=bag_dataset,
-            combo_cfg=combo_cfg,
-            num_patches=int(features.shape[0]),
-        )
-        return features, coords
+        if not bag_parts:
+            raise RuntimeError(f"No bags found for sample '{sample.sample_id}'.")
+
+        return {
+            "bag": (
+                np.concatenate(bag_parts, axis=0)
+                if bag_parts
+                else np.empty((0, 0), dtype=np.float32)
+            ),
+            "coords": (
+                np.concatenate(coord_parts, axis=0)
+                if coord_parts
+                else np.empty((0, 2), dtype=int)
+            ),
+        }
 
     def _build_representation_from_indices(
         self,
@@ -216,7 +221,6 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
 
         return RetrievalRepresentation(
             sample_id=self._resolve_sample_id(sample=sample),
-            representation_type=self.output_representation_kind,
             data=selected_features,
             additional_data={
                 "selected_indices": selected_indices,
@@ -226,58 +230,9 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
             },
         )
 
-    def _load_coords(
-        self,
-        *,
-        sample: BagSample | None,
-        bag_dataset: BagDataset | None,
-        combo_cfg: Any | None,
-        num_patches: int,
-    ) -> np.ndarray:
-        """
-        Load patch coordinates aligned with the bag rows.
-
-        Outputs:
-            Integer array with shape ``(N, 2)``. Falls back to zeros with the
-            same shape when coordinates are unavailable in the current context.
-        """
-        if sample is None:
-            return np.zeros((num_patches, 2), dtype=int)
-
-        if bag_dataset is None and combo_cfg is None:
-            raise ValueError(
-                "HSHRFeatures requires combo_cfg when bag_dataset is not provided."
-            )
-
-        tiling_id = (
-            str(bag_dataset.tiling_id)
-            if bag_dataset is not None
-            else build_tiling_id(combo_cfg)
-        )
-        all_coords = load_sample_patch_coords(
-            sample=sample,
-            tile_id=tiling_id,
-        )
-        if int(all_coords.shape[0]) != num_patches:
-            raise ValueError(
-                "HSHRFeatures: number of coords does not match number of bag rows. "
-                f"Got {all_coords.shape[0]} coords and {num_patches} features."
-            )
-        return all_coords
-
     def _as_feature_matrix(self, bag: torch.Tensor | np.ndarray) -> np.ndarray:
         """Convert one bag into a 2D float feature matrix with shape ``(N, D)``."""
-        if isinstance(bag, torch.Tensor):
-            features = bag.detach().cpu().numpy()
-        else:
-            features = np.asarray(bag)
-
-        if features.ndim != 2:
-            raise ValueError(
-                f"HSHRFeatures expects a 2D feature matrix with shape (N, D). Got {features.shape}."
-            )
-
-        return np.asarray(features, dtype=float)
+        return self.as_numpy_feature_matrix(bag)
 
     def _resolve_sample_id(self, *, sample: BagSample | None) -> str:
         """Resolve the sample identifier used in the retrieval representation."""

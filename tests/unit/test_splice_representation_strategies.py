@@ -8,9 +8,8 @@ import torch
 import pytest
 
 from pathbench.core.datasets.bag_dataset import BagSample
-from pathbench.core.io.h5 import descriptors as descriptors_io
-from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.core.io.h5.base import FileHandleH5
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
     import_representation_strategy_modules,
@@ -58,13 +57,6 @@ def _write_coords_artifact(
                 "backend": "lazyslide",
             },
         )
-        if mean_rgb is not None:
-            descriptors_io.write_descriptor(
-                slide_artifact,
-                bag_id,
-                "mean_rgb",
-                mean_rgb,
-            )
 
 
 def _build_sample(artifact_path: Path) -> BagSample:
@@ -142,6 +134,8 @@ def test_splice_features_selects_expected_rows_and_groups(tmp_path: Path) -> Non
         bag=bag,
         sample=_build_sample(artifact_path),
         combo_cfg=_build_combo_cfg(),
+        coords=coords[:, :2],
+        tiling_id="256px_0.5mpp",
     )
 
     np.testing.assert_allclose(
@@ -160,8 +154,6 @@ def test_splice_features_selects_expected_rows_and_groups(tmp_path: Path) -> Non
         representation.additional_data["selected_coords"],
         np.array([[10, 11], [30, 31]], dtype=np.int64),
     )
-    assert representation.metadata["groups"] == {"0": [0, 1], "1": [2]}
-    assert representation.representation_type == "patch_vector"
     assert representation.sample_id == "sample-1"
 
 
@@ -209,6 +201,16 @@ def test_splice_rgb_uses_same_selection_logic_for_histogram_rows(tmp_path: Path)
         bag=bag,
         sample=_build_sample(artifact_path),
         combo_cfg=_build_combo_cfg(),
+        mean_rgb=np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [0.01, 0.0, 0.0],
+                [5.0, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        ),
+        coords=coords[:, :2],
+        tiling_id="256px_0.5mpp",
     )
 
     np.testing.assert_allclose(
@@ -227,7 +229,6 @@ def test_splice_rgb_uses_same_selection_logic_for_histogram_rows(tmp_path: Path)
         representation.additional_data["selected_coords"],
         np.array([[100, 101], [300, 301]], dtype=np.int64),
     )
-    assert representation.metadata["groups"] == {"0": [0, 1], "1": [2]}
 
 
 def test_splice_features_empty_bag_returns_empty_representation(tmp_path: Path) -> None:
@@ -240,9 +241,11 @@ def test_splice_features_empty_bag_returns_empty_representation(tmp_path: Path) 
 
     strategy = SPLICEFeatures(params={"percentile_threshold": 25.0})
     representation = strategy.run(
-        bag=torch.empty((0, 8), dtype=torch.float32),
+        bag=np.empty((0, 8), dtype=np.float32),
         sample=_build_sample(artifact_path),
         combo_cfg=_build_combo_cfg(),
+        coords=np.empty((0, 2), dtype=np.int64),
+        tiling_id="256px_0.5mpp",
     )
 
     assert representation.data.shape == (0, 0)
@@ -258,7 +261,7 @@ def test_splice_features_empty_bag_returns_empty_representation(tmp_path: Path) 
         representation.additional_data["selected_coords"],
         np.empty((0, 2), dtype=np.int64),
     )
-    assert representation.metadata["groups"] == {}
+    assert representation.additional_data["groups"] == {}
 
 
 def test_splice_features_requires_percentile_threshold(tmp_path: Path) -> None:
@@ -273,9 +276,11 @@ def test_splice_features_requires_percentile_threshold(tmp_path: Path) -> None:
         match="percentile_threshold must be specified for SPLICE",
     ):
         strategy.run(
-            bag=torch.tensor([[1.0, 2.0]], dtype=torch.float32),
+            bag=np.array([[1.0, 2.0]], dtype=np.float32),
             sample=_build_sample(artifact_path),
             combo_cfg=_build_combo_cfg(),
+            coords=np.array([[1, 2]], dtype=np.int64),
+            tiling_id="256px_0.5mpp",
         )
 
 

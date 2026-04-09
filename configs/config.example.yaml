@@ -5,8 +5,6 @@ experiment:
 
   # Execution details
   num_workers: 4
-  split_technique: "k-fold"
-  val_fraction: 0.2
 
   # Mode
   # NOTE: feature_extraction mode avoids requiring benchmark_parameters.mil to be valid/registered.
@@ -16,14 +14,12 @@ experiment:
 
   # Flags
   report: true
+  thumbnail: false
   mixed_precision: true
 
-  # Optional lists (kept for forward compatibility)
-  visualization: ["confusion_matrix", "roc_curve", "attention_map"]
-  evaluation: ["balanced_accuracy", "auc", "f1"]
-  custom_metrics: []
-
-mil:
+classification:
+  split_technique: "k-fold"
+  val_fraction: 0.2
   balancing: "weighted"
   class_weighting: true
   epochs: 20
@@ -52,6 +48,14 @@ optimization:
   sampler: "TPESampler"
   trials: 50
   pruner: "MedianPruner"
+
+evaluation:
+  label_column: "category"
+  metrics: ["balanced_accuracy", "auc", "f1"]
+  visualization: ["retrieval_results", "retrieval_representation"]
+  visualization_metadata_columns: ["dataset", "patient", "category"]
+  visualization_subset_file: "/data/annotations/visualization_subset.csv"
+  visualization_top_k: 10
 
 datasets:
   - name: "TCGA-BRCA"
@@ -82,6 +86,3 @@ benchmark_parameters:
   loss: ["CrossEntropyLoss"]
   activation_function: ["ReLU"]
   optimizer: ["Adam", "AdamW"]
-
-weights_dir: "./pretrained_weights"
-hf_key: null

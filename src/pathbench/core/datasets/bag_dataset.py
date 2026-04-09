@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional, Literal
+from typing import Any, Callable, Optional, Literal
+from abc import abstractmethod
 
 import pandas as pd
 import torch
@@ -10,10 +11,10 @@ import torch
 from pathbench.config.config import DatasetEntry
 from pathbench.core.datasets.base import BagDatasetBase
 from pathbench.core.experiments.combinations import ComboConfig
-from pathbench.core.experiments.combo_ids import build_tiling_id
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.io.h5 import features as features_io
-from pathbench.core.io.h5 import tiles as tiles_io
+from pathbench.core.experiments.combo_ids import build_feature_name, build_tiling_id
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
+from pathbench.core.io.slide_artifacts import features as features_io
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
 from pathbench.utils.constants import (
     AGGREGATION_LEVELS,
     CATEGORY_COL,
@@ -39,6 +40,42 @@ class BagSample:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(slots=True)
+class SlideRetrievalDatasetItem:
+    """
+    One materialized retrieval item produced from a `BagDataset`.
+
+    Inputs:
+    - `index`: `int` sample index inside the wrapped dataset.
+    - `sample`: `BagSample` identifying the retrieval item.
+    - `inputs`: method-specific loaded inputs.
+
+    Returns:
+    - `None`. The dataclass is used as the payload returned by
+      `SlideRetrievalBagDataset.__getitem__`.
+
+    Example:
+    ```python
+    item = SlideRetrievalDatasetItem(
+        index=0,
+        sample=sample,
+        inputs={"bag": bag_tensor},
+    )
+    ```
+    """
+
+    index: int
+    sample: BagSample
+    inputs: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.index = int(self.index)
+        self.inputs = dict(self.inputs or {})
+
+
+SlideRetrievalSampleLoader = Callable[..., dict[str, Any]]
+
+
 @dataclass
 class BagDataset(BagDatasetBase):
     """
@@ -47,7 +84,8 @@ class BagDataset(BagDatasetBase):
     Notes:
     - One BagDataset is built for one configured dataset.
     - Grouping happens in __post_init__ based on aggregation_level.
-    - Features are loaded lazily in __getitem__.
+    - Task-specific subclasses decide how one item is materialized in
+      `__getitem__`.
     - Feature existence is checked eagerly while building samples.
     - Missing-feature extraction should be handled outside this class.
     """
@@ -63,8 +101,9 @@ class BagDataset(BagDatasetBase):
         self.artifacts_dir = Path(self.ds_cfg.artifacts_dir).expanduser().resolve()
 
         self.tiling_id = build_tiling_id(self.combo_cfg)
-        self.extractor_name = str(self.combo_cfg.feature_extraction)
+        self.extractor_name = build_feature_name(self.combo_cfg)
         self._feature_level: FeatureLevel = "unknown"
+        self._feature_level_reason: str = "Feature level inference was not run."
 
         df = self.annotations_df[self.annotations_df[DATASET_COL] == self.ds_cfg.name].copy()
 
@@ -73,7 +112,7 @@ class BagDataset(BagDatasetBase):
             return
 
         self.samples = self._build_samples(df)
-        self._feature_level = self._infer_feature_level()
+        self._feature_level, self._feature_level_reason = self._infer_feature_level()
 
     @property
     def name(self) -> str:
@@ -83,10 +122,10 @@ class BagDataset(BagDatasetBase):
     def num_bags(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, Any]:
-        bag_tensor = self.load_bag(index)
-        sample = self.samples[index]
-        return bag_tensor, sample.category
+    @abstractmethod
+    def __getitem__(self, index: int) -> Any:
+        """Materialize one task-specific item from the bag dataset."""
+        raise NotImplementedError
 
     def get_sample(self, index: int) -> BagSample:
         return self.samples[index]
@@ -94,6 +133,10 @@ class BagDataset(BagDatasetBase):
     def get_feature_level(self) -> FeatureLevel:
         """Return the inferred feature level for this dataset."""
         return self._feature_level
+
+    def get_feature_level_reason(self) -> str:
+        """Return the explanation for the inferred feature level."""
+        return self._feature_level_reason
 
     def load_bag(self, index: int) -> torch.Tensor:
         """Load the bag tensor for one sample."""
@@ -156,9 +199,13 @@ class BagDataset(BagDatasetBase):
                     sample_id=slide_id,
                     slide_ids=[slide_id],
                     artifact_paths=artifact_paths,
-                    category=self._resolve_category(row_df),
-                    patient_id=self._resolve_single_optional_value(row_df, PATIENT_ID_COL),
-                    case_id=self._resolve_single_optional_value(row_df, CASE_ID_COL),
+                    category=self._resolve_single_value(
+                        row_df,
+                        self.target_column,
+                        missing_column_error=True,
+                    ),
+                    patient_id=self._resolve_single_value(row_df, PATIENT_ID_COL, cast=str),
+                    case_id=self._resolve_single_value(row_df, CASE_ID_COL, cast=str),
                     metadata=self._build_metadata(row_df),
                 )
             )
@@ -184,40 +231,39 @@ class BagDataset(BagDatasetBase):
                     sample_id=str(group_value),
                     slide_ids=slide_ids,
                     artifact_paths=artifact_paths,
-                    category=self._resolve_category(group_df),
-                    patient_id=self._resolve_single_optional_value(group_df, PATIENT_ID_COL),
-                    case_id=self._resolve_single_optional_value(group_df, CASE_ID_COL),
+                    category=self._resolve_single_value(
+                        group_df,
+                        self.target_column,
+                        missing_column_error=True,
+                    ),
+                    patient_id=self._resolve_single_value(group_df, PATIENT_ID_COL, cast=str),
+                    case_id=self._resolve_single_value(group_df, CASE_ID_COL, cast=str),
                     metadata=self._build_metadata(group_df),
                 )
             )
 
         return samples
 
-    def _resolve_category(self, group_df: pd.DataFrame) -> Any:
-        if self.target_column is None:
+    def _resolve_single_value(
+        self,
+        group_df: pd.DataFrame,
+        column: Optional[str],
+        *,
+        missing_column_error: bool = False,
+        cast: Optional[type] = None,
+    ) -> Any:
+        if column is None:
             return None
 
-        if self.target_column not in group_df.columns:
-            raise ValueError(f"Target column '{self.target_column}' not found in annotations.")
-
-        values = group_df[self.target_column].dropna().unique().tolist()
-
-        if len(values) == 0:
-            return None
-
-        if len(values) > 1:
-            raise ValueError(
-                f"Inconsistent target values for grouped bag in column "
-                f"'{self.target_column}': {values}"
-            )
-
-        return values[0]
-
-    def _resolve_single_optional_value(self, group_df: pd.DataFrame, column: str) -> Optional[str]:
         if column not in group_df.columns:
+            if missing_column_error:
+                raise ValueError(f"Target column '{column}' not found in annotations.")
             return None
 
-        values = group_df[column].dropna().astype(str).unique().tolist()
+        series = group_df[column].dropna()
+        if cast is not None:
+            series = series.astype(cast)
+        values = series.unique().tolist()
 
         if len(values) == 0:
             return None
@@ -234,7 +280,6 @@ class BagDataset(BagDatasetBase):
             DATASET_COL: self.ds_cfg.name,
             "aggregation_level": self.aggregation_level,
             "num_slides": len(group_df),
-            "slide_ids": [str(x) for x in group_df[SLIDE_ID_COL].tolist()],
         }
 
         for col in (PATIENT_ID_COL, CASE_ID_COL, CATEGORY_COL):
@@ -278,7 +323,7 @@ class BagDataset(BagDatasetBase):
     # Feature level
     # ------------------------------------------------------------------
 
-    def _infer_feature_level(self, max_slides_to_check: int = 10) -> FeatureLevel:
+    def _infer_feature_level(self, max_slides_to_check: int = 10) -> tuple[FeatureLevel, str]:
         """
         Infer whether the stored features are patch-level or slide-level.
 
@@ -294,6 +339,7 @@ class BagDataset(BagDatasetBase):
         """
         checked_paths: set[Path] = set()
         inferred_level: FeatureLevel | None = None
+        inferred_from_path: Path | None = None
         checked_count = 0
 
         for sample in self.samples:
@@ -302,68 +348,70 @@ class BagDataset(BagDatasetBase):
                     continue
 
                 checked_paths.add(artifact_path)
-                current_level = self._inspect_slide_feature_level(artifact_path)
-                checked_count += 1
+                with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                    current_level = features_io.infer_feature_level(
+                        slide_artifact,
+                        bag_id=self.tiling_id,
+                        extractor_name=self.extractor_name,
+                    )
+                    try:
+                        feature_matrix = features_io.read_features(
+                            slide_artifact,
+                            bag_id=self.tiling_id,
+                            extractor_name=self.extractor_name,
+                        )
+                        n_features = int(feature_matrix.shape[0])
+                        n_patches = tiles_io.coords_num_rows(
+                            slide_artifact,
+                            bag_id=self.tiling_id,
+                        )
+                    except Exception as exc:
+                        n_features = None
+                        n_patches = None
+                        detail = f"failed to inspect feature rows/patch rows: {exc}"
+                    else:
+                        detail = f"feature_rows={n_features}, patch_rows={n_patches}"
+                    checked_count += 1
 
                 if current_level == "invalid":
-                    return "invalid"
+                    return (
+                        "invalid",
+                        f"Dataset '{self.name}' artifact '{artifact_path.name}' has invalid feature structure ({detail}).",
+                    )
 
                 if current_level == "unknown":
                     if checked_count >= max_slides_to_check:
-                        return inferred_level or "unknown"
+                        return (
+                            inferred_level or "unknown",
+                            f"Dataset '{self.name}' remained ambiguous after {checked_count} checked artifact(s); latest artifact '{artifact_path.name}' had {detail}.",
+                        )
                     continue
 
                 if inferred_level is None:
                     inferred_level = current_level
+                    inferred_from_path = artifact_path
                 elif inferred_level != current_level:
-                    return "invalid"
+                    return (
+                        "invalid",
+                        f"Dataset '{self.name}' has inconsistent feature levels: first non-ambiguous artifact '{inferred_from_path.name if inferred_from_path else 'unknown'}' inferred '{inferred_level}', but '{artifact_path.name}' inferred '{current_level}' ({detail}).",
+                    )
 
                 if checked_count >= max_slides_to_check:
-                    return inferred_level
+                    return (
+                        inferred_level,
+                        f"Dataset '{self.name}' inferred feature level '{inferred_level}' after {checked_count} checked artifact(s).",
+                    )
 
-        return inferred_level or "unknown"
+        if inferred_level is not None:
+            return (
+                inferred_level,
+                f"Dataset '{self.name}' inferred feature level '{inferred_level}' from checked artifacts.",
+            )
 
-    def _inspect_slide_feature_level(self, artifact_path: Path) -> FeatureLevel:
-        """
-        Infer feature level for one slide artifact.
-
-        Returns:
-            - "patch"
-            - "slide"
-            - "unknown"
-            - "invalid"
-        """
-        with FileHandleH5(artifact_path, mode="r") as slide_artifact:
-            try:
-                feature_matrix = features_io.read_features(
-                    slide_artifact,
-                    bag_id=self.tiling_id,
-                    extractor_name=self.extractor_name,
-                )
-                n_features = int(feature_matrix.shape[0])
-
-                n_patches = tiles_io.coords_num_rows(
-                    slide_artifact,
-                    bag_id=self.tiling_id,
-                )
-            except Exception:
-                return "invalid"
-
-        if n_features <= 0 or n_patches <= 0:
-            return "invalid"
-
-        if n_features == n_patches:
-            if n_patches > 1:
-                return "patch"
-            return "unknown"
-
-        if n_features == 1 and n_patches > 1:
-            return "slide"
-
-        if n_features > 1 and n_features != n_patches:
-            return "invalid"
-
-        return "invalid"
+        return (
+            "unknown",
+            f"Dataset '{self.name}' only had ambiguous artifacts where feature_rows == patch_rows == 1 across {checked_count} checked artifact(s).",
+        )
 
     # ------------------------------------------------------------------
     # H5 loading
@@ -385,3 +433,74 @@ class BagDataset(BagDatasetBase):
 
     def _artifact_path(self, slide_id: str) -> Path:
         return self.artifacts_dir / f"{slide_id}.h5"
+
+
+@dataclass
+class MILBagDataset(BagDataset):
+    """
+    Standard MIL-oriented bag dataset.
+
+    Inputs:
+    - same initialization contract as `BagDataset`.
+
+    Returns:
+    - `tuple[torch.Tensor, Any]` from `__getitem__` with:
+      - bag tensor of shape `(N, D)`
+      - sample-level target / label
+    """
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, Any]:
+        bag_tensor = self.load_bag(index)
+        sample = self.samples[index]
+        return bag_tensor, sample.category
+
+
+@dataclass
+class SlideRetrievalBagDataset(BagDataset):
+    """
+    Slide-retrieval variant of `BagDataset`.
+
+    Semantic goal:
+    - Reuse the shared bag/sample construction logic from `BagDataset`.
+    - Allow the active retrieval combo to bind a sample-loader callable later.
+    - Return one `SlideRetrievalDatasetItem` from `__getitem__`.
+
+    Inputs:
+    - same initialization contract as `BagDataset`.
+    - `sample_loader`: optional callable bound later by the retrieval task.
+
+    Returns:
+    - `SlideRetrievalDatasetItem` with a `sample` plus flexible `inputs`.
+    """
+
+    sample_loader: SlideRetrievalSampleLoader | None = None
+
+    def bind_sample_loader(
+        self,
+        sample_loader: SlideRetrievalSampleLoader,
+    ) -> None:
+        """Bind the combo-specific retrieval loader used by `__getitem__`."""
+        self.sample_loader = sample_loader
+
+    def clear_sample_loader(self) -> None:
+        """Remove any bound retrieval loader from the dataset instance."""
+        self.sample_loader = None
+
+    def __getitem__(self, index: int) -> SlideRetrievalDatasetItem:
+        if self.sample_loader is None:
+            raise RuntimeError(
+                "SlideRetrievalBagDataset requires a bound sample_loader before "
+                "__getitem__ can be used."
+            )
+
+        sample = self.get_sample(index)
+        loaded_inputs = self.sample_loader(
+            index=index,
+            sample=sample,
+            base_dataset=self,
+        )
+        return SlideRetrievalDatasetItem(
+            index=index,
+            sample=sample,
+            inputs=loaded_inputs,
+        )

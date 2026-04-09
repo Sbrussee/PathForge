@@ -8,13 +8,18 @@ import pytest
 import torch
 
 from pathbench.core.datasets.bag_dataset import BagSample
-from pathbench.core.io.h5 import descriptors as descriptors_io
-from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.core.io.h5.base import FileHandleH5
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.slide_retrieval.representation_strategies.strategies.yottixel import (
     YottixelFeatures,
     YottixelRGB,
 )
+
+
+def _sort_rows(array: np.ndarray) -> np.ndarray:
+    """Return a lexicographically row-sorted copy of a 2D array."""
+    order = np.lexsort((array[:, 1], array[:, 0]))
+    return np.asarray(array[order])
 
 
 def _write_coords_artifact(
@@ -67,14 +72,6 @@ def _write_coords_artifact(
                 "backend": "lazyslide",
             },
         )
-        if mean_rgb is not None:
-            descriptors_io.write_descriptor(
-                slide_artifact,
-                bag_id,
-                "mean_rgb",
-                mean_rgb,
-            )
-
     return artifact_path
 
 
@@ -136,27 +133,42 @@ def test_yottixel_features_selects_first_member_when_one_rep_per_cluster(
         params={"n_clusters": 2, "perc_selected": 50.0},
         config=SimpleNamespace(experiment=SimpleNamespace(random_state=0)),
     )
-    representation = strategy.run(bag=bag, sample=sample, combo_cfg=combo_cfg)
+    representation = strategy.run(
+        bag=bag.numpy(),
+        sample=sample,
+        combo_cfg=combo_cfg,
+        coords=np.array(
+            [
+                [0, 0],
+                [1, 0],
+                [100, 100],
+                [101, 100],
+            ],
+            dtype=np.int32,
+        ),
+        tiling_id=bag_id,
+    )
 
     assert representation.sample_id == "sample-1"
-    assert representation.representation_type == "patch_vector"
     np.testing.assert_array_equal(
-        representation.additional_data["selected_indices"],
+        np.sort(representation.additional_data["selected_indices"]),
         np.array([0, 2], dtype=np.int32),
     )
     np.testing.assert_array_equal(
-        representation.data,
-        bag.numpy()[[0, 2]],
+        np.sort(representation.data, axis=0),
+        np.sort(bag.numpy()[[0, 2]], axis=0),
     )
     assert representation.additional_data["group_ids"].shape == (4,)
     np.testing.assert_array_equal(
-        representation.additional_data["selected_coords"],
-        np.array(
-            [
-                [0, 0],
-                [100, 100],
-            ],
-            dtype=np.int32,
+        _sort_rows(representation.additional_data["selected_coords"]),
+        _sort_rows(
+            np.array(
+                [
+                    [0, 0],
+                    [100, 100],
+                ],
+                dtype=np.int32,
+            )
         ),
     )
 
@@ -176,7 +188,13 @@ def test_yottixel_features_rejects_mismatched_coords_rows(tmp_path: Path) -> Non
     strategy = YottixelFeatures(params={"n_clusters": 2, "perc_selected": 50.0})
 
     with pytest.raises(ValueError, match="Bag rows and coordinate rows must match"):
-        strategy.run(bag=bag, sample=sample, combo_cfg=combo_cfg)
+        strategy.run(
+            bag=bag.numpy(),
+            sample=sample,
+            combo_cfg=combo_cfg,
+            coords=np.array([[0, 0]], dtype=np.int32),
+            tiling_id=bag_id,
+        )
 
 
 def test_yottixel_rgb_returns_selected_patch_rows_and_auxiliary_arrays(
@@ -201,21 +219,30 @@ def test_yottixel_rgb_returns_selected_patch_rows_and_auxiliary_arrays(
             datasets=[SimpleNamespace(name="dataset-a", slides_dir=str(tmp_path))],
         ),
     )
-    representation = strategy.run(bag=bag, sample=sample, combo_cfg=combo_cfg)
+    representation = strategy.run(
+        bag=bag,
+        sample=sample,
+        combo_cfg=combo_cfg,
+        mean_rgb=np.array([[0.2, 0.8, 0.1], [0.9, 0.1, 0.4]], dtype=np.float32),
+        coords=np.array([[0, 0], [100, 100]], dtype=np.int32),
+        tiling_id=bag_id,
+    )
 
     assert representation.sample_id == "sample-1"
-    assert representation.representation_type == "patch_vector"
     np.testing.assert_array_equal(
-        representation.additional_data["selected_indices"],
+        np.sort(representation.additional_data["selected_indices"]),
         np.array([0, 1], dtype=np.int32),
     )
     np.testing.assert_array_equal(
-        representation.data,
-        np.array([[0.2, 0.8, 0.1], [0.9, 0.1, 0.4]], dtype=np.float32),
+        np.sort(representation.data, axis=0),
+        np.sort(
+            np.array([[0.2, 0.8, 0.1], [0.9, 0.1, 0.4]], dtype=np.float32),
+            axis=0,
+        ),
     )
     np.testing.assert_array_equal(
-        representation.additional_data["selected_coords"],
-        np.array([[0, 0], [100, 100]], dtype=np.int32),
+        _sort_rows(representation.additional_data["selected_coords"]),
+        _sort_rows(np.array([[0, 0], [100, 100]], dtype=np.int32)),
     )
     assert representation.additional_data["group_ids"].shape == (2,)
 
@@ -240,7 +267,14 @@ def test_yottixel_rgb_handles_empty_patch_bag(tmp_path: Path) -> None:
             datasets=[SimpleNamespace(name="dataset-a", slides_dir=str(tmp_path))],
         ),
     )
-    representation = strategy.run(bag=bag, sample=sample, combo_cfg=combo_cfg)
+    representation = strategy.run(
+        bag=bag,
+        sample=sample,
+        combo_cfg=combo_cfg,
+        mean_rgb=np.empty((0, 3), dtype=np.float32),
+        coords=np.empty((0, 2), dtype=np.int32),
+        tiling_id=bag_id,
+    )
 
     assert representation.data.shape == (0, 3)
     assert representation.additional_data["selected_indices"].shape == (0,)

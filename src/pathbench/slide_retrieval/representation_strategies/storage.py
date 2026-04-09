@@ -14,19 +14,20 @@ def build_retrieval_representation_artifact_path(
     """Build the H5 artifact path for one retrieval representation sample."""
     root = Path(artifacts_dir).expanduser().resolve()
     sample_id = str(sample_id).strip()
+    aggregation_level = str(aggregation_level).strip()
 
     if not sample_id:
         raise ValueError("sample_id must be a non-empty string.")
     if "/" in sample_id or "\\" in sample_id:
         raise ValueError(f"sample_id may not contain path separators: {sample_id!r}")
+    if not aggregation_level:
+        raise ValueError("aggregation_level must be a non-empty string.")
+    if "/" in aggregation_level or "\\" in aggregation_level:
+        raise ValueError(
+            f"aggregation_level may not contain path separators: {aggregation_level!r}"
+        )
 
-    if aggregation_level == "slide":
-        return root / f"{sample_id}.h5"
-
-    if aggregation_level in {"case", "patient"}:
-        return root / "_aggregates" / aggregation_level / f"{sample_id}.h5"
-
-    raise ValueError(f"Unsupported aggregation_level: {aggregation_level!r}")
+    return root / "slide_retrieval" / aggregation_level / f"{sample_id}.h5"
 
 
 def build_retrieval_representation_id(

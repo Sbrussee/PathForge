@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from importlib import import_module
@@ -13,20 +14,57 @@ from pathbench.policy.base import PolicyBase
 from pathbench.core.datasets.factory import build_wsi_datasets
 from pathbench.core.experiments.base import Experiment
 from pathbench.core.experiments.combinations import ComboConfig, build_combinations
-from pathbench.core.experiments.combo_ids import build_tiling_id
+from pathbench.core.experiments.combo_ids import (
+    build_feature_name,
+    build_tiling_id,
+)
 from pathbench.core.datasets.wsi_dataset import WSI, WSIDataset
 from pathbench.core.slide_processing.base import SlideProcessorBase
 from pathbench.utils.registries import SLIDE_PROCESSORS
 
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.core.io.h5 import features as features_io
-from pathbench.core.io.h5 import tissue as tissue_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
+from pathbench.core.io.slide_artifacts.atomic import (
+    atomic_slide_artifact_write,
+    ensure_artifact_readable_or_quarantine,
+)
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
+from pathbench.core.io.slide_artifacts import features as features_io
+from pathbench.core.io.slide_artifacts import thumbnail as thumbnail_io
+from pathbench.core.io.slide_artifacts import tissue as tissue_io
 
+from pathbench.core.visualization.thumbnail import render_thumbnail_image
 from pathbench.core.visualization.tiles_overview import render_tiles_overview_image
-from pathbench.core.reports.tiles_report_pdf import create_tiles_report_pdf 
+from pathbench.core.reports.tiles_report_pdf import collect_tiles_overview_entries, create_tiles_report_pdf
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _PendingArtifactWrites:
+    tissue_polygons: Optional[tissue_io.TissuePolygons] = None
+    thumbnail_image_bytes: Optional[bytes] = None
+    thumbnail_spec: Optional[dict[str, Any]] = None
+    runtime_thumbnail_image: Optional[Any] = None
+    runtime_thumbnail_downscale_x: Optional[float] = None
+    runtime_thumbnail_downscale_y: Optional[float] = None
+    coords_array: Optional[np.ndarray] = None
+    tiling_spec: Optional[dict[str, Any]] = None
+    tiles_overview_bytes: Optional[bytes] = None
+    feature_matrix: Optional[np.ndarray] = None
+
+    def has_updates(self) -> bool:
+        return any(
+            value is not None
+            for value in (
+                self.tissue_polygons,
+                self.thumbnail_image_bytes,
+                self.thumbnail_spec,
+                self.coords_array,
+                self.tiling_spec,
+                self.tiles_overview_bytes,
+                self.feature_matrix,
+            )
+        )
 
 
 class FeatureExtractionPolicy(PolicyBase):
@@ -40,7 +78,7 @@ class FeatureExtractionPolicy(PolicyBase):
         )
         self.combos: list[ComboConfig] = build_combinations(
             cfg=self.experiment.cfg,
-            keys=["feature_extraction", "tile_px", "tile_mpp"],
+            keys=["feature_extraction", "tile_px", "tile_mpp", "color_norm"],
         )
         self.config = experiment.cfg
         self.backend_name = self.config.slide_processing.backend
@@ -84,6 +122,7 @@ class FeatureExtractionPolicy(PolicyBase):
             self._execute_wsi(
                 dataset=dataset,
                 wsi=wsi,
+                combo_cfg=combo_cfg,
                 slide_processor=slide_processor,
                 run_configs=run_configs,
             )
@@ -94,6 +133,7 @@ class FeatureExtractionPolicy(PolicyBase):
         self._execute_wsi(
             dataset=dataset,
             wsi=wsi,
+            combo_cfg=combo_cfg,
             slide_processor=slide_processor,
             run_configs=run_configs,
         )
@@ -103,6 +143,7 @@ class FeatureExtractionPolicy(PolicyBase):
         *,
         dataset: WSIDataset,
         wsi: WSI,
+        combo_cfg: ComboConfig,
         slide_processor: SlideProcessorBase,
         run_configs: dict[str, Any],
     ) -> None:
@@ -115,23 +156,25 @@ class FeatureExtractionPolicy(PolicyBase):
 
         tile_px: int = int(tiling_config["tile_px"])
         tile_mpp: float = float(tiling_config["tile_mpp"])
-        extractor_name: str = str(feature_config["model"])
-        combo_cfg = ComboConfig(tile_px=tile_px, tile_mpp=tile_mpp)
-        tiling_id = build_tiling_id(combo_cfg)
+        feature_name = build_feature_name(combo_cfg)
+        tiling_combo_cfg = ComboConfig(tile_px=tile_px, tile_mpp=tile_mpp)
+        tiling_id = build_tiling_id(tiling_combo_cfg)
 
         report_enabled = bool(self.config.experiment.report)
+        thumbnail_enabled = bool(getattr(self.config.experiment, "thumbnail", False))
 
         try:
             slide_processor.load_wsi(wsi)
-            try:
-                _ = slide_processor.get_base_mpp(wsi)
-            finally:
-                slide_processor.close_wsi(wsi)
+            _ = slide_processor.get_base_mpp(wsi)
         except Exception:
             logger.warning(
                 "[Policy] Skipping slide %s because no valid base MPP is available.",
                 slide_id,
             )
+            try:
+                slide_processor.close_wsi(wsi)
+            except Exception:
+                pass
             return
 
         expected_tiling_spec = {
@@ -142,154 +185,387 @@ class FeatureExtractionPolicy(PolicyBase):
         }
 
         try:
-            with FileHandleH5(artifact_path, mode="a") as slide_artifact:
-                # ---- Fast skip if features already valid (no slide open) ----
-                coords_row_count = tiles_io.coords_num_rows(slide_artifact, tiling_id)
-                features_already_exist = features_io.features_exist(
-                    slide_artifact,
-                    bag_id=tiling_id,
-                    extractor_name=extractor_name,
-                    expected_rows=coords_row_count,
+            ensure_artifact_readable_or_quarantine(artifact_path)
+
+            pending_writes = _PendingArtifactWrites()
+            coords_array, tiling_spec = self._resolve_features(
+                dataset=dataset,
+                wsi=wsi,
+                slide_id=slide_id,
+                artifact_path=artifact_path,
+                tiling_id=tiling_id,
+                extractor_name=feature_name,
+                expected_tiling_spec=expected_tiling_spec,
+                slide_processor=slide_processor,
+                segmentation_config=segmentation_config,
+                tiling_config=tiling_config,
+                feature_config=feature_config,
+                report_enabled=report_enabled,
+                thumbnail_enabled=thumbnail_enabled,
+                pending_writes=pending_writes,
+            )
+
+            if coords_array is None or tiling_spec is None:
+                return
+
+            if thumbnail_enabled:
+                self._resolve_thumbnail(
+                    artifact_path=artifact_path,
+                    wsi=wsi,
+                    slide_processor=slide_processor,
+                    pending_writes=pending_writes,
                 )
 
-                # Only skip immediately if we do NOT need to create a missing tiles_overview
-                if features_already_exist:
-                    if (not report_enabled) or tiles_io.tiles_overview_exists(slide_artifact, tiling_id):
-                        logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, tiling_id, extractor_name)
-                        return
-
-                # ---- Coords reuse or recompute ----
-                coords_are_valid = tiles_io.coords_exist(slide_artifact, tiling_id) and tiles_io.tiling_spec_matches(
-                    slide_artifact,
-                    bag_id=tiling_id,
+            # ---- tiles overview -------------------------------------------------
+            if report_enabled:
+                self._resolve_tiles_overview(
+                    dataset=dataset,
+                    wsi=wsi,
+                    artifact_path=artifact_path,
+                    slide_id=slide_id,
+                    tiling_id=tiling_id,
                     expected_tiling_spec=expected_tiling_spec,
+                    slide_processor=slide_processor,
+                    segmentation_config=segmentation_config,
+                    tiling_config=tiling_config,
+                    coords_array=coords_array,
+                    tiling_spec=tiling_spec,
+                    pending_writes=pending_writes,
                 )
 
-                coords_array: Optional[np.ndarray] = None
-                tiling_spec: Optional[dict[str, Any]] = None
-                tiles_newly_created = False
-
-                if coords_are_valid:
-                    coords_array = tiles_io.read_coords(slide_artifact, tiling_id)
-                    tiling_spec = tiles_io.read_tiling_spec(slide_artifact, tiling_id)
-                else:
-                    tissue_polygons = self._resolve_tissue_polygons(
-                        dataset=dataset,
-                        wsi=wsi,
+            # ---- atomic write ---------------------------------------------------
+            if pending_writes.has_updates():
+                with atomic_slide_artifact_write(artifact_path) as slide_artifact:
+                    self._write_pending_artifact_updates(
                         slide_artifact=slide_artifact,
-                        slide_processor=slide_processor,
-                        segmentation_config=segmentation_config,
+                        tiling_id=tiling_id,
+                        extractor_name=feature_name,
+                        pending_writes=pending_writes,
                     )
-
-                    # coords + tiling_spec must be produced by backend for this config
-                    slide_processor.load_wsi(wsi)
-                    try:
-                        coords_array, tiling_spec = slide_processor.extract_patches(
-                            wsi,
-                            tissue_polygons,
-                            config=tiling_config,
-                        )
-                    finally:
-                        slide_processor.close_wsi(wsi)
-
-                    coords_array = self._ensure_coords_array(coords_array)
-                    tiling_spec = self._ensure_tiling_spec_dict(tiling_spec, expected_tiling_spec=expected_tiling_spec)
-
-                    tiles_io.write_coords(slide_artifact, tiling_id, coords_array)
-                    tiles_io.write_tiling_spec(slide_artifact, tiling_id, tiling_spec)
-                    tiles_newly_created = True
-
-                if coords_array is None or tiling_spec is None:
-                    raise RuntimeError("[Policy] Internal error: coords_array/tiling_spec not resolved.")
-
-                # ---- tiles_overview (optional report visualization) ----
-                if report_enabled:
-                    should_write_tiles_overview = tiles_newly_created or (
-                        not tiles_io.tiles_overview_exists(slide_artifact, tiling_id)
-                    )
-
-                    if should_write_tiles_overview:
-                        slide_processor.load_wsi(wsi)
-                        try:
-                            thumbnail_image, downscale_x, downscale_y = slide_processor.get_thumbnail(wsi, level=-1)
-                            base_mpp = slide_processor.get_base_mpp(wsi)
-
-                            tiles_overview_bytes = render_tiles_overview_image(
-                                thumbnail_image=thumbnail_image,
-                                coords_array=coords_array,
-                                downscale_x=downscale_x,
-                                downscale_y=downscale_y,
-                                slide_id=slide_id,
-                                tiling_spec=tiling_spec,
-                                base_mpp=base_mpp,
-                            )
-                        finally:
-                            slide_processor.close_wsi(wsi)
-
-                        tiles_io.write_tiles_overview(slide_artifact, tiling_id, tiles_overview_bytes)
-
-                # ---- Features reuse or recompute ----
-                if features_io.features_exist(
-                    slide_artifact,
-                    bag_id=tiling_id,
-                    extractor_name=extractor_name,
-                    expected_rows=int(coords_array.shape[0]),
-                ):
-                    logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, tiling_id, extractor_name)
-                    return
-
-                slide_processor.load_wsi(wsi)
-                try:
-                    feature_matrix = slide_processor.extract_features(
-                        wsi,
-                        coords_array,
-                        tiling_spec,
-                        config={**feature_config, **tiling_config},
-                    )
-                finally:
-                    slide_processor.close_wsi(wsi)
-
-                feature_matrix = self._ensure_feature_matrix(feature_matrix, expected_rows=int(coords_array.shape[0]))
-                features_io.write_features(slide_artifact, tiling_id, extractor_name, feature_matrix)
-
         except Exception:
             logger.exception("[Policy] Error processing slide %s", slide_id)
+        finally:
+            slide_processor.close_wsi(wsi)
 
-    def _resolve_tissue_polygons(
+    def _resolve_features(
         self,
         *,
         dataset: WSIDataset,
         wsi: WSI,
-        slide_artifact: Any,
+        slide_id: str,
+        artifact_path: Path,
+        tiling_id: str,
+        extractor_name: str,
+        expected_tiling_spec: dict[str, Any],
         slide_processor: SlideProcessorBase,
         segmentation_config: dict[str, Any],
+        tiling_config: dict[str, Any],
+        feature_config: dict[str, Any],
+        report_enabled: bool,
+        thumbnail_enabled: bool,
+        pending_writes: _PendingArtifactWrites,
+    ) -> tuple[Optional[np.ndarray], Optional[dict[str, Any]]]:
+        # ---- features ---------------------------------------------------------
+        if artifact_path.is_file():
+            try:
+                with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                    coords_row_count = tiles_io.coords_num_rows(slide_artifact, tiling_id)
+                    features_ready = features_io.features_exist(
+                        slide_artifact,
+                        bag_id=tiling_id,
+                        extractor_name=extractor_name,
+                        expected_rows=coords_row_count,
+                    )
+                    thumbnail_ready = (not thumbnail_enabled) or (
+                        thumbnail_io.thumbnail_image_exists(slide_artifact)
+                        and thumbnail_io.thumbnail_spec_exists(slide_artifact)
+                    )
+                    overview_ready = (not report_enabled) or tiles_io.tiles_overview_exists(
+                        slide_artifact,
+                        tiling_id,
+                    )
+
+                    if features_ready and overview_ready and thumbnail_ready:
+                        logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, tiling_id, extractor_name)
+                        return None, None
+
+                    if features_ready and tiles_io.coords_exist(
+                        slide_artifact,
+                        tiling_id,
+                    ) and tiles_io.tiling_spec_matches(
+                        slide_artifact,
+                        bag_id=tiling_id,
+                        expected_tiling_spec=expected_tiling_spec,
+                    ):
+                        return (
+                            tiles_io.read_coords(slide_artifact, tiling_id),
+                            tiles_io.read_tiling_spec(slide_artifact, tiling_id),
+                        )
+            except Exception:
+                logger.warning(
+                    "[Policy] Live artifact read check failed for %s; rebuilding via atomic write path.",
+                    artifact_path,
+                )
+
+        # ---- tiles ------------------------------------------------------------
+        coords_array, tiling_spec = self._resolve_tiles(
+            dataset=dataset,
+            wsi=wsi,
+            artifact_path=artifact_path,
+            tiling_id=tiling_id,
+            expected_tiling_spec=expected_tiling_spec,
+            slide_processor=slide_processor,
+            segmentation_config=segmentation_config,
+            tiling_config=tiling_config,
+            pending_writes=pending_writes,
+        )
+
+        if coords_array is None or tiling_spec is None:
+            raise RuntimeError("[Policy] Internal error: coords_array/tiling_spec not resolved.")
+
+        feature_matrix = slide_processor.extract_features(
+            wsi,
+            coords_array,
+            tiling_spec,
+            config={**feature_config, **tiling_config},
+        )
+
+        pending_writes.feature_matrix = self._ensure_feature_matrix(
+            feature_matrix,
+            expected_rows=int(coords_array.shape[0]),
+        )
+        return coords_array, tiling_spec
+
+    def _resolve_tiles(
+        self,
+        *,
+        dataset: WSIDataset,
+        wsi: WSI,
+        artifact_path: Path,
+        tiling_id: str,
+        expected_tiling_spec: dict[str, Any],
+        slide_processor: SlideProcessorBase,
+        segmentation_config: dict[str, Any],
+        tiling_config: dict[str, Any],
+        pending_writes: _PendingArtifactWrites,
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        # ---- tiles ------------------------------------------------------------
+        if artifact_path.is_file():
+            try:
+                with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                    if tiles_io.coords_exist(slide_artifact, tiling_id) and tiles_io.tiling_spec_matches(
+                        slide_artifact,
+                        bag_id=tiling_id,
+                        expected_tiling_spec=expected_tiling_spec,
+                    ):
+                        return (
+                            tiles_io.read_coords(slide_artifact, tiling_id),
+                            tiles_io.read_tiling_spec(slide_artifact, tiling_id),
+                        )
+            except Exception:
+                logger.warning(
+                    "[Policy] Live artifact read check failed for %s; rebuilding via atomic write path.",
+                    artifact_path,
+                )
+
+        # ---- tissue -----------------------------------------------------------
+        tissue_polygons = self._resolve_tissue(
+            dataset=dataset,
+            wsi=wsi,
+            artifact_path=artifact_path,
+            slide_processor=slide_processor,
+            segmentation_config=segmentation_config,
+            pending_writes=pending_writes,
+        )
+
+        coords_array, tiling_spec = slide_processor.extract_patches(
+            wsi,
+            tissue_polygons,
+            config=tiling_config,
+        )
+
+        coords_array = self._ensure_coords_array(coords_array)
+        tiling_spec = self._ensure_tiling_spec_dict(tiling_spec, expected_tiling_spec=expected_tiling_spec)
+        pending_writes.coords_array = coords_array
+        pending_writes.tiling_spec = tiling_spec
+        return coords_array, tiling_spec
+
+    def _resolve_tissue(
+        self,
+        *,
+        dataset: WSIDataset,
+        wsi: WSI,
+        artifact_path: Path,
+        slide_processor: SlideProcessorBase,
+        segmentation_config: dict[str, Any],
+        pending_writes: _PendingArtifactWrites,
     ) -> tissue_io.TissuePolygons:
-        slide_id = wsi.slide
+        # ---- tissue -----------------------------------------------------------
+        if artifact_path.is_file():
+            try:
+                with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                    if tissue_io.tissue_exists(slide_artifact):
+                        polygons = tissue_io.read_tissue(slide_artifact)
+                        if polygons:
+                            return polygons
+            except Exception:
+                logger.warning(
+                    "[Policy] Live artifact read check failed for %s; rebuilding via atomic write path.",
+                    artifact_path,
+                )
 
-        # 1) Cache first 
-        if tissue_io.tissue_exists(slide_artifact):
-            polygons = tissue_io.read_tissue(slide_artifact)
-            if polygons:
-                return polygons
-
-        # 2) If no cache yet: try external tissue (e.g. geojson), then cache it in H5
-        external_roi_path = self._find_external_roi_file(dataset=dataset, slide_id=slide_id)
+        external_roi_path = self._find_external_roi_file(dataset=dataset, slide_id=wsi.slide)
         if external_roi_path is not None:
             polygons = tissue_io.load_external_tissue_polygons(external_roi_path)
             if polygons:
-                tissue_io.write_tissue(slide_artifact, polygons)
+                pending_writes.tissue_polygons = polygons
                 return polygons
-            logger.warning("[Policy] External ROI found but empty for slide %s: %s", slide_id, external_roi_path)
+            logger.warning("[Policy] External ROI found but empty for slide %s: %s", wsi.slide, external_roi_path)
 
-        # 3) Otherwise: compute with backend and cache in H5
-        slide_processor.load_wsi(wsi)
-        try:
-            polygons = slide_processor.segment_tissue(wsi, config=segmentation_config)
-        finally:
-            slide_processor.close_wsi(wsi)
+        polygons = slide_processor.segment_tissue(wsi, config=segmentation_config)
 
-        tissue_io.write_tissue(slide_artifact, polygons)
+        pending_writes.tissue_polygons = polygons
         return polygons
+
+    def _resolve_thumbnail(
+        self,
+        *,
+        artifact_path: Path,
+        wsi: WSI,
+        slide_processor: SlideProcessorBase,
+        pending_writes: _PendingArtifactWrites,
+    ) -> None:
+        if artifact_path.is_file():
+            try:
+                with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                    if thumbnail_io.thumbnail_image_exists(
+                        slide_artifact
+                    ) and thumbnail_io.thumbnail_spec_exists(slide_artifact):
+                        return
+            except Exception:
+                logger.warning(
+                    "[Policy] Live artifact read check failed for %s; rebuilding via atomic write path.",
+                    artifact_path,
+                )
+
+        thumbnail_image, downscale_x, downscale_y = slide_processor.get_thumbnail(
+            wsi,
+            level=-1,
+        )
+        pending_writes.thumbnail_image_bytes = render_thumbnail_image(
+            thumbnail_image=thumbnail_image,
+        )
+        pending_writes.runtime_thumbnail_image = thumbnail_image
+        pending_writes.runtime_thumbnail_downscale_x = float(downscale_x)
+        pending_writes.runtime_thumbnail_downscale_y = float(downscale_y)
+        pending_writes.thumbnail_spec = {
+            "image_format": "jpeg",
+            "coord_space": "level0",
+            "thumbnail_level": -1,
+            "downscale_x": float(downscale_x),
+            "downscale_y": float(downscale_y),
+        }
+
+    def _resolve_tiles_overview(
+        self,
+        *,
+        dataset: WSIDataset,
+        wsi: WSI,
+        artifact_path: Path,
+        slide_id: str,
+        tiling_id: str,
+        expected_tiling_spec: dict[str, Any],
+        slide_processor: SlideProcessorBase,
+        segmentation_config: dict[str, Any],
+        tiling_config: dict[str, Any],
+        coords_array: Optional[np.ndarray],
+        tiling_spec: Optional[dict[str, Any]],
+        pending_writes: _PendingArtifactWrites,
+    ) -> None:
+        if artifact_path.is_file():
+            try:
+                with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                    if tiles_io.tiles_overview_exists(slide_artifact, tiling_id):
+                        return
+            except Exception:
+                logger.warning(
+                    "[Policy] Live artifact read check failed for %s; rebuilding via atomic write path.",
+                    artifact_path,
+                )
+
+        if coords_array is None or tiling_spec is None:
+            coords_array, tiling_spec = self._resolve_tiles(
+                dataset=dataset,
+                wsi=wsi,
+                artifact_path=artifact_path,
+                tiling_id=tiling_id,
+                expected_tiling_spec=expected_tiling_spec,
+                slide_processor=slide_processor,
+                segmentation_config=segmentation_config,
+                tiling_config=tiling_config,
+                pending_writes=pending_writes,
+            )
+
+        if (
+            pending_writes.runtime_thumbnail_image is not None
+            and pending_writes.runtime_thumbnail_downscale_x is not None
+            and pending_writes.runtime_thumbnail_downscale_y is not None
+        ):
+            thumbnail_image = pending_writes.runtime_thumbnail_image
+            downscale_x = pending_writes.runtime_thumbnail_downscale_x
+            downscale_y = pending_writes.runtime_thumbnail_downscale_y
+        else:
+            thumbnail_image, downscale_x, downscale_y = slide_processor.get_thumbnail(
+                wsi,
+                level=-1,
+            )
+        base_mpp = slide_processor.get_base_mpp(wsi)
+
+        pending_writes.tiles_overview_bytes = render_tiles_overview_image(
+            thumbnail_image=thumbnail_image,
+            coords_array=coords_array,
+            downscale_x=downscale_x,
+            downscale_y=downscale_y,
+            slide_id=slide_id,
+            tiling_spec=tiling_spec,
+            base_mpp=base_mpp,
+        )
+
+    def _write_pending_artifact_updates(
+        self,
+        *,
+        slide_artifact: FileHandleH5,
+        tiling_id: str,
+        extractor_name: str,
+        pending_writes: _PendingArtifactWrites,
+    ) -> None:
+        if pending_writes.tissue_polygons is not None and not tissue_io.tissue_exists(slide_artifact):
+            tissue_io.write_tissue(slide_artifact, pending_writes.tissue_polygons)
+
+        if pending_writes.thumbnail_image_bytes is not None and not thumbnail_io.thumbnail_image_exists(slide_artifact):
+            thumbnail_io.write_thumbnail_image(
+                slide_artifact,
+                pending_writes.thumbnail_image_bytes,
+            )
+        if pending_writes.thumbnail_spec is not None and not thumbnail_io.thumbnail_spec_exists(slide_artifact):
+            thumbnail_io.write_thumbnail_spec(
+                slide_artifact,
+                pending_writes.thumbnail_spec,
+            )
+
+        if pending_writes.coords_array is not None:
+            tiles_io.write_coords(slide_artifact, tiling_id, pending_writes.coords_array)
+        if pending_writes.tiling_spec is not None:
+            tiles_io.write_tiling_spec(slide_artifact, tiling_id, pending_writes.tiling_spec)
+        if pending_writes.tiles_overview_bytes is not None and not tiles_io.tiles_overview_exists(slide_artifact, tiling_id):
+            tiles_io.write_tiles_overview(slide_artifact, tiling_id, pending_writes.tiles_overview_bytes)
+        if pending_writes.feature_matrix is not None and not features_io.features_exist(
+            slide_artifact,
+            bag_id=tiling_id,
+            extractor_name=extractor_name,
+            expected_rows=int(pending_writes.feature_matrix.shape[0]),
+        ):
+            features_io.write_features(slide_artifact, tiling_id, extractor_name, pending_writes.feature_matrix)
 
     def _find_external_roi_file(self, *, dataset: WSIDataset, slide_id: str) -> Optional[Path]:
         roi_root = dataset.tissue_annotations_dir
@@ -333,7 +609,11 @@ class FeatureExtractionPolicy(PolicyBase):
         return {"tile_px": combo_cfg.tile_px, "tile_mpp": combo_cfg.tile_mpp, "params": {}}
 
     def _build_feat_config(self, combo_cfg: ComboConfig) -> dict[str, Any]:
-        return {"model": combo_cfg.feature_extraction, "params": {}}
+        return {
+            "model": combo_cfg.feature_extraction,
+            "color_norm": combo_cfg.get("color_norm"),
+            "params": {},
+        }
 
     def _ensure_coords_array(self, coords_array: Any) -> np.ndarray:
         coords_array = np.asarray(coords_array, dtype=np.int32)
@@ -429,6 +709,15 @@ class FeatureExtractionPolicy(PolicyBase):
             bag_id,
             dataset.artifacts_dir,
         )
+
+        collection = collect_tiles_overview_entries(dataset=dataset, bag_id=bag_id)
+        if not collection.entries:
+            logger.info(
+                "[Policy] Skipping tile report for dataset='%s' bag_id='%s': no tiles_overview entries found.",
+                dataset.name,
+                bag_id,
+            )
+            return
 
         output_pdf = create_tiles_report_pdf(
             dataset=dataset,

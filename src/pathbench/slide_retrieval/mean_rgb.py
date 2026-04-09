@@ -7,10 +7,13 @@ from typing import Any
 import numpy as np
 
 from pathbench.core.datasets.wsi_dataset import WSI
-from pathbench.core.io.h5 import descriptors as descriptors_io
-from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.core.io.h5.base import FileHandleH5
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
+from pathbench.core.io.slide_retrieval import descriptors as descriptors_io
 from pathbench.core.slide_processing.base import SlideProcessorBase
+from pathbench.slide_retrieval.representation_strategies.storage import (
+    build_retrieval_representation_artifact_path,
+)
 from pathbench.utils.constants import SLIDE_FILE_FORMATS
 from pathbench.utils.registries import SLIDE_PROCESSORS
 
@@ -68,18 +71,23 @@ def resolve_sample_patch_mean_rgb(
     for slide_id, artifact_path in zip(slide_ids, artifact_paths):
         with FileHandleH5(artifact_path, mode="r") as slide_artifact:
             coords = tiles_io.read_coords(slide_artifact, bag_id=bag_id)
-            expected_rows = int(coords.shape[0])
+        expected_rows = int(coords.shape[0])
+        retrieval_artifact_path = _slide_retrieval_artifact_path(
+            slide_artifact_path=artifact_path,
+            slide_id=slide_id,
+        )
+        with FileHandleH5(retrieval_artifact_path, mode="a") as retrieval_artifact:
             if descriptors_io.descriptor_exists(
-                slide_artifact,
-                bag_id=bag_id,
+                retrieval_artifact,
+                tile_id=bag_id,
                 descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
                 expected_rows=expected_rows,
                 expected_dim=3,
             ):
                 mean_rgb_parts.append(
                     descriptors_io.read_descriptor(
-                        slide_artifact,
-                        bag_id=bag_id,
+                        retrieval_artifact,
+                        tile_id=bag_id,
                         descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
                     )
                 )
@@ -92,7 +100,8 @@ def resolve_sample_patch_mean_rgb(
 
         mean_rgb_parts.append(
             _resolve_slide_patch_mean_rgb(
-                artifact_path=artifact_path,
+                slide_artifact_path=artifact_path,
+                retrieval_artifact_path=retrieval_artifact_path,
                 slide_path=slide_paths_by_id.get(slide_id),
                 bag_id=bag_id,
                 slide_processor=slide_processor,
@@ -106,45 +115,49 @@ def resolve_sample_patch_mean_rgb(
     return np.concatenate(mean_rgb_parts, axis=0).astype(np.float32, copy=False)
 
 
-def _resolve_slide_patch_mean_rgb(
+def load_or_create_slide_patch_mean_rgb(
     *,
-    artifact_path: Path,
+    slide_artifact: FileHandleH5,
+    retrieval_artifact_path: Path,
     slide_path: Path | None,
     bag_id: str,
     slide_processor: SlideProcessorBase,
     slide_id: str,
 ) -> np.ndarray:
     """
-    Resolve one slide-level mean RGB descriptor matrix from H5 or source slide.
+    Resolve one slide-level mean RGB descriptor matrix using an open slide H5 handle.
 
     Inputs:
-    - `artifact_path`: H5 artifact path for the slide.
-    - `slide_path`: source slide path used to compute missing descriptors.
+    - `slide_artifact`: open slide artifact handle containing `coords`.
+    - `retrieval_artifact_path`: retrieval artifact path storing descriptors.
+    - `slide_path`: source slide path used when descriptors must be created.
     - `bag_id`: canonical tiling identifier.
-    - `slide_processor`: backend implementation used to read patch pixels.
-    - `slide_id`: human-readable slide identifier for error messages.
+    - `slide_processor`: backend implementation used to read patch regions.
+    - `slide_id`: slide identifier for error messages.
 
     Returns:
     - `np.ndarray[float32]` with shape `(N, 3)`.
     """
-    with FileHandleH5(artifact_path, mode="a") as slide_artifact:
+    expected_rows = tiles_io.coords_num_rows(slide_artifact, bag_id=bag_id)
+
+    if slide_path is None or not slide_path.is_file():
+        raise FileNotFoundError(
+            "Missing stored patch mean RGB descriptors and no source slide is "
+            f"available to compute them for slide '{slide_id}' at bag_id='{bag_id}'."
+        )
+
+    with FileHandleH5(retrieval_artifact_path, mode="a") as retrieval_artifact:
         if descriptors_io.descriptor_exists(
-            slide_artifact,
-            bag_id=bag_id,
+            retrieval_artifact,
+            tile_id=bag_id,
             descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
-            expected_rows=tiles_io.coords_num_rows(slide_artifact, bag_id=bag_id),
+            expected_rows=expected_rows,
             expected_dim=3,
         ):
             return descriptors_io.read_descriptor(
-                slide_artifact,
-                bag_id=bag_id,
+                retrieval_artifact,
+                tile_id=bag_id,
                 descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
-            )
-
-        if slide_path is None or not slide_path.is_file():
-            raise FileNotFoundError(
-                "Missing stored patch mean RGB descriptors and no source slide is "
-                f"available to compute them for slide '{slide_id}' at bag_id='{bag_id}'."
             )
 
         mean_rgb = _create_slide_patch_mean_rgb(
@@ -155,12 +168,74 @@ def _resolve_slide_patch_mean_rgb(
             slide_id=slide_id,
         )
         descriptors_io.write_descriptor(
-            slide_artifact,
-            bag_id=bag_id,
+            retrieval_artifact,
+            tile_id=bag_id,
             descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
             descriptor_matrix=mean_rgb,
         )
         return mean_rgb
+
+
+def _resolve_slide_patch_mean_rgb(
+    *,
+    slide_artifact_path: Path,
+    retrieval_artifact_path: Path,
+    slide_path: Path | None,
+    bag_id: str,
+    slide_processor: SlideProcessorBase,
+    slide_id: str,
+) -> np.ndarray:
+    """
+    Resolve one slide-level mean RGB descriptor matrix from H5 or source slide.
+
+    Inputs:
+    - `slide_artifact_path`: H5 slide artifact path for the slide.
+    - `retrieval_artifact_path`: H5 retrieval artifact path for the slide.
+    - `slide_path`: source slide path used to compute missing descriptors.
+    - `bag_id`: canonical tiling identifier.
+    - `slide_processor`: backend implementation used to read patch pixels.
+    - `slide_id`: human-readable slide identifier for error messages.
+
+    Returns:
+    - `np.ndarray[float32]` with shape `(N, 3)`.
+    """
+    with FileHandleH5(slide_artifact_path, mode="r") as slide_artifact:
+        expected_rows = tiles_io.coords_num_rows(slide_artifact, bag_id=bag_id)
+
+        if slide_path is None or not slide_path.is_file():
+            raise FileNotFoundError(
+                "Missing stored patch mean RGB descriptors and no source slide is "
+                f"available to compute them for slide '{slide_id}' at bag_id='{bag_id}'."
+            )
+
+        with FileHandleH5(retrieval_artifact_path, mode="a") as retrieval_artifact:
+            if descriptors_io.descriptor_exists(
+                retrieval_artifact,
+                tile_id=bag_id,
+                descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
+                expected_rows=expected_rows,
+                expected_dim=3,
+            ):
+                return descriptors_io.read_descriptor(
+                    retrieval_artifact,
+                    tile_id=bag_id,
+                    descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
+                )
+
+            mean_rgb = _create_slide_patch_mean_rgb(
+                slide_artifact=slide_artifact,
+                slide_path=slide_path,
+                bag_id=bag_id,
+                slide_processor=slide_processor,
+                slide_id=slide_id,
+            )
+            descriptors_io.write_descriptor(
+                retrieval_artifact,
+                tile_id=bag_id,
+                descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
+                descriptor_matrix=mean_rgb,
+            )
+            return mean_rgb
 
 
 def _create_slide_patch_mean_rgb(
@@ -258,6 +333,18 @@ def _resolve_sample_slide_paths(
         slide_id: _find_slide_path(slides_dir=slides_dir, slide_id=slide_id)
         for slide_id in slide_ids
     }
+
+
+def _slide_retrieval_artifact_path(
+    *,
+    slide_artifact_path: Path,
+    slide_id: str,
+) -> Path:
+    return build_retrieval_representation_artifact_path(
+        artifacts_dir=slide_artifact_path.parent,
+        aggregation_level="slide",
+        sample_id=slide_id,
+    )
 
 
 def _find_dataset_config(*, config: Any, dataset_name: str) -> Any:

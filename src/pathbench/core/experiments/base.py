@@ -199,6 +199,9 @@ class Experiment:
             if not hasattr(bp, key):
                 raise AttributeError(f"benchmark_parameters has no field '{key}'")
             values = bp.get_entries(key)
+            if key == "color_norm" and not values:
+                value_lists.append([None])
+                continue
 
             if not values:
                 raise ValueError(f"benchmark_parameters.{key} is empty; cannot build grid.")

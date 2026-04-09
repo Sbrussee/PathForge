@@ -120,7 +120,51 @@ meta/
 
 ---
 
-## 2. Feature Matrices (Tile-Level)
+## 2. Thumbnail (Optional Slide-Level Visualization Cache)
+
+**Purpose:** reusable full-slide thumbnail for downstream visualization without reopening the original WSI.
+
+**Path:**  
+
+`thumbnail/`
+
+### 2.1 Thumbnail Image
+
+**Path:**  
+`thumbnail/image`
+
+**Encoding:** compressed image bytes stored as a 1D `uint8` array (currently JPEG bytes)
+
+**Shape:** `(M,)`  
+**Dtype:** `uint8`
+
+**Rules**
+- Optional: only written when `experiment.thumbnail = true`
+- Represents the **full slide**, not a tissue crop
+- Intended as a slide-level cache reusable across tasks and visualizations
+
+### 2.2 Thumbnail Spec
+
+**Path:**  
+`thumbnail/spec`
+
+**Encoding:** scalar UTF-8 JSON string
+
+**Required keys**
+- `image_format` (str) – currently `"jpeg"`
+- `coord_space` (str) – must be `"level0"`
+- `thumbnail_level` (int) – pyramid level requested when creating the thumbnail
+- `downscale_x` (float) – level-0 x pixels per thumbnail x pixel
+- `downscale_y` (float) – level-0 y pixels per thumbnail y pixel
+
+**Rules**
+- The thumbnail is always interpreted in full-slide level-0 coordinate space
+- Patch coordinates can be projected onto the thumbnail using `downscale_x` and `downscale_y`
+- Width and height are intentionally not duplicated in the spec; consumers should decode the image when needed
+
+---
+
+## 3. Feature Matrices (Tile-Level)
 
 **Purpose:** MIL inputs (tile embeddings)
 
@@ -137,7 +181,7 @@ meta/
 
 ---
 
-## 3. Tissue Masks (Vector-Based)
+## 4. Tissue Masks (Vector-Based)
 
 **Purpose:** define valid tissue regions (used for tiling / filtering)
 
@@ -155,7 +199,7 @@ meta/
 
 ---
 
-## 4. Semantic Annotations / Segmentations (Vector-Based)
+## 5. Semantic Annotations / Segmentations (Vector-Based)
 
 **Purpose:** region-level semantic labeling
 
@@ -187,7 +231,7 @@ annotations/semantic/
 
 ---
 
-## 5. Instance Annotations / Segmentations  
+## 6. Instance Annotations / Segmentations  
 *(cells, nuclei, points, small objects)*
 
 **Purpose:** object-level entities
@@ -202,7 +246,7 @@ Example:
 instances/nuclei/
 
 
-### 5.1 Instance Table (Required)
+### 6.1 Instance Table (Required)
 
 **Datasets**
 - `id : (I,) uint64`
@@ -217,7 +261,7 @@ instances/nuclei/
 
 ---
 
-### 5.2 Optional Instance Geometry
+### 6.2 Optional Instance Geometry
 
 Choose **one** representation:
 
@@ -236,9 +280,9 @@ Choose **one** representation:
 
 ---
 
-## 6. Feature Matrices for Instances / Semantic Objects
+## 7. Feature Matrices for Instances / Semantic Objects
 
-### 6.1 Instance-Level Features (Cells, Nuclei)
+### 7.1 Instance-Level Features (Cells, Nuclei)
 
 **Path:**  
 
@@ -254,7 +298,7 @@ instance_features/{instance_type}/{extractor_name}
 
 ---
 
-### 6.2 Semantic Object Features (Regions)
+### 7.2 Semantic Object Features (Regions)
 
 **Path:**  
 

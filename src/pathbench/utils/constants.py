@@ -1,8 +1,6 @@
 # pathbench/utils/constants.py
 # This file contains constant values used throughout the PathBench project.
 
-DEFAULT_WEIGHTS_DIR = "./pretrained_weights"
-
 TASK_TYPES = [
     "classification",
     "regression",
@@ -34,3 +32,6 @@ DATASET_COL = "dataset"
 CENTER_COL = "center"
 
 SLIDE_FILE_FORMATS = [".svs", ".ndpi", ".tiff", ".tif", ".mrxs"] #TODO: Base on backends? 
+
+LZS_ABS_MPP_TOL = 1e-3  # absolute tolerance in um/px
+LZS_REL_MPP_TOL = 1e-2  # relative tolerance as sanity check (1%)

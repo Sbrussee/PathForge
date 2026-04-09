@@ -107,10 +107,10 @@ class BaseSearchStrategy:
     ) -> SearchDatabaseItem:
         """Convert one retrieval representation into a searchable database item."""
         return SearchDatabaseItem(
-            item_id=representation.sample_id,
-            search_type=representation.representation_type,
+            sample_id=representation.sample_id,
+            exclusion_key=representation.exclusion_key,
             data=representation.data,
-            metadata=representation.metadata,
+            additional_data=representation.additional_data,
         )
 
     def prepare_query(
@@ -121,50 +121,45 @@ class BaseSearchStrategy:
         self._validate_representations([query_representation])
 
         return SearchDatabaseItem(
-            item_id=query_representation.sample_id,
-            search_type=query_representation.representation_type,
+            sample_id=query_representation.sample_id,
+            exclusion_key=query_representation.exclusion_key,
             data=query_representation.data,
-            metadata=query_representation.metadata,
+            additional_data=query_representation.additional_data,
         )
 
     def build_index(self) -> None:
         """Optional hook to prepare the searchable database."""
         return None
 
-    def filter_database_by_patient(
+    def filter_database_by_exclusion_key(
         self,
         query_item: SearchDatabaseItem,
         database_items: list[SearchDatabaseItem] | None = None,
     ) -> list[SearchDatabaseItem]:
-        """Exclude database items from the same patient as the query."""
+        """Exclude database items that share the query exclusion key."""
         database = self.search_database if database_items is None else database_items
 
-        query_patient_id = query_item.metadata.get("patient_id")
-        if query_patient_id is None:
+        if query_item.exclusion_key is None:
             return list(database)
 
         return [
             item
             for item in database
-            if item.metadata.get("patient_id") != query_patient_id
+            if item.exclusion_key != query_item.exclusion_key
         ]
 
     def search(
         self,
         query_representation: RetrievalRepresentation,
-        *,
-        filter_same_patient: bool = True,
         **kwargs,
     ) -> SearchResult:
         """Run search for one query against the current database."""
         query_item = self.prepare_query(query_representation)
 
-        database_items = self.search_database
-        if filter_same_patient:
-            database_items = self.filter_database_by_patient(
-                query_item=query_item,
-                database_items=database_items,
-            )
+        database_items = self.filter_database_by_exclusion_key(
+            query_item=query_item,
+            database_items=self.search_database,
+        )
 
         hits = self.rank(
             query_item=query_item,
@@ -173,9 +168,8 @@ class BaseSearchStrategy:
         )
 
         return SearchResult(
-            query_id=query_item.item_id,
+            query_sample_id=query_item.sample_id,
             hits=hits,
-            metadata=query_item.metadata,
         )
 
     def rank(
@@ -191,18 +185,7 @@ class BaseSearchStrategy:
         self,
         representations: list[RetrievalRepresentation],
     ) -> None:
-        """Validate that all representations are supported by this strategy."""
-        if not self.supported_representation_kinds:
-            raise ValueError(
-                f"Search strategy '{self.name}' does not define "
-                f"supported_representation_kinds."
-            )
-
+        """Validate the basic runtime shape of retrieval representations."""
         for representation in representations:
-            representation_kind = str(representation.representation_type).strip().lower()
-            if representation_kind not in self.supported_representation_kinds:
-                raise ValueError(
-                    f"Search strategy '{self.name}' does not support representation kind "
-                    f"'{representation_kind}'. Supported kinds: "
-                    f"{sorted(self.supported_representation_kinds)}"
-                )
+            if not str(representation.sample_id).strip():
+                raise ValueError("Retrieval representations require a non-empty sample_id.")

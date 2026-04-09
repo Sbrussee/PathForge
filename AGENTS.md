@@ -22,4 +22,5 @@ For pipelines (policies) inside the framework we will need a smoke test:
 
 - Programmatically assess whether the dependency structure (Interfaces/Drivers -> Adapters -> Applications/Use Cases -> Domain) holds and where it fails.
 
+- Naming should reflect the actual identifier source. Values produced by `build_tiling_id(...)` must be named `tiling_id`; reserve `bag_id` for actual bag identifiers.
 

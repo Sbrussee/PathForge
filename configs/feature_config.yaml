@@ -4,6 +4,7 @@ experiment:
   task: null
   mode: feature_extraction
   report: true
+  thumbnail: false
   mixed_precision: true
   num_workers: 8
 
@@ -24,11 +25,8 @@ benchmark_parameters:
   tile_mpp:
     - 128
 
-  normalization:
+  color_norm:
     - reinhard
 
   feature_extraction:
     - resnet50
-
-weights_dir: ./pretrained_weights
-

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
 from typing import Any, ClassVar, Literal, List, Optional, Dict
@@ -19,7 +20,7 @@ TaskType = Literal[tuple(TASK_TYPES)]
 ModeType = Literal[tuple(MODE_TYPES)]
 AggregationLevel = Literal[tuple(AGGREGATION_LEVELS)]
 
-BenchmarkScalar = int | float | str
+BenchmarkScalar = int | float | str | None
 BenchmarkParamMapping = dict[BenchmarkScalar, dict[str, Any]]
 BenchmarkParamInput = BenchmarkScalar | BenchmarkParamMapping
 
@@ -52,8 +53,6 @@ class ExperimentConfig(BaseModel):
     
     # Execution #TODO: Is this part of the experiment config, we do not use it in the experiment class
     num_workers: int = Field(0, ge=0)
-    split_technique: Literal["k-fold", "k-fold-stratified", "fixed"] = "k-fold"
-    val_fraction: float = Field(0.1, gt=0, lt=1)
 
     # Task + Mode
     task: Optional[TaskType] = None
@@ -62,13 +61,9 @@ class ExperimentConfig(BaseModel):
 
     # Global behavior
     report: bool = False
+    thumbnail: bool = False
     mixed_precision: bool = False
-    
-    #TODO: Does this make sense to be here? 
-    visualization: List[str] = Field(default_factory=list)
-    evaluation: List[str] = Field(default_factory=list)
-    custom_metrics: List[str] = Field(default_factory=list)
-    
+
     @model_validator(mode="after")
     def validate_task_for_mode(self) -> "ExperimentConfig":
         """
@@ -81,8 +76,11 @@ class ExperimentConfig(BaseModel):
             )
         return self
 
-class MILConfig(BaseModel):
-    """MIL Model specific settings."""
+class ClassificationConfig(BaseModel):
+    """Classification task settings."""
+    split_technique: Literal["k-fold", "k-fold-stratified", "fixed"] = "k-fold"
+    val_fraction: float = Field(0.1, gt=0, lt=1)
+
     # Training Loop
     epochs: int = Field(20, gt=0)
     batch_size: int = Field(1, gt=0)
@@ -112,6 +110,11 @@ class MILConfig(BaseModel):
     skip_feature_extraction: bool = True
 
 
+class SlideRetrievalConfig(BaseModel):
+    """Slide retrieval task settings."""
+    exclusion_level: Literal["none", "slide", "case", "patient"] = "patient"
+
+
 class SlideProcessingConfig(BaseModel):
     """Settings for slide processing backends."""
     backend: Literal["lazyslide", "openslide", "cucim"] = "lazyslide"
@@ -133,6 +136,59 @@ class OptimizationConfig(BaseModel):
     sampler: str = "TPESampler"
     trials: int = Field(100, gt=0)
     pruner: Optional[str] = "HyperbandPruner"
+
+
+class EvaluationConfig(BaseModel):
+    """Post-run evaluation and visualization settings."""
+    label_column: str | None = None
+    metrics: List[str] = Field(default_factory=list)
+    visualization: List[str] = Field(default_factory=list)
+    visualization_metadata_columns: List[str] = Field(default_factory=list)
+    visualization_subset_file: str | None = None
+    visualization_top_k: int = Field(10, ge=1)
+
+    @field_validator("label_column")
+    @classmethod
+    def validate_label_column(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        normalized_value = str(value).strip()
+        if not normalized_value:
+            raise ValueError("evaluation.label_column must be a non-empty string.")
+        return normalized_value
+
+    @field_validator("visualization_metadata_columns")
+    @classmethod
+    def validate_visualization_metadata_columns(
+        cls,
+        value: List[str],
+    ) -> List[str]:
+        normalized_columns: list[str] = []
+        for column_name in value:
+            normalized_name = str(column_name).strip()
+            if not normalized_name:
+                raise ValueError(
+                    "evaluation.visualization_metadata_columns may not contain empty values."
+                )
+            normalized_columns.append(normalized_name)
+        return normalized_columns
+
+    @field_validator("visualization_subset_file")
+    @classmethod
+    def validate_visualization_subset_file(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+
+        normalized_value = str(value).strip()
+        if not normalized_value:
+            raise ValueError(
+                "evaluation.visualization_subset_file must be a non-empty string when provided."
+            )
+        return normalized_value
 
 
 class DatasetEntry(BaseModel):
@@ -159,7 +215,7 @@ class BenchmarkParameters(BaseModel):
     tile_px: List[BenchmarkParamInput] = Field(default_factory=lambda: [256])
     tile_mpp: List[BenchmarkParamInput] = Field(default_factory=lambda: [0.5])
     feature_extraction: List[BenchmarkParamInput] = Field(default_factory=list)
-    normalization: Optional[List[BenchmarkParamInput]] = None  # TODO: Do we want to keep this and is it available in lazyslide?
+    color_norm: Optional[List[BenchmarkParamInput | None]] = None
     mil: List[BenchmarkParamInput] = Field(default_factory=list)
     loss: List[BenchmarkParamInput] = Field(default_factory=list)
     activation_function: List[BenchmarkParamInput] = Field(default_factory=list)
@@ -171,7 +227,7 @@ class BenchmarkParameters(BaseModel):
         "tile_px": int,
         "tile_mpp": float,
         "feature_extraction": str,
-        "normalization": str,
+        "color_norm": str,
         "mil": str,
         "loss": str,
         "activation_function": str,
@@ -203,6 +259,12 @@ class BenchmarkParameters(BaseModel):
         else:
             value = entry
             params = {}
+
+        if field_name == "color_norm" and value is None:
+            return BenchmarkParamEntry(
+                value=None,
+                hyperparams=dict(params),
+            )
 
         if expected_type is int and isinstance(value, bool):
             raise ValueError(
@@ -367,6 +429,26 @@ class BenchmarkParameters(BaseModel):
                 )
         return v
 
+    @field_validator("color_norm")
+    @classmethod
+    def validate_color_norm(
+        cls,
+        v: list[BenchmarkParamInput | None] | None,
+    ) -> list[BenchmarkParamInput | None] | None:
+        if v is None:
+            return None
+
+        allowed = {"reinhard", "macenko"}
+        for entry in cls._normalize_entries(v, field_name="color_norm"):
+            if entry.value is None:
+                continue
+            color_norm = str(entry.value).strip().lower()
+            if color_norm not in allowed:
+                raise ValueError(
+                    f"Invalid color_norm '{entry.value}'. Allowed values: {sorted(allowed)}"
+                )
+        return v
+
     @field_validator('mil')
     @classmethod
     def validate_mil_models(cls, v: List[BenchmarkParamInput]) -> List[BenchmarkParamInput]:
@@ -423,15 +505,13 @@ class Config(BaseModel):
     Top-level configuration object. 
     """
     experiment: ExperimentConfig
-    mil: MILConfig = Field(default_factory=MILConfig)
+    classification: ClassificationConfig | None = None
+    slide_retrieval: SlideRetrievalConfig | None = None
     slide_processing: SlideProcessingConfig = Field(default_factory=SlideProcessingConfig)
     optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
+    evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     datasets: List[DatasetEntry] = Field(default_factory=list)
     benchmark_parameters: BenchmarkParameters = Field(default_factory=BenchmarkParameters)
-    
-    #TODO: Do we still need these? 
-    weights_dir: str = "./pretrained_weights"
-    hf_key: Optional[str] = None
 
     @model_validator(mode='after')
     def validate_backend_constraints(self) -> "Config":
@@ -460,8 +540,38 @@ class Config(BaseModel):
 
         self._validate_dataset_use_semantics()
         self._validate_task_evaluation_metrics()
+        self._validate_task_specific_config()
              
         return self
+
+    def _validate_task_specific_config(self) -> None:
+        task_name = self.experiment.task
+        if task_name is None:
+            return
+
+        task_config_fields: dict[str, tuple[str, type[BaseModel]]] = {
+            "classification": ("classification", ClassificationConfig),
+            "slide_retrieval": ("slide_retrieval", SlideRetrievalConfig),
+        }
+
+        registration = task_config_fields.get(task_name)
+        if registration is None:
+            return
+
+        field_name, model_cls = registration
+        block_value = getattr(self, field_name)
+        has_required_fields = any(
+            field_info.is_required()
+            for field_info in model_cls.model_fields.values()
+        )
+
+        if block_value is None:
+            if has_required_fields:
+                raise ValueError(
+                    f"experiment.task='{task_name}' requires a top-level "
+                    f"'{field_name}' config block."
+                )
+            setattr(self, field_name, model_cls())
 
     def _validate_dataset_use_semantics(self) -> None:
         if self.experiment.mode != "benchmark" or self.experiment.task is None:
@@ -497,30 +607,42 @@ class Config(BaseModel):
             )
 
     def _validate_task_evaluation_metrics(self) -> None:
-        if self.experiment.mode != "benchmark":
+        if self.experiment.task is None:
             return
 
-        if self.experiment.task != "slide_retrieval":
+        if not self.evaluation.metrics:
             return
 
-        if not self.experiment.evaluation:
-            return
+        if self.evaluation.label_column is None:
+            raise ValueError(
+                "evaluation.label_column is required when evaluation.metrics are set."
+            )
 
-        from pathbench.slide_retrieval.validation.registry import (
-            import_validation_metric_modules,
-            is_validation_metric_available,
-            parse_validation_metric_name,
+        from pathbench.core.evaluation.registry import (
+            import_evaluation_metric_modules,
+            resolve_metric_request,
         )
 
-        import_validation_metric_modules()
-        for metric_name in self.experiment.evaluation:
-            request = parse_validation_metric_name(metric_name)
-            if not is_validation_metric_available(request.registry_key):
-                raise ValueError(
-                    f"Slide-retrieval evaluation metric '{metric_name}' is not "
-                    f"registered. Expected one of the registered metric families "
-                    f"matching '<metric>_at_<k>'."
-                )
+        import_evaluation_metric_modules()
+        for metric_name in self.evaluation.metrics:
+            resolve_metric_request(
+                task_name=str(self.experiment.task),
+                raw_name=metric_name,
+            )
+
+        annotation_path = Path(self.experiment.annotation_file)
+        if not annotation_path.is_file():
+            return
+
+        with annotation_path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.reader(handle)
+            header = next(reader, [])
+
+        if self.evaluation.label_column not in header:
+            raise ValueError(
+                f"evaluation.label_column '{self.evaluation.label_column}' was not "
+                f"found in annotations header: {header}"
+            )
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":

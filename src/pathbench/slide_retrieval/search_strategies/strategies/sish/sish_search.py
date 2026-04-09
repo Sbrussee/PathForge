@@ -39,7 +39,6 @@ from pathbench.slide_retrieval.search_strategies.types import (
     SearchHit,
     SearchResult,
 )
-from pathbench.slide_retrieval.types import RetrievalItemMetadata
 
 
 logger = logging.getLogger(__name__)
@@ -285,18 +284,16 @@ class SISHSearch(BaseSearchStrategy):
         """
         self._validate_representations([representation])
         representation = self._maybe_enrich_representation(representation)
-        metadata = RetrievalItemMetadata.from_any(representation.metadata)
 
         return SearchDatabaseItem(
-            item_id=representation.sample_id,
-            search_type=representation.representation_type,
+            sample_id=representation.sample_id,
+            exclusion_key=representation.exclusion_key,
             data=self._build_item_payload(
                 item_id=representation.sample_id,
                 features=representation.data,
                 additional_data=representation.additional_data,
-                metadata=metadata,
             ),
-            metadata=metadata,
+            additional_data=representation.additional_data,
         )
 
     def prepare_query(
@@ -316,18 +313,16 @@ class SISHSearch(BaseSearchStrategy):
         """
         self._validate_representations([query_representation])
         query_representation = self._maybe_enrich_representation(query_representation)
-        metadata = RetrievalItemMetadata.from_any(query_representation.metadata)
 
         return SearchDatabaseItem(
-            item_id=query_representation.sample_id,
-            search_type=query_representation.representation_type,
+            sample_id=query_representation.sample_id,
+            exclusion_key=query_representation.exclusion_key,
             data=self._build_item_payload(
                 item_id=query_representation.sample_id,
                 features=query_representation.data,
                 additional_data=query_representation.additional_data,
-                metadata=metadata,
             ),
-            metadata=metadata,
+            additional_data=query_representation.additional_data,
         )
 
     def build_index(self) -> None:
@@ -354,8 +349,6 @@ class SISHSearch(BaseSearchStrategy):
     def search(
         self,
         query_representation: RetrievalRepresentation,
-        *,
-        filter_same_patient: bool = True,
         **kwargs: Any,
     ) -> SearchResult:
         """
@@ -376,23 +369,12 @@ class SISHSearch(BaseSearchStrategy):
         query_item = self.prepare_query(query_representation)
         hits = self.rank(
             query_item=query_item,
-            database_items=(
-                self.filter_database_by_patient(query_item=query_item)
-                if filter_same_patient
-                else self.search_database
-            ),
-        )
-        predicted_category = (
-            hits[0].metadata.category if hits else query_item.metadata.category
+            database_items=self.filter_database_by_exclusion_key(query_item=query_item),
         )
 
         return SearchResult(
-            query_id=query_item.item_id,
+            query_sample_id=query_item.item_id,
             hits=hits,
-            metadata=query_item.metadata.copy(
-                predicted_category=predicted_category,
-                top_k_labels=[hit.metadata.category for hit in hits],
-            ),
         )
 
     def rank(
@@ -424,7 +406,7 @@ class SISHSearch(BaseSearchStrategy):
 
         candidate_ids = {item.item_id for item in database_items}
         query_payload = self._ensure_query_payload_ready(query_item)
-        patient_id = query_item.metadata.patient_id
+        patient_id = query_item.exclusion_key
         weights = self.compute_database_weights(
             patient_id=patient_id,
             allowed_slide_ids=candidate_ids,
@@ -448,7 +430,7 @@ class SISHSearch(BaseSearchStrategy):
             slide_id=query_item.item_id,
             data={
                 "results": slide_outputs,
-                "label_query": query_item.metadata.category,
+                "label_query": None,
             },
             weights=weights,
         )
@@ -461,10 +443,9 @@ class SISHSearch(BaseSearchStrategy):
                 continue
             hits.append(
                 SearchHit(
-                    item_id=item_id,
+                    sample_id=item_id,
                     score=float(entry["distance"]),
                     rank=rank,
-                    metadata=database_item.metadata,
                 )
             )
 
@@ -951,7 +932,7 @@ class SISHSearch(BaseSearchStrategy):
 
         return {
             "query_slide_id": slide_id,
-            "query_label": data["label_query"],
+            "query_label": data.get("label_query"),
             "predicted_label": predicted_label,
             "top_k": top_k_info,
         }
@@ -962,7 +943,6 @@ class SISHSearch(BaseSearchStrategy):
         item_id: str,
         features: Any,
         additional_data: Mapping[str, Any] | None,
-        metadata: RetrievalItemMetadata,
     ) -> dict[str, Any]:
         """Build the normalized per-item payload used throughout SISH."""
         feature_matrix = self._as_feature_matrix(features=features, item_id=item_id)
@@ -1013,7 +993,7 @@ class SISHSearch(BaseSearchStrategy):
             "packed_bits": packed_bits,
             "patch_indices": patch_indices,
             "coords": coords_array,
-            "mosaic_pkl_path": self._extract_mosaic_path(metadata=metadata, extras=extras),
+            "mosaic_pkl_path": self._extract_mosaic_path(extras=extras),
         }
 
     def _build_index_in_memory(self) -> None:
@@ -1104,8 +1084,8 @@ class SISHSearch(BaseSearchStrategy):
                     "meta": {
                         "slide_name": item.item_id,
                         "bits": packed_bits[row_index],
-                        "patient_id": item.metadata.patient_id,
-                        "category": item.metadata.category,
+                        "patient_id": item.exclusion_key,
+                        "category": None,
                         "x": int(x_coord),
                         "y": int(y_coord),
                     },
@@ -1263,12 +1243,11 @@ class SISHSearch(BaseSearchStrategy):
     def _extract_mosaic_path(
         self,
         *,
-        metadata: RetrievalItemMetadata,
         extras: Mapping[str, Any],
     ) -> str | None:
         """Resolve an optional mosaic pickle path from representation payload data."""
         for key in ("mosaic_pkl_path", "mosaic_path", "slide_representation_path"):
-            value = extras.get(key, metadata.get(key))
+            value = extras.get(key)
             if value:
                 return str(value)
         return None
@@ -1345,17 +1324,19 @@ class SISHSearch(BaseSearchStrategy):
         representation: RetrievalRepresentation,
     ) -> Any:
         """Build a lightweight sample-like object for SISH patch reconstruction."""
-        metadata = RetrievalItemMetadata.from_any(representation.metadata)
-        slide_ids = list(metadata.member_ids)
+        extras = dict(representation.additional_data)
+        slide_ids = [str(slide_id) for slide_id in extras.get("source_slide_ids", [])]
         if not slide_ids:
             raise ValueError(
-                "SISH requires representation metadata.member_ids to reconstruct patches."
+                "SISH requires representation.additional_data['source_slide_ids'] "
+                "to reconstruct patches."
             )
 
-        dataset_name = metadata.get("dataset")
+        dataset_name = extras.get("dataset_name")
         if not dataset_name:
             raise ValueError(
-                "SISH requires representation metadata['dataset'] to resolve slide/artifact paths."
+                "SISH requires representation.additional_data['dataset_name'] "
+                "to resolve slide/artifact paths."
             )
 
         dataset_cfg = self._find_dataset_config(dataset_name=str(dataset_name))
@@ -1373,7 +1354,7 @@ class SISHSearch(BaseSearchStrategy):
             sample_id=str(representation.sample_id),
             slide_ids=slide_ids,
             artifact_paths=artifact_paths,
-            metadata=dict(metadata),
+            metadata={"dataset": str(dataset_name)},
         )
 
     def _find_dataset_config(self, *, dataset_name: str) -> Any:

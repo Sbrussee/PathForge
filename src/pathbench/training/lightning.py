@@ -66,39 +66,41 @@ class LightningModuleAdapter(pl.LightningModule):
 
     def configure_optimizers(self):
         """
-        Configures Optimizer and Scheduler based on `config.mil`.
+        Configures Optimizer and Scheduler based on `config.classification`.
         """
-        mil_cfg = self.config.mil
+        classification_cfg = self.config.classification
+        if classification_cfg is None:
+            raise ValueError("classification config is required for Lightning training.")
         
         # 1. Optimizer
         optimizer = torch.optim.Adam(
             self.model.parameters(), 
-            lr=mil_cfg.lr, 
-            weight_decay=mil_cfg.weight_decay
+            lr=classification_cfg.lr, 
+            weight_decay=classification_cfg.weight_decay
         )
         
         # 2. Scheduler
-        if mil_cfg.scheduler == "reduce_on_plateau":
+        if classification_cfg.scheduler == "reduce_on_plateau":
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, 
                 mode="min", 
                 factor=0.5, 
-                patience=mil_cfg.patience // 2, 
+                patience=classification_cfg.patience // 2, 
                 verbose=True
             )
             return {
                 "optimizer": optimizer,
                 "lr_scheduler": {
                     "scheduler": scheduler,
-                    "monitor": mil_cfg.scheduler_monitor,
+                    "monitor": classification_cfg.scheduler_monitor,
                     "interval": "epoch",
                     "frequency": 1,
                 },
             }
-        elif mil_cfg.scheduler == "cosine":
+        elif classification_cfg.scheduler == "cosine":
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer,
-                T_max=mil_cfg.epochs,
+                T_max=classification_cfg.epochs,
                 eta_min=0.0
             )
             return [optimizer], [scheduler]
@@ -111,19 +113,22 @@ class LightningTrainer(TrainerBase):
     Trainer implementation using PyTorch Lightning.
     
     Config Usage:
-    - mil.epochs -> max_epochs
-    - mil.accumulate_grad_batches
-    - mil.gradient_clip_val
+    - classification.epochs -> max_epochs
+    - classification.accumulate_grad_batches
+    - classification.gradient_clip_val
     - experiment.num_workers
     """
 def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None):
         self.config = config
         self.extra_callbacks = extra_callbacks or []
+        classification_cfg = self.config.classification
+        if classification_cfg is None:
+            raise ValueError("classification config is required for Lightning training.")
         
         # We need to access the checkpoint callback later to get the score
         self.checkpoint_callback = ModelCheckpoint(
-            monitor=config.mil.best_epoch_based_on,
-            mode="min" if "loss" in config.mil.best_epoch_based_on else "max", 
+            monitor=classification_cfg.best_epoch_based_on,
+            mode="min" if "loss" in classification_cfg.best_epoch_based_on else "max", 
             save_top_k=1,
             filename="{epoch}-{val_loss:.2f}",
             verbose=True,
@@ -133,18 +138,18 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
             self.checkpoint_callback,
             LearningRateMonitor(logging_interval="epoch"),
             EarlyStopping(
-                monitor=config.mil.best_epoch_based_on,
-                patience=config.mil.patience,
-                mode="min" if "loss" in config.mil.best_epoch_based_on else "max",
+                monitor=classification_cfg.best_epoch_based_on,
+                patience=classification_cfg.patience,
+                mode="min" if "loss" in classification_cfg.best_epoch_based_on else "max",
                 verbose=True
             )
         ]
         self.callbacks.extend(self.extra_callbacks)
 
         self.trainer = pl.Trainer(
-            max_epochs=config.mil.epochs,
-            accumulate_grad_batches=config.mil.accumulate_grad_batches,
-            gradient_clip_val=config.mil.gradient_clip_val,
+            max_epochs=classification_cfg.epochs,
+            accumulate_grad_batches=classification_cfg.accumulate_grad_batches,
+            gradient_clip_val=classification_cfg.gradient_clip_val,
             callbacks=self.callbacks,
             accelerator="gpu" if torch.cuda.is_available() else "cpu",
             devices=1,
@@ -157,9 +162,9 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
         self.callbacks.extend(self.extra_callbacks)
 
         self.trainer = pl.Trainer(
-            max_epochs=config.mil.epochs,
-            accumulate_grad_batches=config.mil.accumulate_grad_batches,
-            gradient_clip_val=config.mil.gradient_clip_val,
+            max_epochs=classification_cfg.epochs,
+            accumulate_grad_batches=classification_cfg.accumulate_grad_batches,
+            gradient_clip_val=classification_cfg.gradient_clip_val,
             callbacks=self.callbacks,
             accelerator="gpu" if torch.cuda.is_available() else "cpu",
             devices=1,
@@ -180,16 +185,20 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
         Returns:
             (best_model_path, best_model_score)
         """
+        classification_cfg = self.config.classification
+        if classification_cfg is None:
+            raise ValueError("classification config is required for Lightning training.")
+
         train_loader = DataLoader(
             dataset_train, 
-            batch_size=self.config.mil.batch_size, 
+            batch_size=classification_cfg.batch_size, 
             shuffle=True, 
             num_workers=self.config.experiment.num_workers,
             pin_memory=True if torch.cuda.is_available() else False
         )
         val_loader = DataLoader(
             dataset_val, 
-            batch_size=self.config.mil.batch_size, 
+            batch_size=classification_cfg.batch_size, 
             shuffle=False, 
             num_workers=self.config.experiment.num_workers,
             pin_memory=True if torch.cuda.is_available() else False
@@ -207,7 +216,7 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
         
         # Handle case where score might be None (e.g., if training failed immediately)
         if best_score is None:
-            best_score = float('inf') if "loss" in self.config.mil.best_epoch_based_on else 0.0
+            best_score = float('inf') if "loss" in classification_cfg.best_epoch_based_on else 0.0
 
         # Convert tensor to float if necessary
         if isinstance(best_score, torch.Tensor):
@@ -223,9 +232,13 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
         """
         Run inference.
         """
+        classification_cfg = self.config.classification
+        if classification_cfg is None:
+            raise ValueError("classification config is required for Lightning prediction.")
+
         loader = DataLoader(
             dataset, 
-            batch_size=self.config.mil.batch_size, 
+            batch_size=classification_cfg.batch_size, 
             shuffle=False, 
             num_workers=self.config.experiment.num_workers
         )
@@ -247,4 +260,3 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
 
         # Concatenate all predictions
         return torch.cat(predictions, dim=0)
-

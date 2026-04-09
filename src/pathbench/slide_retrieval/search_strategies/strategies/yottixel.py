@@ -12,7 +12,6 @@ from __future__ import annotations
 #   https://doi.org/10.1016/j.media.2020.101757
 # ------------------------------------------------------------------------------
 
-from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,7 +30,6 @@ from pathbench.slide_retrieval.search_strategies.types import (
     SearchHit,
     SearchResult,
 )
-from pathbench.slide_retrieval.types import RetrievalItemMetadata
 
 
 def _count_xor(left: np.ndarray, right: np.ndarray) -> int:
@@ -69,36 +67,19 @@ class BoB:
             Binary barcode matrix with shape ``(N, D_barcode)``.
         slide_id:
             Retrieval item identifier.
-        patient_id:
-            Patient identifier used for exclusion during evaluation.
-        label:
-            Ground-truth category / diagnosis label.
-
-    Output:
-        Instantiated ``BoB`` object exposing ``distance(other_bob) -> float``.
-
-    Example:
-        ```python
-        bob = BoB(
-            barcodes=np.array([[1, 0, 1]], dtype=np.uint8),
-            slide_id="slide-1",
-            patient_id="patient-1",
-            label="tumor",
-        )
-        ```
+        exclusion_key:
+            Optional key used to exclude unfair matches before ranking.
     """
 
     barcodes: np.ndarray
     slide_id: str
-    patient_id: str | None
-    label: str | None
+    exclusion_key: str | None = None
 
     def __post_init__(self) -> None:
         self.slide_id = str(self.slide_id)
-        self.patient_id = (
-            None if self.patient_id is None else str(self.patient_id)
+        self.exclusion_key = (
+            None if self.exclusion_key is None else str(self.exclusion_key)
         )
-        self.label = None if self.label is None else str(self.label)
         self.barcodes = np.asarray(self.barcodes, dtype=np.uint8)
 
         if self.barcodes.ndim != 2:
@@ -188,17 +169,13 @@ class YottixelSearch(BaseSearchStrategy):
             Returns ``SearchDatabaseItem`` whose ``data`` field stores a ``BoB``.
         """
         self._validate_representations([representation])
-        metadata = RetrievalItemMetadata.from_any(representation.metadata)
-
         return SearchDatabaseItem(
-            item_id=representation.sample_id,
-            search_type=representation.representation_type,
+            sample_id=representation.sample_id,
+            exclusion_key=representation.exclusion_key,
             data=self._build_bob(
                 data=representation.data,
                 slide_id=representation.sample_id,
-                metadata=metadata,
             ),
-            metadata=metadata,
         )
 
     def prepare_query(
@@ -217,24 +194,18 @@ class YottixelSearch(BaseSearchStrategy):
             Returns ``SearchDatabaseItem`` whose ``data`` field stores a ``BoB``.
         """
         self._validate_representations([query_representation])
-        metadata = RetrievalItemMetadata.from_any(query_representation.metadata)
-
         return SearchDatabaseItem(
-            item_id=query_representation.sample_id,
-            search_type=query_representation.representation_type,
+            sample_id=query_representation.sample_id,
+            exclusion_key=query_representation.exclusion_key,
             data=self._build_bob(
                 data=query_representation.data,
                 slide_id=query_representation.sample_id,
-                metadata=metadata,
             ),
-            metadata=metadata,
         )
 
     def search(
         self,
         query_representation: RetrievalRepresentation,
-        *,
-        filter_same_patient: bool = True,
         **kwargs: Any,
     ) -> SearchResult:
         """
@@ -252,30 +223,18 @@ class YottixelSearch(BaseSearchStrategy):
         """
         query_item = self.prepare_query(query_representation)
 
-        database_items = self.search_database
-        if filter_same_patient:
-            database_items = self.filter_database_by_patient(
-                query_item=query_item,
-                database_items=database_items,
-            )
-
         hits = self.rank(
             query_item=query_item,
-            database_items=database_items,
+            database_items=self.filter_database_by_exclusion_key(
+                query_item=query_item,
+                database_items=self.search_database,
+            ),
             **kwargs,
-        )
-        predicted_category = self._predict_category(
-            query_item=query_item,
-            hits=hits,
         )
 
         return SearchResult(
-            query_id=query_item.item_id,
+            query_sample_id=query_item.sample_id,
             hits=hits,
-            metadata=query_item.metadata.copy(
-                predicted_category=predicted_category,
-                top_k_labels=[hit.metadata.category for hit in hits],
-            ),
         )
 
     def rank(
@@ -313,10 +272,9 @@ class YottixelSearch(BaseSearchStrategy):
             database_item = database_items[int(index)]
             hits.append(
                 SearchHit(
-                    item_id=database_item.item_id,
+                    sample_id=database_item.sample_id,
                     score=float(distances[int(index)]),
                     rank=rank,
-                    metadata=database_item.metadata,
                 )
             )
 
@@ -327,7 +285,6 @@ class YottixelSearch(BaseSearchStrategy):
         *,
         data: Any,
         slide_id: str,
-        metadata: RetrievalItemMetadata,
     ) -> BoB:
         """
         Build one ``BoB`` from retrieval representation data.
@@ -337,9 +294,6 @@ class YottixelSearch(BaseSearchStrategy):
                 Retrieval array with shape ``(D,)`` or ``(N, D)``.
             slide_id:
                 Retrieval item identifier.
-            metadata:
-                Normalized retrieval metadata.
-
         Output:
             Returns a ``BoB`` containing binary barcodes with shape
             ``(N, D - 1)``.
@@ -360,8 +314,6 @@ class YottixelSearch(BaseSearchStrategy):
         return BoB(
             barcodes=barcodes,
             slide_id=slide_id,
-            patient_id=metadata.patient_id,
-            label=metadata.category,
         )
 
     def _as_bob(self, item: SearchDatabaseItem) -> BoB:
@@ -372,28 +324,3 @@ class YottixelSearch(BaseSearchStrategy):
                 f"Got {type(item.data).__name__}."
             )
         return item.data
-
-    def _predict_category(
-        self,
-        *,
-        query_item: SearchDatabaseItem,
-        hits: list[SearchHit],
-    ) -> str | None:
-        """
-        Predict the query category using majority vote over the ranked hits.
-
-        Inputs:
-            query_item:
-                Prepared query item carrying query metadata.
-            hits:
-                Ranked search hits.
-
-        Output:
-            Returns the majority-vote category. Falls back to the query category
-            when no eligible atlas items remain after filtering.
-        """
-        if not hits:
-            return query_item.metadata.category
-
-        top_k_labels = [hit.metadata.category for hit in hits]
-        return Counter(top_k_labels).most_common(1)[0][0]

@@ -8,8 +8,9 @@ import numpy as np
 import torch
 
 from pathbench.core.datasets.wsi_dataset import WSI
-from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.core.io.h5.base import FileHandleH5
+from pathbench.core.io.slide_artifacts import tiles as tiles_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
+from pathbench.core.io.slide_retrieval import descriptors as descriptors_io
 from pathbench.slide_retrieval.mean_rgb import (
     _build_slide_processor,
     _resolve_sample_slide_paths,
@@ -170,6 +171,21 @@ class SISHPrecompute:
             selected_full_coords=selected_coords[:, :2],
         )
 
+        descriptor_rows = self._load_selected_descriptor_rows(
+            sample=sample,
+            bag_id=bag_id,
+            selected_indices=selected_indices,
+            expected_rows=int(full_coords.shape[0]),
+        )
+        if descriptor_rows is not None:
+            patch_indices = self._descriptor_rows_to_patch_indices(descriptor_rows)
+            representation.additional_data["sish_patch_indices"] = patch_indices.astype(
+                np.int64,
+                copy=False,
+            )
+            representation.additional_data["sish_packed_bits"] = self._pack_bits(features)
+            return representation
+
         patch_specs = self._build_patch_specs(
             sample=sample,
             bag_id=bag_id,
@@ -184,6 +200,180 @@ class SISHPrecompute:
         )
         representation.additional_data["sish_packed_bits"] = self._pack_bits(features)
         return representation
+
+    def _candidate_descriptor_names(self) -> list[str]:
+        """Return candidate H5 descriptor names for precomputed SISH latents."""
+        configured = self._get_config_value(
+            [
+                ("experiment", "sish", "descriptor_name"),
+                ("experiment", "SISH_metrics", "descriptor_name"),
+                ("sish", "descriptor_name"),
+            ],
+            default=None,
+        )
+        if configured:
+            return [str(configured)]
+
+        configured_names = self._get_config_value(
+            [
+                ("experiment", "sish", "descriptor_names"),
+                ("experiment", "SISH_metrics", "descriptor_names"),
+                ("sish", "descriptor_names"),
+            ],
+            default=None,
+        )
+        if configured_names:
+            return [str(name) for name in list(configured_names)]
+
+        return [
+            "sish_vqvae_latent",
+            "sish_vqvae_descriptor",
+            "sish_vqvae",
+            "vqvae_latent",
+            "vqvae",
+        ]
+
+    def _load_selected_descriptor_rows(
+        self,
+        *,
+        sample: Any,
+        bag_id: str,
+        selected_indices: np.ndarray,
+        expected_rows: int,
+    ) -> np.ndarray | None:
+        """Load and slice the full precomputed SISH descriptor matrix when present."""
+        artifact_paths = list(getattr(sample, "artifact_paths", []) or [])
+        if not artifact_paths:
+            return None
+
+        for descriptor_name in self._candidate_descriptor_names():
+            descriptor_parts: list[np.ndarray] = []
+            for artifact_path in artifact_paths:
+                with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                    if not descriptors_io.descriptor_exists(
+                        slide_artifact,
+                        bag_id,
+                        descriptor_name,
+                    ):
+                        descriptor_parts = []
+                        break
+                    descriptor_parts.append(
+                        descriptors_io.read_descriptor(
+                            slide_artifact,
+                            bag_id,
+                            descriptor_name,
+                        )
+                    )
+
+            if not descriptor_parts:
+                continue
+
+            full_descriptor_matrix = np.concatenate(descriptor_parts, axis=0)
+            if int(full_descriptor_matrix.shape[0]) != int(expected_rows):
+                raise ValueError(
+                    "SISH descriptor rows must align with the full bag rows. "
+                    f"Got descriptors={full_descriptor_matrix.shape[0]} and "
+                    f"expected_rows={expected_rows}."
+                )
+
+            return np.asarray(
+                full_descriptor_matrix[selected_indices],
+            )
+
+        return None
+
+    def _descriptor_rows_to_patch_indices(
+        self,
+        descriptor_rows: np.ndarray,
+    ) -> np.ndarray:
+        """Convert selected stored SISH descriptor rows into final integer patch indices."""
+        rows = np.asarray(descriptor_rows)
+        if rows.ndim == 1:
+            return np.asarray(np.rint(rows), dtype=np.int64)
+
+        if rows.ndim != 2:
+            raise ValueError(
+                "Stored SISH descriptor rows must have shape (N, D). "
+                f"Got {rows.shape}."
+            )
+
+        if rows.shape[1] == 1:
+            return np.asarray(np.rint(rows[:, 0]), dtype=np.int64)
+
+        latent_h, latent_w = self._resolve_latent_hw(rows.shape[1])
+        latent_maps = np.asarray(
+            np.rint(rows).reshape(rows.shape[0], latent_h, latent_w),
+            dtype=np.int64,
+        )
+        codebook_semantic = self._load_codebook_semantic()
+        return _slide_to_index(
+            latent=latent_maps,
+            codebook_semantic=codebook_semantic,
+            pool_layers=self._pool_layers,
+        )
+
+    def _resolve_latent_hw(self, flattened_dim: int) -> tuple[int, int]:
+        """Resolve the 2D latent map shape stored in one descriptor row."""
+        configured_hw = self._get_config_value(
+            [
+                ("experiment", "sish", "descriptor_latent_hw"),
+                ("experiment", "SISH_metrics", "descriptor_latent_hw"),
+                ("sish", "descriptor_latent_hw"),
+            ],
+            default=None,
+        )
+        if configured_hw is not None:
+            height, width = list(configured_hw)
+            return int(height), int(width)
+
+        configured_height = self._get_config_value(
+            [
+                ("experiment", "sish", "descriptor_latent_h"),
+                ("experiment", "SISH_metrics", "descriptor_latent_h"),
+                ("sish", "descriptor_latent_h"),
+            ],
+            default=None,
+        )
+        configured_width = self._get_config_value(
+            [
+                ("experiment", "sish", "descriptor_latent_w"),
+                ("experiment", "SISH_metrics", "descriptor_latent_w"),
+                ("sish", "descriptor_latent_w"),
+            ],
+            default=None,
+        )
+        if configured_height is not None and configured_width is not None:
+            return int(configured_height), int(configured_width)
+
+        root = int(round(float(np.sqrt(flattened_dim))))
+        if root * root == int(flattened_dim):
+            return root, root
+
+        raise ValueError(
+            "Could not infer the 2D latent shape for stored SISH descriptors. "
+            f"Got flattened dim {flattened_dim}. Configure "
+            "'sish.descriptor_latent_hw'."
+        )
+
+    def _load_codebook_semantic(self) -> dict[int, int]:
+        """Load only the semantic codebook needed to convert stored latents to indices."""
+        if self._codebook_semantic is not None:
+            return self._codebook_semantic
+
+        codebook_path = self._resolve_path(
+            [
+                ("experiment", "sish", "codebook_semantic"),
+                ("experiment", "SISH_metrics", "codebook_semantic"),
+                ("sish", "codebook_semantic"),
+            ]
+        )
+        if codebook_path is None:
+            raise ValueError(
+                "SISH descriptor decoding requires config path 'codebook_semantic'."
+            )
+
+        self._codebook_semantic = torch.load(codebook_path, map_location="cpu")
+        return self._codebook_semantic
 
     def _load_models(self) -> None:
         """Lazy-load the VQ-VAE encoder and semantic codebook from config."""

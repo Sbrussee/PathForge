@@ -11,6 +11,7 @@ import pytest
 
 import pathbench.policy.feature_extraction as fe_mod
 from pathbench.core.datasets.wsi_dataset import WSI
+from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.policy.feature_extraction import FeatureExtractionPolicy
 
 
@@ -81,7 +82,9 @@ class _FakeSlideProcessor:
 
 def _make_policy(report: bool) -> FeatureExtractionPolicy:
     policy = FeatureExtractionPolicy.__new__(FeatureExtractionPolicy)
-    policy.config = SimpleNamespace(experiment=SimpleNamespace(report=report))
+    policy.config = SimpleNamespace(
+        experiment=SimpleNamespace(report=report, thumbnail=False)
+    )
     return policy
 
 
@@ -140,11 +143,18 @@ def _install_common_mocks(
         "features_exist_calls": [],
         "tiles_overview_exists_calls": 0,
         "write_tiles_overview_calls": 0,
+        "thumbnail_image_exists_calls": 0,
+        "thumbnail_spec_exists_calls": 0,
+        "write_thumbnail_image_calls": 0,
+        "write_thumbnail_spec_calls": 0,
         "write_coords_calls": 0,
         "write_tiling_spec_calls": 0,
         "write_features_calls": 0,
         "render_calls": 0,
+        "render_thumbnail_calls": 0,
         "last_written_overview": None,
+        "last_written_thumbnail": None,
+        "last_written_thumbnail_spec": None,
     }
 
     coords_arr = _default_coords() if coords is None else coords
@@ -163,6 +173,11 @@ def _install_common_mocks(
         "render_tiles_overview_image",
         lambda **kwargs: _render_stub(state, **kwargs),
     )
+    monkeypatch.setattr(
+        fe_mod,
+        "render_thumbnail_image",
+        lambda **kwargs: _render_thumbnail_stub(state, **kwargs),
+    )
 
     monkeypatch.setattr(fe_mod.tiles_io, "coords_num_rows", lambda *a, **k: int(coords_arr.shape[0]))
 
@@ -178,6 +193,34 @@ def _install_common_mocks(
         return False
 
     monkeypatch.setattr(fe_mod.tiles_io, "tiles_overview_exists", _tiles_overview_exists)
+
+    monkeypatch.setattr(
+        fe_mod.thumbnail_io,
+        "thumbnail_image_exists",
+        lambda *a, **k: _bump_return_false(state, "thumbnail_image_exists_calls"),
+    )
+    monkeypatch.setattr(
+        fe_mod.thumbnail_io,
+        "thumbnail_spec_exists",
+        lambda *a, **k: _bump_return_false(state, "thumbnail_spec_exists_calls"),
+    )
+
+    def _write_thumbnail_image(*args, **kwargs) -> None:
+        state["write_thumbnail_image_calls"] += 1
+        if len(args) >= 2:
+            state["last_written_thumbnail"] = args[1]
+        else:
+            state["last_written_thumbnail"] = kwargs.get("image_bytes")
+
+    def _write_thumbnail_spec(*args, **kwargs) -> None:
+        state["write_thumbnail_spec_calls"] += 1
+        if len(args) >= 2:
+            state["last_written_thumbnail_spec"] = args[1]
+        else:
+            state["last_written_thumbnail_spec"] = kwargs.get("thumbnail_spec")
+
+    monkeypatch.setattr(fe_mod.thumbnail_io, "write_thumbnail_image", _write_thumbnail_image)
+    monkeypatch.setattr(fe_mod.thumbnail_io, "write_thumbnail_spec", _write_thumbnail_spec)
 
     def _write_tiles_overview(*args, **kwargs) -> None:
         state["write_tiles_overview_calls"] += 1
@@ -212,8 +255,19 @@ def _render_stub(state: dict[str, Any], **kwargs) -> bytes:
     return b"\xff\xd8mockjpg"
 
 
+def _render_thumbnail_stub(state: dict[str, Any], **kwargs) -> bytes:
+    state["render_thumbnail_calls"] += 1
+    assert "thumbnail_image" in kwargs
+    return b"\xff\xd8thumbjpg"
+
+
 def _bump(state: dict[str, Any], key: str) -> None:
     state[key] += 1
+
+
+def _bump_return_false(state: dict[str, Any], key: str) -> bool:
+    state[key] += 1
+    return False
 
 
 def _dataset_stub() -> Any:
@@ -224,6 +278,11 @@ def _execute(policy: FeatureExtractionPolicy, processor: _FakeSlideProcessor, tm
     policy._execute_wsi(
         dataset=_dataset_stub(),
         wsi=_make_wsi(tmp_path),
+        combo_cfg=ComboConfig(
+            feature_extraction="dummy_extractor",
+            tile_px=256,
+            tile_mpp=0.5,
+        ),
         slide_processor=processor,
         run_configs=_run_configs(),
     )
@@ -248,6 +307,26 @@ def test_report_false_no_overview_generation_attempt(monkeypatch: pytest.MonkeyP
     assert state["write_features_calls"] == 1
 
 
+def test_thumbnail_false_no_thumbnail_generation_attempt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    policy = _make_policy(report=False)
+    processor = _FakeSlideProcessor()
+
+    state = _install_common_mocks(
+        monkeypatch,
+        features_exist_sequence=[False, False],
+        coords_are_valid=True,
+        overview_exists_sequence=[],
+    )
+
+    _execute(policy, processor, tmp_path)
+
+    assert state["render_thumbnail_calls"] == 0
+    assert state["write_thumbnail_image_calls"] == 0
+    assert state["write_thumbnail_spec_calls"] == 0
+
+
 def test_report_true_tiles_reused_overview_missing_generates_and_writes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -269,6 +348,30 @@ def test_report_true_tiles_reused_overview_missing_generates_and_writes(
     assert state["last_written_overview"] == b"\xff\xd8mockjpg"
     assert state["write_coords_calls"] == 0
     assert state["write_tiling_spec_calls"] == 0
+
+
+def test_thumbnail_true_features_exist_but_thumbnail_missing_still_generates_thumbnail(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    policy = _make_policy(report=False)
+    policy.config.experiment.thumbnail = True
+    processor = _FakeSlideProcessor()
+
+    state = _install_common_mocks(
+        monkeypatch,
+        features_exist_sequence=[True, True],
+        coords_are_valid=True,
+        overview_exists_sequence=[],
+    )
+
+    _execute(policy, processor, tmp_path)
+
+    assert processor.get_thumbnail_calls == 1
+    assert state["render_thumbnail_calls"] == 1
+    assert state["write_thumbnail_image_calls"] == 1
+    assert state["write_thumbnail_spec_calls"] == 1
+    assert processor.extract_features_calls == 0
+    assert state["write_features_calls"] == 0
 
 
 def test_report_true_tiles_reused_overview_exists_skips_generation(
@@ -320,8 +423,6 @@ def test_report_true_tiles_newly_created_always_writes_overview_even_if_exists(
     policy = _make_policy(report=True)
     processor = _FakeSlideProcessor()
 
-    monkeypatch.setattr(policy, "_resolve_tissue_polygons", lambda **kwargs: [])
-
     state = _install_common_mocks(
         monkeypatch,
         features_exist_sequence=[False, False],
@@ -337,3 +438,26 @@ def test_report_true_tiles_newly_created_always_writes_overview_even_if_exists(
     assert processor.get_thumbnail_calls == 1
     assert state["render_calls"] == 1
     assert state["write_tiles_overview_calls"] == 1
+
+
+def test_thumbnail_true_tiles_newly_created_always_writes_thumbnail(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    policy = _make_policy(report=False)
+    policy.config.experiment.thumbnail = True
+    processor = _FakeSlideProcessor()
+
+    state = _install_common_mocks(
+        monkeypatch,
+        features_exist_sequence=[False, False],
+        coords_are_valid=False,
+        overview_exists_sequence=[],
+    )
+
+    _execute(policy, processor, tmp_path)
+
+    assert processor.extract_patches_calls == 1
+    assert processor.get_thumbnail_calls == 1
+    assert state["render_thumbnail_calls"] == 1
+    assert state["write_thumbnail_image_calls"] == 1
+    assert state["write_thumbnail_spec_calls"] == 1

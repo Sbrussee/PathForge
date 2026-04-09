@@ -4,17 +4,72 @@ from __future__ import annotations
 
 import argparse
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 from pathbench.config.config import Config
-from pathbench.core.datasets.factory import build_wsi_datasets
 from pathbench.core.experiments.base import Experiment
 from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.reports.tiles_report_pdf import create_tiles_report_pdf
+from pathbench.utils.constants import DATASET_COL, SLIDE_ID_COL
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _ArtifactOnlyWSI:
+    slide: str
+    artifact_path: Path
+
+
+@dataclass(slots=True)
+class _ArtifactOnlyDataset:
+    name: str
+    artifacts_dir: Path
+    samples: list[_ArtifactOnlyWSI]
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+
+def _build_artifact_only_datasets(cfg: Config, annotations_df) -> list[_ArtifactOnlyDataset]:
+    datasets: list[_ArtifactOnlyDataset] = []
+
+    for ds_cfg in cfg.datasets:
+        if ds_cfg.used_for == "ignore":
+            continue
+
+        dataset_annotations = annotations_df[
+            annotations_df[DATASET_COL] == ds_cfg.name
+        ].copy()
+
+        if dataset_annotations.empty:
+            logger.warning(
+                "[TilesReportCLI] No annotation rows found for dataset '%s'.",
+                ds_cfg.name,
+            )
+            continue
+
+        artifacts_dir = Path(ds_cfg.artifacts_dir).expanduser().resolve()
+        samples = [
+            _ArtifactOnlyWSI(
+                slide=str(row[SLIDE_ID_COL]),
+                artifact_path=artifacts_dir / f"{row[SLIDE_ID_COL]}.h5",
+            )
+            for _, row in dataset_annotations.iterrows()
+        ]
+
+        datasets.append(
+            _ArtifactOnlyDataset(
+                name=str(ds_cfg.name),
+                artifacts_dir=artifacts_dir,
+                samples=samples,
+            )
+        )
+
+    return datasets
 
 
 def _unique_tiling_ids_from_config(cfg: Config) -> list[str]:
@@ -68,9 +123,10 @@ def main(argv=None) -> int:
 
     cfg = Config.from_yaml(config_path)
     experiment = Experiment(cfg)
-    datasets = build_wsi_datasets(
+    annotations_df = experiment.load_annotations()
+    datasets = _build_artifact_only_datasets(
         cfg=experiment.cfg,
-        annotations_df=experiment.load_annotations(),
+        annotations_df=annotations_df,
     )
     tiling_ids = _unique_tiling_ids_from_config(cfg)
 

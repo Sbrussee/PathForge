@@ -6,9 +6,9 @@ import pandas as pd
 
 from pathbench.config.config import DatasetEntry
 from pathbench.core.experiments.combinations import ComboConfig
-from pathbench.core.experiments.combo_ids import build_tiling_id
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.io.h5 import features as features_io
+from pathbench.core.experiments.combo_ids import build_feature_name, build_tiling_id
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
+from pathbench.core.io.slide_artifacts import features as features_io
 from pathbench.utils.constants import DATASET_COL, SLIDE_ID_COL
 
 
@@ -34,7 +34,7 @@ def find_slides_with_missing_features(
 
     slide_ids_with_missing_features: list[str] = []
     tiling_id = build_tiling_id(combo_cfg)
-    extractor_name = str(combo_cfg.feature_extraction)
+    extractor_name = build_feature_name(combo_cfg)
 
     for slide_id in slide_ids:
         artifact_path = artifacts_dir / f"{slide_id}.h5"
