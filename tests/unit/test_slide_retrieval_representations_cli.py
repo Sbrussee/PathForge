@@ -11,7 +11,7 @@ def test_main_executes_representation_precompute_runner(
 ) -> None:
     config_calls: list[Path] = []
     experiment_calls: list[object] = []
-    runner_calls: list[object] = []
+    runner_calls: list[tuple[object, bool]] = []
     executed_outputs: list[dict[str, object]] = []
 
     fake_cfg = SimpleNamespace(
@@ -37,8 +37,8 @@ def test_main_executes_representation_precompute_runner(
     monkeypatch.setattr(
         retrieval_repr_cli,
         "_run_representation_precompute",
-        lambda policy: (
-            runner_calls.append(policy)
+        lambda policy, skip_missing_features=False: (
+            runner_calls.append((policy, bool(skip_missing_features)))
             or executed_outputs.append({"status": "representations_done", "num_runs": 2})
             or {"status": "representations_done", "num_runs": 2}
         ),
@@ -50,4 +50,5 @@ def test_main_executes_representation_precompute_runner(
     assert config_calls == [Path("configs/benchmark.yaml")]
     assert experiment_calls == [fake_experiment]
     assert len(runner_calls) == 1
+    assert runner_calls[0][1] is False
     assert executed_outputs == [{"status": "representations_done", "num_runs": 2}]

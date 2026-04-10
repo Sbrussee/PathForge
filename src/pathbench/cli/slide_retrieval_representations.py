@@ -16,6 +16,7 @@ from ..config.config import Config
 from ..core.experiments.base import Experiment
 from ..core.experiments.combo_ids import build_feature_name, build_tiling_id
 from ..core.experiments.combinations import ComboConfig, build_combinations
+from ..core.features.utils import find_slides_with_missing_features
 from ..policy.benchmarking import BenchmarkingPolicy
 from ..slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
@@ -23,6 +24,7 @@ from ..slide_retrieval.representation_strategies.registry import (
 from ..slide_retrieval.representation_strategies.storage import (
     build_retrieval_representation_id,
 )
+from ..utils.constants import DATASET_COL, SLIDE_ID_COL
 
 logger = logging.getLogger(__name__)
 _VALID_RETRIEVAL_USES = {"reference", "query", "query_reference"}
@@ -145,7 +147,52 @@ def _materialize_representations_for_combo(
     }
 
 
-def _run_representation_precompute(policy: BenchmarkingPolicy) -> dict[str, Any]:
+def _filter_annotations_with_existing_features(
+    *,
+    policy: BenchmarkingPolicy,
+    combo_cfg: ComboConfig,
+    annotations_df: Any,
+) -> Any:
+    """Return annotations filtered to rows whose required features already exist."""
+    filtered_annotations = annotations_df.copy()
+    allowed_uses = getattr(policy.task, "allowed_dataset_uses", None)
+
+    for ds_cfg in policy.cfg.datasets:
+        if ds_cfg.used_for == "ignore":
+            continue
+        if allowed_uses is not None and ds_cfg.used_for not in allowed_uses:
+            continue
+
+        missing_slide_ids = find_slides_with_missing_features(
+            ds_cfg=ds_cfg,
+            annotations_df=annotations_df,
+            combo_cfg=combo_cfg,
+        )
+        if not missing_slide_ids:
+            continue
+
+        missing_slide_set = {str(slide_id) for slide_id in missing_slide_ids}
+        drop_mask = (
+            (filtered_annotations[DATASET_COL] == ds_cfg.name)
+            & (filtered_annotations[SLIDE_ID_COL].astype(str).isin(missing_slide_set))
+        )
+        dropped_rows = int(drop_mask.sum())
+        if dropped_rows > 0:
+            logger.warning(
+                "[Benchmark] Dataset '%s': skipping %d row(s) because features are missing.",
+                ds_cfg.name,
+                dropped_rows,
+            )
+            filtered_annotations = filtered_annotations.loc[~drop_mask].copy()
+
+    return filtered_annotations
+
+
+def _run_representation_precompute(
+    policy: BenchmarkingPolicy,
+    *,
+    skip_missing_features: bool = False,
+) -> dict[str, Any]:
     task = policy.task
     if not isinstance(task, SlideRetrievalTask):
         raise TypeError(
@@ -166,13 +213,23 @@ def _run_representation_precompute(policy: BenchmarkingPolicy) -> dict[str, Any]
     for bag_id, combinations_for_bag_id in combinations_by_bag_id.items():
         bag_source_combo = combinations_for_bag_id[0]
         logger.info("[Benchmark] Representation-only bag group | bag_id=%s", bag_id)
-        policy.ensure_bag_features_exist(
-            combo_cfg=bag_source_combo,
-            annotations_df=annotations_df,
-        )
+
+        if skip_missing_features:
+            bag_annotations_df = _filter_annotations_with_existing_features(
+                policy=policy,
+                combo_cfg=bag_source_combo,
+                annotations_df=annotations_df,
+            )
+        else:
+            policy.ensure_bag_features_exist(
+                combo_cfg=bag_source_combo,
+                annotations_df=annotations_df,
+            )
+            bag_annotations_df = annotations_df
+
         bag_datasets = policy.build_bag_datasets_for_combo(
             combo_cfg=bag_source_combo,
-            annotations_df=annotations_df,
+            annotations_df=bag_annotations_df,
         )
         datasets_by_use = policy.group_bag_datasets_by_use(bag_datasets)
         policy._validate_dataset_uses(datasets_by_use=datasets_by_use)
@@ -198,6 +255,14 @@ def main(argv: list[str] | None = None) -> int:
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging level (default: INFO)",
+    )
+    parser.add_argument(
+        "--skip-missing-features",
+        action="store_true",
+        help=(
+            "Skip slides with missing features instead of running feature extraction. "
+            "Only representations for slides with existing features will be created."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -225,7 +290,10 @@ def main(argv: list[str] | None = None) -> int:
     experiment = Experiment(cfg)
     policy = BenchmarkingPolicy(experiment)
 
-    output = _run_representation_precompute(policy)
+    output = _run_representation_precompute(
+        policy,
+        skip_missing_features=bool(args.skip_missing_features),
+    )
     logger.info("Representation precompute finished with status: %s", output)
     return 0
 
