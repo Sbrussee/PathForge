@@ -67,6 +67,7 @@ pathbench-features = "pathbench.cli.feature_extract:main"
 pathbench-mean-rgb = "pathbench.cli.mean_rgb:main"
 pathbench-infer = "pathbench.cli.inference:main"
 pathbench-visualize = "pathbench.cli.visualize:main"
+pathbench-slide-retrieval-representations = "pathbench.cli.slide_retrieval_representations:main"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
