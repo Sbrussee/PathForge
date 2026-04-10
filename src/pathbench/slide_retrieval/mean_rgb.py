@@ -57,6 +57,7 @@ def resolve_sample_patch_mean_rgb(
 
     artifact_paths = [Path(path) for path in list(getattr(sample, "artifact_paths", []) or [])]
     slide_ids = [str(slide_id) for slide_id in list(getattr(sample, "slide_ids", []) or [])]
+    explicit_slide_paths = list(getattr(sample, "slide_paths", []) or [])
 
     if not artifact_paths:
         raise ValueError("sample.artifact_paths is required to resolve patch mean RGB descriptors.")
@@ -64,6 +65,11 @@ def resolve_sample_patch_mean_rgb(
         raise ValueError(
             "sample.slide_ids and sample.artifact_paths must have the same length. "
             f"Got {len(slide_ids)} and {len(artifact_paths)}."
+        )
+    if explicit_slide_paths and len(explicit_slide_paths) != len(slide_ids):
+        raise ValueError(
+            "sample.slide_paths must be empty or match sample.slide_ids length. "
+            f"Got {len(explicit_slide_paths)} and {len(slide_ids)}."
         )
 
     mean_rgb_parts: list[np.ndarray] = []
@@ -325,6 +331,19 @@ def _resolve_sample_slide_paths(
     Returns:
     - `dict[str, Path | None]` mapping slide id to discovered slide path.
     """
+    slide_ids = [str(slide_id) for slide_id in list(getattr(sample, "slide_ids", []) or [])]
+    explicit_slide_paths = list(getattr(sample, "slide_paths", []) or [])
+    if explicit_slide_paths:
+        if len(explicit_slide_paths) != len(slide_ids):
+            raise ValueError(
+                "sample.slide_paths must be empty or match sample.slide_ids length. "
+                f"Got {len(explicit_slide_paths)} and {len(slide_ids)}."
+            )
+        return {
+            slide_id: (Path(path).expanduser().resolve() if path is not None else None)
+            for slide_id, path in zip(slide_ids, explicit_slide_paths, strict=False)
+        }
+
     metadata = dict(getattr(sample, "metadata", {}) or {})
     dataset_name = metadata.get("dataset")
     if not dataset_name:
@@ -334,7 +353,6 @@ def _resolve_sample_slide_paths(
 
     dataset_cfg = _find_dataset_config(config=config, dataset_name=str(dataset_name))
     slides_dir = Path(_get_config_value(dataset_cfg, "slides_dir")).expanduser().resolve()
-    slide_ids = [str(slide_id) for slide_id in list(getattr(sample, "slide_ids", []) or [])]
     return {
         slide_id: _find_slide_path(slides_dir=slides_dir, slide_id=slide_id)
         for slide_id in slide_ids

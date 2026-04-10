@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import dask
+import numpy as np
 from torch.utils.data import DataLoader
 
 from ..benchmarking.tasks.slide_retrieval import (
@@ -17,7 +18,10 @@ from ..core.experiments.base import Experiment
 from ..core.experiments.combo_ids import build_feature_name, build_tiling_id
 from ..core.experiments.combinations import ComboConfig, build_combinations
 from ..core.features.utils import find_slides_with_missing_features
+from ..core.io.slide_artifacts import tiles as tiles_io
+from ..core.io.slide_artifacts.base import FileHandleH5
 from ..policy.benchmarking import BenchmarkingPolicy
+from ..slide_retrieval.mean_rgb import resolve_sample_patch_mean_rgb
 from ..slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
 )
@@ -28,6 +32,58 @@ from ..utils.constants import DATASET_COL, SLIDE_ID_COL
 
 logger = logging.getLogger(__name__)
 _VALID_RETRIEVAL_USES = {"reference", "query", "query_reference"}
+_RGB_MEAN_REPRESENTATIONS = {"yottixel_rgb", "splice_rgb"}
+_MISSING_MEAN_RGB_SLIDE_ERROR = (
+    "Missing stored patch mean RGB descriptors and no source slide is available"
+)
+
+
+def _build_cli_sample_loader(
+    *,
+    representation_name: str,
+    representation_strategy: Any,
+    task: SlideRetrievalTask,
+) -> Any:
+    if representation_name not in _RGB_MEAN_REPRESENTATIONS:
+        return representation_strategy.load_sample
+
+    cfg = getattr(task.experiment, "cfg", None)
+
+    def _load_sample_for_rgb(
+        *,
+        index: int,
+        sample: Any,
+        base_dataset: Any,
+    ) -> dict[str, Any]:
+        _ = index
+        bag_id = str(base_dataset.tiling_id)
+        mean_rgb = resolve_sample_patch_mean_rgb(
+            sample=sample,
+            bag_id=bag_id,
+            config=cfg,
+        )
+
+        coord_parts: list[np.ndarray] = []
+        for artifact_path in sample.artifact_paths:
+            with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                coords = tiles_io.read_coords(slide_artifact, bag_id=bag_id)
+            coord_parts.append(np.asarray(coords[:, :2], dtype=np.int64))
+
+        return {
+            "mean_rgb": np.asarray(mean_rgb, dtype=np.float32),
+            "coords": (
+                np.concatenate(coord_parts, axis=0)
+                if coord_parts
+                else np.empty((0, 2), dtype=np.int64)
+            ),
+            "tiling_id": bag_id,
+        }
+
+    return _load_sample_for_rgb
+
+
+def _is_missing_mean_rgb_slide_error(error_text: str) -> bool:
+    return _MISSING_MEAN_RGB_SLIDE_ERROR in str(error_text)
 
 
 def _materialize_representations_for_combo(
@@ -78,6 +134,12 @@ def _materialize_representations_for_combo(
     total_cached_count = 0
     total_missing_count = 0
     total_created_count = 0
+    total_skipped_missing_descriptors = 0
+    sample_loader = _build_cli_sample_loader(
+        representation_name=representation_name,
+        representation_strategy=representation_strategy,
+        task=task,
+    )
 
     for use, bag_datasets in datasets_by_use.items():
         if use not in _VALID_RETRIEVAL_USES:
@@ -100,7 +162,7 @@ def _materialize_representations_for_combo(
             if missing_subset is None:
                 continue
 
-            bag_dataset.bind_sample_loader(representation_strategy.load_sample)
+            bag_dataset.bind_sample_loader(sample_loader)
             try:
                 retrieval_loader = DataLoader(
                     missing_subset,
@@ -125,7 +187,26 @@ def _materialize_representations_for_combo(
                 bag_dataset.clear_sample_loader()
 
             total_created_count += len(created_retrieval_representations)
-            failed_creation_errors.update(creation_errors_by_sample)
+            tolerated_errors = {
+                sample_id: error_text
+                for sample_id, error_text in creation_errors_by_sample.items()
+                if _is_missing_mean_rgb_slide_error(error_text)
+            }
+            if tolerated_errors:
+                total_skipped_missing_descriptors += len(tolerated_errors)
+                logger.warning(
+                    "[SlideRetrieval] Skipping %d sample(s) with missing mean_rgb "
+                    "descriptors and no available source slide.",
+                    len(tolerated_errors),
+                )
+
+            failed_creation_errors.update(
+                {
+                    sample_id: error_text
+                    for sample_id, error_text in creation_errors_by_sample.items()
+                    if sample_id not in tolerated_errors
+                }
+            )
 
     if failed_creation_errors:
         failed_items = ", ".join(sorted(failed_creation_errors))
@@ -144,6 +225,7 @@ def _materialize_representations_for_combo(
         "num_cached": total_cached_count,
         "num_planned_new": total_missing_count,
         "num_created": total_created_count,
+        "num_skipped_missing_descriptors": total_skipped_missing_descriptors,
     }
 
 

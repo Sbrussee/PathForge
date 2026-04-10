@@ -74,6 +74,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Slide ID (without extension), used for source lookup and artifact naming.",
     )
     parser.add_argument(
+        "--input",
+        type=Path,
+        default=None,
+        help=(
+            "Optional explicit source slide path. When provided, mean_rgb uses this "
+            "path instead of resolving the slide from datasets[].slides_dir."
+        ),
+    )
+    parser.add_argument(
         "--bag-id",
         action="append",
         default=None,
@@ -114,6 +123,12 @@ def main(argv: list[str] | None = None) -> int:
     if not slide_id:
         raise ValueError("--slide-id must be a non-empty string.")
 
+    input_slide_path = None
+    if args.input is not None:
+        input_slide_path = Path(args.input).expanduser().resolve()
+        if not input_slide_path.is_file():
+            raise FileNotFoundError(f"Input slide not found: {input_slide_path}")
+
     artifact_path = (
         Path(args.artifact_path).expanduser().resolve()
         if args.artifact_path is not None
@@ -135,12 +150,15 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("Using config: %s", config_path)
     logger.info("Using dataset: %s", args.dataset)
     logger.info("Using slide_id: %s", slide_id)
+    if input_slide_path is not None:
+        logger.info("Using input slide: %s", input_slide_path)
     logger.info("Using artifact: %s", artifact_path)
     logger.info("Processing %d bag_id(s): %s", len(bag_ids), bag_ids)
 
     sample = SimpleNamespace(
         slide_ids=[slide_id],
         artifact_paths=[artifact_path],
+        slide_paths=([input_slide_path] if input_slide_path is not None else []),
         metadata={"dataset": str(args.dataset)},
     )
     for bag_id in bag_ids:
