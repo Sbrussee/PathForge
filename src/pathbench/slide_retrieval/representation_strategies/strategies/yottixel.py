@@ -363,7 +363,7 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
         }
 
 
-@register_representation_strategy("Yottixel_features")
+@register_representation_strategy("yottixel_features")
 class YottixelFeatures(_BaseYottixelRepresentationStrategy):
     """
     Yottixel-Features mosaic selection (RetCCL-inspired).
