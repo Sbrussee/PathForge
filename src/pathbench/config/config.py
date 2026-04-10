@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import os
 from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
 from typing import Any, ClassVar, Literal, List, Optional, Dict
@@ -12,8 +13,8 @@ import inspect
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Internal Imports
-from pathbench.utils.constants import TASK_TYPES, MODE_TYPES, EXPERIMENTS_DIR, AGGREGATION_LEVELS
-from pathbench.utils.registries import MODELS, FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES, is_feature_extractor_available, all_feature_extractor_names
+from pathbench.utils.constants import TASK_TYPES, MODE_TYPES, AGGREGATION_LEVELS
+from pathbench.utils.registries import MODELS, LAZYSLIDE_MODEL_NAMES, is_feature_extractor_available, all_feature_extractor_names
 from pathbench.core.models.mil_base import MILModelBase
 
 TaskType = Literal[tuple(TASK_TYPES)]
@@ -75,6 +76,26 @@ class ExperimentConfig(BaseModel):
                 "experiment.task is required unless mode == 'feature_extraction'."
             )
         return self
+
+    @field_validator("num_workers")
+    @classmethod
+    def validate_num_workers(cls, value: int) -> int:
+        """
+        Validate num_workers against available CPU count.
+
+        Inputs:
+        - `value`: requested worker count from config.
+
+        Returns:
+        - validated worker count that is guaranteed to be in `[0, cpu_count]`.
+        """
+        available_cpus = os.cpu_count() or 1
+        if value > available_cpus:
+            raise ValueError(
+                "experiment.num_workers exceeds available CPUs. "
+                f"Got {value}, available {available_cpus}."
+            )
+        return value
 
 class ClassificationConfig(BaseModel):
     """Classification task settings."""

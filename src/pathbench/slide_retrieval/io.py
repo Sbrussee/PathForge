@@ -27,7 +27,7 @@ _RANK_SAMPLE_PATTERN = re.compile(r"^rank_(?P<rank>[1-9]\d*)_sample_id$")
 
 
 def _safe_output_name(value: Any, *, hyphenate_underscores: bool = False) -> str:
-    text = str(value).strip()
+    text = str(value).strip().lower()
     if hyphenate_underscores:
         text = text.replace("_", "-")
     text = text.replace(" ", "-")
@@ -111,7 +111,7 @@ def load_slide_retrieval_representation(
     retrieval_artifact: FileHandleH5,
     tile_id: str,
     representation_id: str,
-    entry_id: str,
+    entry_id: str | None,
 ) -> RetrievalRepresentation | None:
     if not retrieval_representations_io.retrieval_representation_entry_exists(
         retrieval_artifact=retrieval_artifact,
@@ -144,7 +144,7 @@ def save_slide_retrieval_representation(
     retrieval_artifact: FileHandleH5,
     tile_id: str,
     representation_id: str,
-    entry_id: str,
+    entry_id: str | None,
     representation: RetrievalRepresentation,
     params: dict[str, Any] | None = None,
 ) -> None:
@@ -155,7 +155,6 @@ def save_slide_retrieval_representation(
         entry_id=entry_id,
         metadata=RetrievalItemIdentity(
             sample_id=representation.sample_id,
-            exclusion_key=representation.exclusion_key,
         ).to_dict(),
         embedding=representation.data,
         params=dict(params or {}),

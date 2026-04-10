@@ -1,6 +1,4 @@
 from __future__ import annotations
-import torch
-from torch import nn
 from .mil_base import MILModel
 
 class GraphMILModel(MILModel):

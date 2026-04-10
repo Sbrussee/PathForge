@@ -113,19 +113,34 @@ def write_array_dataset(
     compression: str | None = "gzip",
     compression_opts: int = 4,
 ) -> None:
-    """Write numeric array dataset (overwrite)."""
+    """Write array dataset (overwrite), including UTF-8 string arrays."""
     arr = np.asarray(array, dtype=dtype)
+    arr_dtype = np.asarray(arr).dtype
+    h5_dtype: Any = arr_dtype
+
+    # h5py cannot create datasets directly from NumPy unicode dtypes (kind 'U').
+    # Store text-like arrays as variable-length UTF-8 string datasets instead.
+    if arr_dtype.kind in {"U", "S"}:
+        h5_dtype = h5py.string_dtype(encoding="utf-8")
+        arr = np.asarray(arr, dtype=object)
+
     delete_if_exists(h5_file, dataset_path)
     parent = str(Path(dataset_path).parent).replace("\\", "/")
     if parent and parent != ".":
         ensure_group(h5_file, parent)
+    # h5py does not allow chunk/filter options for scalar datasets.
+    # Keep compression for non-scalar arrays only.
+    use_compression = compression if arr.ndim >= 1 else None
+    use_compression_opts = compression_opts if use_compression else None
+    use_chunks = True if arr.ndim >= 1 else None
+
     dset = h5_file.create_dataset(
         dataset_path,
         shape=arr.shape,
-        dtype=dtype,
-        compression=compression,
-        compression_opts=compression_opts if compression else None,
-        chunks=True if arr.ndim >= 1 else None,
+        dtype=h5_dtype,
+        compression=use_compression,
+        compression_opts=use_compression_opts,
+        chunks=use_chunks,
     )
     dset.attrs[STATUS_ATTR] = STATUS_WRITING
     if arr.ndim == 0:

@@ -3,10 +3,50 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping
+from typing import Any, Iterator, Literal, Mapping
+from collections.abc import MutableMapping
 
 
 ExclusionLevel = Literal["none", "slide", "case", "patient"]
+
+
+@dataclass(slots=True)
+class RetrievalItemMetadata(MutableMapping[str, Any]):
+    """Backward-compatible metadata container for retrieval items."""
+
+    category: str | None = None
+    patient_id: str | None = None
+    case_id: str | None = None
+    member_ids: list[str] = field(default_factory=list)
+    extra: dict[str, Any] = field(default_factory=dict)
+
+    def __getitem__(self, key: str) -> Any:
+        if key in {"category", "patient_id", "case_id", "member_ids"}:
+            return getattr(self, key)
+        return self.extra[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if key in {"category", "patient_id", "case_id", "member_ids"}:
+            setattr(self, key, value)
+            return
+        self.extra[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        if key in {"category", "patient_id", "case_id", "member_ids"}:
+            setattr(self, key, None if key != "member_ids" else [])
+            return
+        del self.extra[key]
+
+    def __iter__(self) -> Iterator[str]:
+        yield "category"
+        yield "patient_id"
+        yield "case_id"
+        yield "member_ids"
+        for key in self.extra:
+            yield key
+
+    def __len__(self) -> int:
+        return 4 + len(self.extra)
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,9 +65,11 @@ class RetrievalItemIdentity:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        # `exclusion_key` is intentionally runtime-only and must not be
+        # persisted in retrieval artifact metadata because exclusion policy can
+        # change between runs.
         return {
             "sample_id": self.sample_id,
-            "exclusion_key": self.exclusion_key,
         }
 
     @classmethod
@@ -81,6 +123,6 @@ class SlideRetrievalManifest:
             "top_k_saved": self.top_k_saved,
         }
 
-    def short_hash(self, length: int = 8) -> str:
+    def build_run_hash(self, length: int = 8) -> str:
         serialized = json.dumps(self.to_dict(), sort_keys=True, default=str)
         return hashlib.md5(serialized.encode("utf-8")).hexdigest()[:length]

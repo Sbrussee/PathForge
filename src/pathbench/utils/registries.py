@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import difflib
 from functools import lru_cache
-from typing import Any, Callable, Optional
+from typing import Any
 
 from pathbench.utils.registry import Registry
 from pathbench.core.base import CoreRegistries

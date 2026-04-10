@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import h5py
 import numpy as np
 import pytest
 
@@ -162,6 +163,11 @@ def _install_common_mocks(
     overview_seq = list(overview_exists_sequence or [])
 
     monkeypatch.setattr(fe_mod, "FileHandleH5", _FakeFileHandleH5)
+    monkeypatch.setattr(
+        fe_mod,
+        "ensure_artifact_readable_or_quarantine",
+        lambda *args, **kwargs: None,
+    )
 
     def _no_logger_exception(*args, **kwargs):
         raise AssertionError("Unexpected exception inside FeatureExtractionPolicy._execute_wsi")
@@ -275,9 +281,20 @@ def _dataset_stub() -> Any:
 
 
 def _execute(policy: FeatureExtractionPolicy, processor: _FakeSlideProcessor, tmp_path: Path) -> None:
+    artifact_path = tmp_path / "S1.h5"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    with h5py.File(artifact_path, "a"):
+        pass
+
     policy._execute_wsi(
         dataset=_dataset_stub(),
-        wsi=_make_wsi(tmp_path),
+        wsi=WSI(
+            slide="S1",
+            patient="P1",
+            category="cat",
+            path=tmp_path / "S1.svs",
+            artifact_path=artifact_path,
+        ),
         combo_cfg=ComboConfig(
             feature_extraction="dummy_extractor",
             tile_px=256,
@@ -359,7 +376,7 @@ def test_thumbnail_true_features_exist_but_thumbnail_missing_still_generates_thu
 
     state = _install_common_mocks(
         monkeypatch,
-        features_exist_sequence=[True, True],
+        features_exist_sequence=[True],
         coords_are_valid=True,
         overview_exists_sequence=[],
     )
@@ -384,7 +401,7 @@ def test_report_true_tiles_reused_overview_exists_skips_generation(
         monkeypatch,
         features_exist_sequence=[False, False],
         coords_are_valid=True,
-        overview_exists_sequence=[True],
+        overview_exists_sequence=[True, True],
     )
 
     _execute(policy, processor, tmp_path)
@@ -403,7 +420,7 @@ def test_report_true_features_exist_but_overview_missing_still_generates_overvie
 
     state = _install_common_mocks(
         monkeypatch,
-        features_exist_sequence=[True, True],
+        features_exist_sequence=[True],
         coords_are_valid=True,
         overview_exists_sequence=[False],
     )
@@ -417,7 +434,7 @@ def test_report_true_features_exist_but_overview_missing_still_generates_overvie
     assert state["write_features_calls"] == 0
 
 
-def test_report_true_tiles_newly_created_always_writes_overview_even_if_exists(
+def test_report_true_tiles_newly_created_skips_overview_write_when_already_present(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     policy = _make_policy(report=True)
@@ -427,7 +444,7 @@ def test_report_true_tiles_newly_created_always_writes_overview_even_if_exists(
         monkeypatch,
         features_exist_sequence=[False, False],
         coords_are_valid=False,
-        overview_exists_sequence=[True],
+        overview_exists_sequence=[True, True],
     )
 
     _execute(policy, processor, tmp_path)
@@ -435,9 +452,9 @@ def test_report_true_tiles_newly_created_always_writes_overview_even_if_exists(
     assert processor.extract_patches_calls == 1
     assert state["write_coords_calls"] == 1
     assert state["write_tiling_spec_calls"] == 1
-    assert processor.get_thumbnail_calls == 1
-    assert state["render_calls"] == 1
-    assert state["write_tiles_overview_calls"] == 1
+    assert processor.get_thumbnail_calls == 0
+    assert state["render_calls"] == 0
+    assert state["write_tiles_overview_calls"] == 0
 
 
 def test_thumbnail_true_tiles_newly_created_always_writes_thumbnail(

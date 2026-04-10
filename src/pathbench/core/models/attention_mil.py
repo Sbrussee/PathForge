@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Dict, Any
+from typing import Optional
 from pathbench.core.models.mil_base import MILModelBase
 from pathbench.core.models.layers import Attn_Net_Gated
 from pathbench.core.registry import MODELS

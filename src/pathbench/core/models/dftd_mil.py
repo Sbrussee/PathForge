@@ -3,7 +3,6 @@
 # =============================================================================
 from typing import Optional, Dict, Union
 import torch
-import torch.nn as nn
 from pathbench.core.models.mil_base import MILModelBase
 from pathbench.core.models.attention_mil import AttentionMIL
 from pathbench.core.registry import MODELS
@@ -31,7 +30,8 @@ class DTFD_MIL(MILModelBase):
 
     def forward_bag(self, bag: torch.Tensor, mask: Optional[torch.Tensor] = None, coords: Optional[torch.Tensor] = None, label=None, loss_fn=None, return_attention=False) -> Union[torch.Tensor, Dict]:
         A = self.tier1.attention(bag)
-        if mask is not None: A.masked_fill_(~mask.unsqueeze(-1), float('-inf'))
+        if mask is not None:
+            A.masked_fill_(~mask.unsqueeze(-1), float("-inf"))
         
         _, idx = torch.topk(A.squeeze(-1), k=min(self.k, A.shape[1]), dim=1)
         pseudo_bag = torch.gather(bag, 1, idx.unsqueeze(-1).expand(-1, -1, bag.shape[-1]))

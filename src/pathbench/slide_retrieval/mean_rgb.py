@@ -8,6 +8,7 @@ import numpy as np
 
 from pathbench.core.datasets.wsi_dataset import WSI
 from pathbench.core.io.slide_artifacts import tiles as tiles_io
+from pathbench.core.io.slide_artifacts.atomic import atomic_slide_artifact_write
 from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.core.io.slide_retrieval import descriptors as descriptors_io
 from pathbench.core.slide_processing.base import SlideProcessorBase
@@ -76,22 +77,23 @@ def resolve_sample_patch_mean_rgb(
             slide_artifact_path=artifact_path,
             slide_id=slide_id,
         )
-        with FileHandleH5(retrieval_artifact_path, mode="a") as retrieval_artifact:
-            if descriptors_io.descriptor_exists(
-                retrieval_artifact,
-                tile_id=bag_id,
-                descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
-                expected_rows=expected_rows,
-                expected_dim=3,
-            ):
-                mean_rgb_parts.append(
-                    descriptors_io.read_descriptor(
-                        retrieval_artifact,
-                        tile_id=bag_id,
-                        descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
+        if retrieval_artifact_path.is_file():
+            with FileHandleH5(retrieval_artifact_path, mode="r") as retrieval_artifact:
+                if descriptors_io.descriptor_exists(
+                    retrieval_artifact,
+                    tile_id=bag_id,
+                    descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
+                    expected_rows=expected_rows,
+                    expected_dim=3,
+                ):
+                    mean_rgb_parts.append(
+                        descriptors_io.read_descriptor(
+                            retrieval_artifact,
+                            tile_id=bag_id,
+                            descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
+                        )
                     )
-                )
-                continue
+                    continue
 
         if slide_paths_by_id is None:
             slide_paths_by_id = _resolve_sample_slide_paths(sample=sample, config=config)
@@ -146,34 +148,36 @@ def load_or_create_slide_patch_mean_rgb(
             f"available to compute them for slide '{slide_id}' at bag_id='{bag_id}'."
         )
 
-    with FileHandleH5(retrieval_artifact_path, mode="a") as retrieval_artifact:
-        if descriptors_io.descriptor_exists(
-            retrieval_artifact,
-            tile_id=bag_id,
-            descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
-            expected_rows=expected_rows,
-            expected_dim=3,
-        ):
-            return descriptors_io.read_descriptor(
+    if retrieval_artifact_path.is_file():
+        with FileHandleH5(retrieval_artifact_path, mode="r") as retrieval_artifact:
+            if descriptors_io.descriptor_exists(
                 retrieval_artifact,
                 tile_id=bag_id,
                 descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
-            )
+                expected_rows=expected_rows,
+                expected_dim=3,
+            ):
+                return descriptors_io.read_descriptor(
+                    retrieval_artifact,
+                    tile_id=bag_id,
+                    descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
+                )
 
-        mean_rgb = _create_slide_patch_mean_rgb(
-            slide_artifact=slide_artifact,
-            slide_path=slide_path,
-            bag_id=bag_id,
-            slide_processor=slide_processor,
-            slide_id=slide_id,
-        )
+    mean_rgb = _create_slide_patch_mean_rgb(
+        slide_artifact=slide_artifact,
+        slide_path=slide_path,
+        bag_id=bag_id,
+        slide_processor=slide_processor,
+        slide_id=slide_id,
+    )
+    with atomic_slide_artifact_write(retrieval_artifact_path) as retrieval_artifact:
         descriptors_io.write_descriptor(
             retrieval_artifact,
             tile_id=bag_id,
             descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
             descriptor_matrix=mean_rgb,
         )
-        return mean_rgb
+    return mean_rgb
 
 
 def _resolve_slide_patch_mean_rgb(
@@ -208,34 +212,36 @@ def _resolve_slide_patch_mean_rgb(
                 f"available to compute them for slide '{slide_id}' at bag_id='{bag_id}'."
             )
 
-        with FileHandleH5(retrieval_artifact_path, mode="a") as retrieval_artifact:
-            if descriptors_io.descriptor_exists(
-                retrieval_artifact,
-                tile_id=bag_id,
-                descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
-                expected_rows=expected_rows,
-                expected_dim=3,
-            ):
-                return descriptors_io.read_descriptor(
+        if retrieval_artifact_path.is_file():
+            with FileHandleH5(retrieval_artifact_path, mode="r") as retrieval_artifact:
+                if descriptors_io.descriptor_exists(
                     retrieval_artifact,
                     tile_id=bag_id,
                     descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
-                )
+                    expected_rows=expected_rows,
+                    expected_dim=3,
+                ):
+                    return descriptors_io.read_descriptor(
+                        retrieval_artifact,
+                        tile_id=bag_id,
+                        descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
+                    )
 
-            mean_rgb = _create_slide_patch_mean_rgb(
-                slide_artifact=slide_artifact,
-                slide_path=slide_path,
-                bag_id=bag_id,
-                slide_processor=slide_processor,
-                slide_id=slide_id,
-            )
+        mean_rgb = _create_slide_patch_mean_rgb(
+            slide_artifact=slide_artifact,
+            slide_path=slide_path,
+            bag_id=bag_id,
+            slide_processor=slide_processor,
+            slide_id=slide_id,
+        )
+        with atomic_slide_artifact_write(retrieval_artifact_path) as retrieval_artifact:
             descriptors_io.write_descriptor(
                 retrieval_artifact,
                 tile_id=bag_id,
                 descriptor_name=MEAN_RGB_DESCRIPTOR_NAME,
                 descriptor_matrix=mean_rgb,
             )
-            return mean_rgb
+        return mean_rgb
 
 
 def _create_slide_patch_mean_rgb(

@@ -37,9 +37,11 @@ class WiKG_MIL(MILModelBase):
         
         for i in range(bag.shape[0]):
             x = bag[i]
-            if mask is not None: x = x[mask[i]]
+            if mask is not None:
+                x = x[mask[i]]
             pos = coords[i]
-            if mask is not None: pos = pos[mask[i]]
+            if mask is not None:
+                pos = pos[mask[i]]
             
             x_emb = self.fc(x)
             edge_index = gnn.knn_graph(pos, k=self.k, loop=True)
@@ -62,5 +64,6 @@ class WiKG_MIL(MILModelBase):
         if return_attention:
             results["attention"] = attentions
             
-        if len(results) == 1: return logits
+        if len(results) == 1:
+            return logits
         return results

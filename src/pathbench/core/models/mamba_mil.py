@@ -33,19 +33,22 @@ class MambaMIL(MILModelBase):
         
         # 1. Projection
         layers = [nn.Linear(input_dim, hidden_dim)]
-        if act.lower() == 'relu': layers.append(nn.ReLU())
-        elif act.lower() == 'gelu': layers.append(nn.GELU())
-        if dropout > 0: layers.append(nn.Dropout(dropout))
+        if act.lower() == "relu":
+            layers.append(nn.ReLU())
+        elif act.lower() == "gelu":
+            layers.append(nn.GELU())
+        if dropout > 0:
+            layers.append(nn.Dropout(dropout))
         self._fc1 = nn.Sequential(*layers)
         
         # 2. Mamba Layers
         self.layers = nn.ModuleList()
         for i in range(layer):
-            if type == 'SRMamba':
+            if type == "SRMamba":
                 self.layers.append(SRMamba(d_model=hidden_dim, d_state=16, d_conv=4, expand=2, rate=rate))
-            elif type == 'BiMamba':
+            elif type == "BiMamba":
                 self.layers.append(BiMamba(d_model=hidden_dim, d_state=16, d_conv=4, expand=2))
-            elif type == 'Mamba':
+            elif type == "Mamba":
                 self.layers.append(Mamba(d_model=hidden_dim, d_state=16, d_conv=4, expand=2))
             else:
                 raise ValueError(f"Unknown Mamba type: {type}")
@@ -64,8 +67,6 @@ class MambaMIL(MILModelBase):
         # 5. Classifier
         final_dim = 1 if survival else output_dim
         self.classifier = nn.Linear(hidden_dim, final_dim)
-
-        initialize_weights(self)
 
     @property
     def bag_size(self): return None
@@ -119,7 +120,8 @@ class MambaMIL(MILModelBase):
             results["Y_hat"] = torch.argmax(results["Y_prob"], dim=1)
 
         if loss_fn is not None and label is not None:
-             results["loss"] = loss_fn(logits, label)
+            results["loss"] = loss_fn(logits, label)
 
-        if len(results) == 1: return logits
+        if len(results) == 1:
+            return logits
         return results

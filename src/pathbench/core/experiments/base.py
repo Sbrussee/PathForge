@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import product
 import json
 import logging
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
 from ...config.config import Config
 from ...utils.constants import EXPERIMENTS_DIR
+from .combinations import ComboConfig
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +187,7 @@ class Experiment:
 
         return pd.read_csv(ann_path)
 
-    def build_combinations(self, keys: List[str]) -> List[ComboConfig]:
+    def build_combinations(self, keys: list[str]) -> list[ComboConfig]:
         """
         Build all combinations of benchmark parameters for the given keys.
         Args:
@@ -194,7 +197,7 @@ class Experiment:
         """
         bp = self.cfg.benchmark_parameters
 
-        value_lists: List[list[Any]] = []
+        value_lists: list[list[Any]] = []
         for key in keys:
             if not hasattr(bp, key):
                 raise AttributeError(f"benchmark_parameters has no field '{key}'")
@@ -207,7 +210,7 @@ class Experiment:
                 raise ValueError(f"benchmark_parameters.{key} is empty; cannot build grid.")
             value_lists.append(values)
 
-        combos: List[ComboConfig] = []
+        combos: list[ComboConfig] = []
         for vals in product(*value_lists):
             combos.append(ComboConfig.from_keys_values(keys, list(vals)))
 

@@ -287,6 +287,7 @@ class SISHSearch(BaseSearchStrategy):
 
         return SearchDatabaseItem(
             sample_id=representation.sample_id,
+            metadata=representation.metadata,
             exclusion_key=representation.exclusion_key,
             data=self._build_item_payload(
                 item_id=representation.sample_id,
@@ -316,6 +317,7 @@ class SISHSearch(BaseSearchStrategy):
 
         return SearchDatabaseItem(
             sample_id=query_representation.sample_id,
+            metadata=query_representation.metadata,
             exclusion_key=query_representation.exclusion_key,
             data=self._build_item_payload(
                 item_id=query_representation.sample_id,
@@ -375,6 +377,14 @@ class SISHSearch(BaseSearchStrategy):
         return SearchResult(
             query_sample_id=query_item.item_id,
             hits=hits,
+            metadata={
+                "predicted_category": (
+                    hits[0].metadata.category if hits else None
+                ),
+                "top_k_labels": [
+                    hit.metadata.category for hit in hits
+                ],
+            },
         )
 
     def rank(
@@ -446,6 +456,7 @@ class SISHSearch(BaseSearchStrategy):
                     sample_id=item_id,
                     score=float(entry["distance"]),
                     rank=rank,
+                    metadata=database_item.metadata,
                 )
             )
 
@@ -1085,7 +1096,7 @@ class SISHSearch(BaseSearchStrategy):
                         "slide_name": item.item_id,
                         "bits": packed_bits[row_index],
                         "patient_id": item.exclusion_key,
-                        "category": None,
+                        "category": item.metadata.category,
                         "x": int(x_coord),
                         "y": int(y_coord),
                     },

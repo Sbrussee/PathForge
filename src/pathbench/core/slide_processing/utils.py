@@ -1,6 +1,6 @@
 
 from ..config import Config
-from typing import Optional, Union
+from typing import Optional
 import timm
 import lazyslide as zs
 from wsidata import open_wsi

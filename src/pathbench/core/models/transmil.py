@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Dict, Optional, Union
 import torch
 import torch.nn as nn
 from pathbench.core.models.mil_base import MILModelBase
@@ -53,5 +53,6 @@ class TransMIL(MILModelBase):
         if return_attention:
             results["attention"] = None 
             
-        if len(results) == 1: return logits
+        if len(results) == 1:
+            return logits
         return results

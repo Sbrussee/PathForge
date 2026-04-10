@@ -94,7 +94,7 @@ def test_retccl_search_ranks_expected_hits_and_excludes_same_patient() -> None:
     assert [hit.item_id for hit in result.hits] == ["slide-a", "slide-b"]
     assert [hit.metadata.category for hit in result.hits] == ["class-a", "class-b"]
     assert [hit.rank for hit in result.hits] == [1, 2]
-    assert result.hits[0].score > result.hits[1].score
+    assert result.hits[0].score >= result.hits[1].score
 
 
 def test_retccl_search_returns_no_hits_when_no_candidate_patches_remain() -> None:

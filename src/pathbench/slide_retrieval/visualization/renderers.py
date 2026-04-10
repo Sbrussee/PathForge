@@ -7,6 +7,7 @@ from PIL import Image, ImageColor, ImageDraw, ImageFont
 import numpy as np
 
 from pathbench.core.visualization.thumbnail import (
+    crop_thumbnail_background,
     fit_image_to_canvas,
     project_level0_to_thumbnail,
 )

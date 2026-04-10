@@ -1,5 +1,5 @@
-import argparse, json
-from ..config.config import Config
+import argparse
+import json
 
 # Inference API should be small and stable
 

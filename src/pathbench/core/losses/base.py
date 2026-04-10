@@ -17,6 +17,15 @@ class BaseLoss(nn.Module, ABC):
         pass
 
 
+class TaskLoss(BaseLoss):
+    """
+    Backward-compatible alias used by older loss implementations.
+    """
+
+    def __init__(self, task_type: str):
+        super().__init__(task_type=task_type)
+
+
 # --- Intermediate Template Classes ---
 
 class ClassificationLoss(BaseLoss):

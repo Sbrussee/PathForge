@@ -6,7 +6,6 @@ import numpy as np
 import torch
 
 from pathbench.slide_retrieval.hyperparams import (
-    HyperParam,
     collect_hyperparams,
     resolve_hyperparam,
 )

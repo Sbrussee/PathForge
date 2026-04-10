@@ -1,6 +1,5 @@
 # Script to generate test samples for PathBench
 from huggingface_hub import hf_hub_download
-import lazyslide as ls
 import anndata as ad
 import pandas as pd
 

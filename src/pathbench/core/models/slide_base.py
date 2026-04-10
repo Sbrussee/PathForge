@@ -1,5 +1,5 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Any, Optional, Dict, Iterable, Union
 import torch
 import torch.nn as nn

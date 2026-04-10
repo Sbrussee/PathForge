@@ -34,7 +34,7 @@ class VEB:
             return False
         else:
             cluster = self.clusters[self.high(x)]
-            if cluster != None:
+            if cluster is not None:
                 return cluster.member(self.low(x))  # looks for it in the clusters inside
             else:
                 return False
@@ -45,28 +45,28 @@ class VEB:
                 return 1
             else:
                 return None
-        elif self.min != None and x < self.min: # x is less than everything in the tree, returns the minimum
+        elif self.min is not None and x < self.min: # x is less than everything in the tree, returns the minimum
             return self.min
         else:
             h = self.high(x)
-            l = self.low(x)
+            low_val = self.low(x)
             maxlow = None
             cluster = self.clusters[h]
-            if cluster != None:
+            if cluster is not None:
                 maxlow = cluster.max
-            if maxlow != None and l < maxlow:
-                offset = cluster.successor(l)
+            if maxlow is not None and low_val < maxlow:
+                offset = cluster.successor(low_val)
                 return self.index(h, offset)
             else:
                 succcluster = None
-                if self.summary != None:
+                if self.summary is not None:
                     succcluster = self.summary.successor(h)
-                if succcluster == None:
+                if succcluster is None:
                     return None
                 else:
                     cluster2 = self.clusters[succcluster]
                     offset = 0
-                    if cluster2 != None:
+                    if cluster2 is not None:
                         offset = cluster2.min
                     return self.index(succcluster, offset)
 
@@ -76,33 +76,33 @@ class VEB:
                 return 0
             else:
                 return None
-        elif self.max != None and x > self.max:
+        elif self.max is not None and x > self.max:
             return self.max
         else:
             h = self.high(x)
-            l = self.low(x)
+            low_val = self.low(x)
             minlow = None
             cluster = self.clusters[h]
-            if cluster != None:
+            if cluster is not None:
                 minlow = cluster.min
-            if minlow != None and l > minlow:
-                offset = cluster.predecessor(l)
-                if offset == None:
+            if minlow is not None and low_val > minlow:
+                offset = cluster.predecessor(low_val)
+                if offset is None:
                     offset = 0
                 return self.index(h, offset)
             else:
                 predcluster = None
-                if self.summary != None:
+                if self.summary is not None:
                     predcluster = self.summary.predecessor(h)
-                if predcluster == None:
-                    if self.min != None and x > self.min:
+                if predcluster is None:
+                    if self.min is not None and x > self.min:
                         return self.min
                     else:
                         return None
                 else:
                     cluster2 = self.clusters[predcluster]
                     offset = 0
-                    if cluster2 != None:
+                    if cluster2 is not None:
                         offset = cluster2.max
                     return self.index(predcluster, offset)
 
@@ -111,7 +111,7 @@ class VEB:
         self.max = x
 
     def insert(self, x):
-        if self.min == None:
+        if self.min is None:
             self.emptyInsert(x)
         else:
             if x < self.min:
@@ -120,11 +120,11 @@ class VEB:
                 x = temp
             if self.u > 2:
                 h = self.high(x)
-                if self.clusters[h] == None:
+                if self.clusters[h] is None:
                     self.clusters[h] = VEB(self.high(self.u))
-                if self.summary == None:
+                if self.summary is None:
                     self.summary = VEB(self.high(self.u))
-                if self.clusters[h].min == None:
+                if self.clusters[h].min is None:
                     self.summary.insert(h)
                     self.clusters[h].emptyInsert(self.low(x))
                 else:

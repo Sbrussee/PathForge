@@ -2,16 +2,9 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, List
 
-import anndata as ad
-import numpy as np
-import pandas as pd
-import torch
 
-from pathbench.core.experiments.combinations import ComboConfig
 
 
 def calculate_combinations(params: Dict[str, List[Any]]) -> List[Dict[str, Any]]:

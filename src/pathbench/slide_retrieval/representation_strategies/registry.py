@@ -77,6 +77,20 @@ def get_representation_strategy(
     return _RETRIEVAL_REPRESENTATION_REGISTRY[normalized_name]
 
 
+def get_representation_strategy_output_kind(name: str) -> str:
+    """Return the output representation kind declared by a strategy class."""
+    strategy_cls = get_representation_strategy(name)
+    return str(strategy_cls.output_representation_kind)
+
+
+def get_representation_strategy_supported_feature_levels(
+    name: str,
+) -> frozenset[str]:
+    """Return feature levels supported by a representation strategy class."""
+    strategy_cls = get_representation_strategy(name)
+    return frozenset(str(item) for item in strategy_cls.supported_feature_levels)
+
+
 def is_representation_strategy_available(name: str) -> bool:
     """Check whether a retrieval representation is registered."""
     normalized_name = _normalize_representation_strategy_name(name)

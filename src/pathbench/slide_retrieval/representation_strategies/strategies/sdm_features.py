@@ -84,7 +84,19 @@ class SDMFeatures(BaseRetrievalRepresentationStrategy):
         """
         random_state = self._resolve_random_state(kwargs.get("combo_cfg"))
         features = self._to_numpy_features(bag)
-        coords = np.asarray(kwargs.get("coords"), dtype=np.int64)
+        coords_input = kwargs.get("coords")
+        if coords_input is None:
+            coords = np.empty((int(features.shape[0]), 2), dtype=np.int64)
+        else:
+            coords = np.asarray(coords_input, dtype=np.int64)
+            if coords.ndim != 2 or coords.shape[1] != 2:
+                raise ValueError(
+                    f"coords must have shape (N,2). Got {coords.shape}."
+                )
+            if int(coords.shape[0]) != int(features.shape[0]):
+                raise ValueError(
+                    "SDMFeatures requires one coordinate row per patch feature row."
+                )
 
         if len(features) == 0:
             return self._build_representation_from_indices(

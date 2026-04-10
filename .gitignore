@@ -17,3 +17,6 @@ build/
 dist/
 
 .pytest_cache/
+
+.codex
+.design

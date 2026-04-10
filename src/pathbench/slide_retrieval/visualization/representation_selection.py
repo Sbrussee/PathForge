@@ -4,7 +4,7 @@ import json
 import logging
 import math
 import os
-from typing import Optional, Dict, List, Tuple
+from typing import Optional
 
 # Third-party
 import cv2
@@ -12,7 +12,7 @@ import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 from openslide import OpenSlide
 from PIL import Image, ImageDraw
-from shapely.geometry import box, Polygon
+from shapely.geometry import box
 from shapely.ops import unary_union
 import slideflow as sf
 import torch 

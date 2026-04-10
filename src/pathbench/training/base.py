@@ -45,8 +45,8 @@ class MILTrainer:
     """
 
     trainer: TrainerBase
-    model: MILModelBase
-    dataset: BagDatasetBase
+    model: MILBase
+    dataset: DatasetBase
     task: TaskBase
     loss: LossBase
 
@@ -55,6 +55,4 @@ class MILTrainer:
             model=self.model,
             dataset=self.dataset,
             task=self.task,
-            loss=self.loss,
-            policy=self.policy,
         )

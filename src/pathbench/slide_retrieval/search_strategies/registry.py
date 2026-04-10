@@ -67,6 +67,14 @@ def get_search_strategy(name: str) -> type["BaseSearchStrategy"]:
     return _SEARCH_STRATEGY_REGISTRY[normalized_name]
 
 
+def get_search_strategy_supported_representation_kinds(
+    name: str,
+) -> frozenset[str]:
+    """Return representation kinds supported by a search strategy class."""
+    strategy_cls = get_search_strategy(name)
+    return frozenset(str(item) for item in strategy_cls.supported_representation_kinds)
+
+
 def is_search_strategy_available(name: str) -> bool:
     """Check whether a search strategy is registered."""
     normalized_name = _normalize_search_strategy_name(name)

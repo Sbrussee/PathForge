@@ -33,6 +33,7 @@ from pathbench.slide_retrieval.search_strategies.types import (
     SearchDatabaseItem,
     SearchHit,
 )
+from pathbench.slide_retrieval.types import RetrievalItemMetadata
 
 
 def _safe_mean(values: list[float]) -> float:
@@ -81,6 +82,7 @@ class RetCCLSearchItem:
 
     slide_id: str
     exclusion_key: str | None
+    metadata: RetrievalItemMetadata
     features: np.ndarray
 
 
@@ -157,6 +159,7 @@ class RetCCLSearch(BaseSearchStrategy):
             self.slide_index[item.item_id] = RetCCLSearchItem(
                 slide_id=item.item_id,
                 exclusion_key=item.exclusion_key,
+                metadata=item.metadata,
                 features=features,
             )
 
@@ -184,6 +187,7 @@ class RetCCLSearch(BaseSearchStrategy):
         )
         return SearchDatabaseItem(
             sample_id=representation.sample_id,
+            metadata=representation.metadata,
             exclusion_key=representation.exclusion_key,
             data=features,
         )
@@ -217,6 +221,7 @@ class RetCCLSearch(BaseSearchStrategy):
         query_slide = RetCCLSearchItem(
             slide_id=query_item.item_id,
             exclusion_key=query_item.exclusion_key,
+            metadata=query_item.metadata,
             features=self._as_feature_matrix(
                 representation_data=query_item.data,
                 item_id=query_item.item_id,
@@ -265,7 +270,7 @@ class RetCCLSearch(BaseSearchStrategy):
             total_weight = 0.0
             for flat_index, similarity in bag:
                 slide_id, _patch_index = flat_meta[flat_index]
-                label = None
+                label = self.slide_index[slide_id].metadata.category
                 weight_similarity = (
                     ((similarity + 1.0) / 2.0) * self.class_weight.get(label, 0.0)
                 )
@@ -318,7 +323,7 @@ class RetCCLSearch(BaseSearchStrategy):
 
             for flat_index, similarity in topk_matches:
                 slide_id, _patch_index = flat_meta[flat_index]
-                match_labels.append(None)
+                match_labels.append(self.slide_index[slide_id].metadata.category)
                 match_slides.append(slide_id)
                 similarities.append(similarity)
 
@@ -348,6 +353,7 @@ class RetCCLSearch(BaseSearchStrategy):
                     sample_id=slide_id,
                     score=float(avg_similarity),
                     rank=rank,
+                    metadata=self.slide_index[slide_id].metadata,
                 )
             )
 
@@ -368,7 +374,25 @@ class RetCCLSearch(BaseSearchStrategy):
                 Mapping ``label -> normalized inverse-frequency weight``.
         """
         _ = factor
-        return {None: 1.0}
+        label_counts = Counter(
+            slide.metadata.category
+            for slide in self.slide_index.values()
+            if slide.metadata.category is not None
+        )
+        if not label_counts:
+            return {None: 1.0}
+        inv = {
+            label: 1.0 / float(count)
+            for label, count in label_counts.items()
+            if count > 0
+        }
+        total = sum(inv.values())
+        if total <= 0:
+            return {None: 1.0}
+        return {
+            label: (factor * value / total)
+            for label, value in inv.items()
+        }
 
     def _as_feature_matrix(
         self,

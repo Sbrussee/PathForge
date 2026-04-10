@@ -17,12 +17,14 @@ from pathbench.slide_retrieval.representation_strategies.registry import (
     register_representation_strategy,
 )
 from pathbench.slide_retrieval.representation_strategies.storage import (
+    build_retrieval_representation_entry_id,
     build_retrieval_representation_id,
 )
 from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
 from pathbench.slide_retrieval.types import RetrievalItemMetadata
+from pathbench.slide_retrieval.types import RetrievalItemIdentity
 
 
 class _TestRetrievalRepresentationStrategy(BaseRetrievalRepresentationStrategy):
@@ -45,7 +47,7 @@ def test_retrieval_representation_id_uses_new_name() -> None:
         params=params,
     )
 
-    assert representation_id == f"uni__mean_pool__{expected_hash}"
+    assert representation_id == f"uni_mean_pool_{expected_hash}"
 
 
 def test_retrieval_representation_id_rejects_empty_representation_name() -> None:
@@ -57,6 +59,43 @@ def test_retrieval_representation_id_rejects_empty_representation_name() -> None
             feature_extraction="uni",
             retrieval_representation="  ",
         )
+
+
+def test_retrieval_representation_id_lowercases_non_hash_parts() -> None:
+    params = {"alpha": 0.25}
+    params_payload = json.dumps(
+        params,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    expected_hash = hashlib.sha1(params_payload.encode("utf-8")).hexdigest()[:16]
+
+    representation_id = build_retrieval_representation_id(
+        feature_extraction="UNI2",
+        retrieval_representation="Yottixel_Features",
+        params=params,
+    )
+
+    assert representation_id == f"uni2_yottixel_features_{expected_hash}"
+
+
+def test_retrieval_representation_entry_id_is_none_for_slide_aggregation() -> None:
+    entry_id = build_retrieval_representation_entry_id(
+        ["slide-1"],
+        aggregation_level="slide",
+    )
+    assert entry_id is None
+
+
+def test_retrieval_representation_entry_id_uses_member_hash_for_patient_aggregation() -> None:
+    entry_id = build_retrieval_representation_entry_id(
+        ["slide-b", "slide-a"],
+        aggregation_level="patient",
+    )
+    assert isinstance(entry_id, str)
+    assert entry_id.startswith("members_")
+    assert len(entry_id) == len("members_") + 16
 
 
 def test_retrieval_representation_strategy_registry_round_trip() -> None:
@@ -91,3 +130,12 @@ def test_retrieval_representation_dataclass_uses_new_type_name() -> None:
     assert representation.representation_type == "mean_pool"
     assert representation.metadata["patient_id"] == "patient-1"
     assert isinstance(representation.metadata, RetrievalItemMetadata)
+
+
+def test_retrieval_item_identity_to_dict_omits_exclusion_key() -> None:
+    identity = RetrievalItemIdentity(
+        sample_id="sample-1",
+        exclusion_key="patient-1",
+    )
+
+    assert identity.to_dict() == {"sample_id": "sample-1"}

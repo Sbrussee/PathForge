@@ -1,7 +1,5 @@
 
-from typing import Optional
 import torch
-import torch.nn as nn  
 
 def perform_kmeans(x: torch.Tensor, num_clusters: int, n_iter: int = 10):
     """

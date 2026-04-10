@@ -36,11 +36,13 @@ def build_retrieval_representation_id(
     params: dict[str, Any] | None = None,
 ) -> str:
     """Build a stable retrieval representation ID."""
-    feature_extraction = _normalize_name(feature_extraction, "feature_extraction")
+    feature_extraction = _normalize_name(
+        feature_extraction, "feature_extraction"
+    ).lower()
     retrieval_representation = _normalize_name(
         retrieval_representation,
         "retrieval_representation",
-    )
+    ).lower()
 
     normalized_params = _normalize_for_json(params or {})
     params_payload = json.dumps(
@@ -51,19 +53,32 @@ def build_retrieval_representation_id(
     )
     params_hash = hashlib.sha1(params_payload.encode("utf-8")).hexdigest()[:16]
 
-    return f"{feature_extraction}__{retrieval_representation}__{params_hash}"
+    return f"{feature_extraction}_{retrieval_representation}_{params_hash}"
 
 
 def build_retrieval_representation_entry_id(
     slide_ids: list[str],
-) -> str:
-    """Build a stable entry ID from the member slide IDs."""
+    *,
+    aggregation_level: str | None = None,
+) -> str | None:
+    """Build an optional entry ID from member slide IDs.
+
+    For slide-level aggregation this returns `None`, meaning the representation
+    data is stored directly under `{representation_id}` without an intermediate
+    member-entry layer.
+    """
     normalized_slide_ids = sorted(
         _normalize_name(slide_id, "slide_id") for slide_id in slide_ids
     )
 
     if not normalized_slide_ids:
         raise ValueError("slide_ids must contain at least one slide ID.")
+    if aggregation_level is not None and str(aggregation_level).strip().lower() == "slide":
+        if len(normalized_slide_ids) != 1:
+            raise ValueError(
+                "aggregation_level='slide' requires exactly one slide_id per sample."
+            )
+        return None
 
     payload = "||".join(normalized_slide_ids)
     member_hash = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]

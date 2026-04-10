@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Union, Any
+from typing import Optional, Dict, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -86,5 +86,6 @@ class CLAM_SB(MILModelBase):
         if return_attention:
             results["attention"] = attentions_list if len(attentions_list) > 1 else attentions_list[0]
             
-        if len(results) == 1: return logits_final
+        if len(results) == 1:
+            return logits_final
         return results

@@ -130,7 +130,6 @@ def test_render_tiles_overview_rejects_bad_coords_shape() -> None:
             slide_id="bad1",
         )
 
-    bad_coords_wrong_cols = np.array([[0, 0, 16, 16]], dtype=np.int32)
     bad_coords_not_2d = np.zeros((2, 2, 2), dtype=np.int32)
     with pytest.raises(ValueError):
         render_tiles_overview_image(

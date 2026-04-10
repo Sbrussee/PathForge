@@ -33,7 +33,8 @@ class VarMIL(MILModelBase):
     def forward_bag(self, bag: torch.Tensor, mask: Optional[torch.Tensor] = None, coords: Optional[torch.Tensor] = None, label=None, loss_fn=None, return_attention=False) -> Union[torch.Tensor, Dict]:
         h = F.relu(self.fc(bag)) 
         a = self.attention(h) 
-        if mask is not None: a = a * mask.unsqueeze(-1)
+        if mask is not None:
+            a = a * mask.unsqueeze(-1)
         
         sum_a = torch.sum(a, dim=1) + 1e-6
         mean = torch.sum(a * h, dim=1) / sum_a
@@ -48,6 +49,6 @@ class VarMIL(MILModelBase):
         if return_attention:
             results["attention"] = a
             
-        if len(results) == 1: return logits
+        if len(results) == 1:
+            return logits
         return results
-

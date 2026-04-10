@@ -43,5 +43,6 @@ class PerceiverMIL(MILModelBase):
         if return_attention:
             results["attention"] = attn_weights
             
-        if len(results) == 1: return logits
+        if len(results) == 1:
+            return logits
         return results

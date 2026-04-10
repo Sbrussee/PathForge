@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Sequence, Mapping
+from typing import Sequence
 import torch
 from torch import nn
 from .mil_base import MILBase

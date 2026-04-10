@@ -9,16 +9,16 @@ import pytest
 
 from pathbench.benchmarking.tasks.slide_retrieval import SlideRetrievalTask
 from pathbench.core.experiments.combinations import ComboConfig
-from pathbench.slide_retrieval.representation_strategies.types import (
-    RetrievalRepresentation,
-)
+from pathbench.slide_retrieval.representation_strategies.types import RetrievalRepresentation
 from pathbench.slide_retrieval.search_strategies.types import SearchHit, SearchResult
 
 
 class _FakeBagDataset:
-    def __init__(self, *, tiling_id: str, aggregation_level: str) -> None:
+    def __init__(self, *, tiling_id: str, aggregation_level: str, sample_id: str) -> None:
         self.tiling_id = tiling_id
         self.aggregation_level = aggregation_level
+        self.sample_id = sample_id
+        self.name = f"ds_{sample_id}"
 
     def get_feature_level(self) -> str:
         return "patch"
@@ -60,16 +60,6 @@ class _FakeSearchStrategy:
         )
 
 
-def _build_fake_representation_strategy(name, *args, **kwargs):
-    _ = name
-    return _FakeRepresentationStrategy(*args, **kwargs)
-
-
-def _build_fake_search_strategy(name, *args, **kwargs):
-    _ = name
-    return _FakeSearchStrategy(*args, **kwargs)
-
-
 def _make_task(tmp_path: Path) -> SlideRetrievalTask:
     cfg = SimpleNamespace(
         experiment=SimpleNamespace(aggregation_level="slide"),
@@ -91,24 +81,26 @@ def test_smoke_slide_retrieval_benchmark_writes_manifest_and_ranked_csv(
     monkeypatch.setattr(
         slide_retrieval_task_module,
         "build_representation_strategy",
-        _build_fake_representation_strategy,
+        lambda _name, **kwargs: _FakeRepresentationStrategy(**kwargs),
     )
     monkeypatch.setattr(
         slide_retrieval_task_module,
         "build_search_strategy",
-        _build_fake_search_strategy,
+        lambda _name, **kwargs: _FakeSearchStrategy(**kwargs),
     )
+    monkeypatch.setattr(slide_retrieval_task_module, "SlideRetrievalBagDataset", _FakeBagDataset)
     monkeypatch.setattr(
         SlideRetrievalTask,
-        "_load_or_compute_representations",
-        lambda self, **kwargs: {
-            "reference": [
-                RetrievalRepresentation(sample_id="ref-1", data=[[1.0, 2.0]])
+        "_collect_existing_representations",
+        lambda self, **kwargs: (
+            [
+                RetrievalRepresentation(
+                    sample_id=kwargs["bag_dataset"].sample_id,
+                    data=[[1.0, 2.0]],
+                )
             ],
-            "query": [
-                RetrievalRepresentation(sample_id="query-1", data=[[3.0, 4.0]])
-            ],
-        },
+            None,
+        ),
     )
 
     combo_cfg = ComboConfig(
@@ -125,10 +117,18 @@ def test_smoke_slide_retrieval_benchmark_writes_manifest_and_ranked_csv(
     )
     datasets_by_use = {
         "reference": [
-            _FakeBagDataset(tiling_id="256px_0.5mpp", aggregation_level="slide")
+            _FakeBagDataset(
+                tiling_id="256px_0.5mpp",
+                aggregation_level="slide",
+                sample_id="ref-1",
+            )
         ],
         "query": [
-            _FakeBagDataset(tiling_id="256px_0.5mpp", aggregation_level="slide")
+            _FakeBagDataset(
+                tiling_id="256px_0.5mpp",
+                aggregation_level="slide",
+                sample_id="query-1",
+            )
         ],
     }
 

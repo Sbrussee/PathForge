@@ -50,6 +50,7 @@ def test_sdm_features_run_wraps_original_outputs_for_repo_contract(
         ),
         sample=sample,
         combo_cfg=combo_cfg,
+        coords=np.array([[0, 0], [1, 1], [2, 2]], dtype=np.int64),
     )
 
     assert representation.sample_id == "sample-1"
@@ -58,7 +59,7 @@ def test_sdm_features_run_wraps_original_outputs_for_repo_contract(
         representation.data,
         np.array(
             [
-                [0.0, 0.0],
+                [1.0, 0.0],
                 [4.0, 0.0],
             ],
             dtype=np.float32,
@@ -66,17 +67,17 @@ def test_sdm_features_run_wraps_original_outputs_for_repo_contract(
     )
     np.testing.assert_array_equal(
         representation.additional_data["selected_indices"],
-        np.array([0, 2], dtype=np.int64),
+        np.array([1, 2], dtype=np.int64),
     )
     np.testing.assert_array_equal(
         representation.additional_data["group_ids"],
-        np.array([0, 0, 1], dtype=np.int64),
+        np.array([1, 0, 1], dtype=np.int64),
     )
     np.testing.assert_array_equal(
         representation.additional_data["selected_coords"],
-        np.array([[0, 0], [2, 2]], dtype=np.int64),
+        np.array([[1, 1], [2, 2]], dtype=np.int64),
     )
-    assert representation.metadata.extra["groups"] == {"0": [0, 1], "1": [2]}
+    assert representation.additional_data["groups"] == {"0": [1], "1": [0, 2]}
 
 
 def test_sdm_features_run_returns_empty_representation_for_empty_bag(
@@ -98,6 +99,7 @@ def test_sdm_features_run_returns_empty_representation_for_empty_bag(
         bag=torch.empty((0, 4), dtype=torch.float32),
         sample=sample,
         combo_cfg=combo_cfg,
+        coords=np.empty((0, 2), dtype=np.int64),
     )
 
     assert representation.sample_id == "sample-1"
@@ -114,7 +116,7 @@ def test_sdm_features_run_returns_empty_representation_for_empty_bag(
         representation.additional_data["selected_coords"],
         np.empty((0, 2), dtype=np.int64),
     )
-    assert representation.metadata.extra["groups"] == {}
+    assert representation.additional_data["groups"] == {}
 
 
 def test_sdm_features_run_rejects_non_finite_features(tmp_path: Path) -> None:
@@ -147,6 +149,7 @@ def test_sdm_features_run_rejects_non_finite_features(tmp_path: Path) -> None:
             ),
             sample=sample,
             combo_cfg=combo_cfg,
+            coords=np.array([[0, 0], [1, 1]], dtype=np.int64),
         )
 
 
@@ -170,4 +173,5 @@ def test_sdm_features_run_requires_matching_feature_and_coord_rows(
             bag=torch.tensor([[0.0, 0.0], [1.0, 0.0]], dtype=torch.float32),
             sample=sample,
             combo_cfg=combo_cfg,
+            coords=np.array([[0, 0]], dtype=np.int64),
         )

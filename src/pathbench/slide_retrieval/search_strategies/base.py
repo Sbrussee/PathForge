@@ -108,6 +108,7 @@ class BaseSearchStrategy:
         """Convert one retrieval representation into a searchable database item."""
         return SearchDatabaseItem(
             sample_id=representation.sample_id,
+            metadata=representation.metadata,
             exclusion_key=representation.exclusion_key,
             data=representation.data,
             additional_data=representation.additional_data,
@@ -122,6 +123,7 @@ class BaseSearchStrategy:
 
         return SearchDatabaseItem(
             sample_id=query_representation.sample_id,
+            metadata=query_representation.metadata,
             exclusion_key=query_representation.exclusion_key,
             data=query_representation.data,
             additional_data=query_representation.additional_data,

@@ -15,12 +15,27 @@ from pathbench.slide_retrieval.search_strategies.types import SearchResult
 
 
 class _FakeBagDataset:
-    def __init__(self, *, tiling_id: str, aggregation_level: str) -> None:
+    def __init__(
+        self,
+        *,
+        tiling_id: str,
+        aggregation_level: str,
+        sample_id: str,
+    ) -> None:
         self.tiling_id = tiling_id
         self.aggregation_level = aggregation_level
+        self.sample_id = sample_id
+        self.sample_loader = None
+        self.name = sample_id
 
     def get_feature_level(self) -> str:
         return "patch"
+
+    def bind_sample_loader(self, sample_loader) -> None:
+        self.sample_loader = sample_loader
+
+    def clear_sample_loader(self) -> None:
+        self.sample_loader = None
 
 
 class _FakeRepresentationStrategy:
@@ -97,16 +112,22 @@ def test_execute_passes_only_generic_context_to_strategy_builders(
         _build_search_strategy,
     )
     monkeypatch.setattr(
+        slide_retrieval_task_module,
+        "SlideRetrievalBagDataset",
+        _FakeBagDataset,
+    )
+    monkeypatch.setattr(
         SlideRetrievalTask,
-        "_load_or_compute_representations",
-        lambda self, **kwargs: {
-            "reference": [
-                RetrievalRepresentation(sample_id="ref-1", data=[[1.0, 2.0]])
+        "_collect_existing_representations",
+        lambda self, **kwargs: (
+            [
+                RetrievalRepresentation(
+                    sample_id=kwargs["bag_dataset"].sample_id,
+                    data=[[3.0, 4.0]],
+                )
             ],
-            "query": [
-                RetrievalRepresentation(sample_id="query-1", data=[[3.0, 4.0]])
-            ],
-        },
+            None,
+        ),
     )
 
     combo_cfg = ComboConfig(
@@ -123,10 +144,18 @@ def test_execute_passes_only_generic_context_to_strategy_builders(
     )
     datasets_by_use = {
         "reference": [
-            _FakeBagDataset(tiling_id="256px_0.5mpp", aggregation_level="slide")
+            _FakeBagDataset(
+                tiling_id="256px_0.5mpp",
+                aggregation_level="slide",
+                sample_id="ref-1",
+            )
         ],
         "query": [
-            _FakeBagDataset(tiling_id="256px_0.5mpp", aggregation_level="slide")
+            _FakeBagDataset(
+                tiling_id="256px_0.5mpp",
+                aggregation_level="slide",
+                sample_id="query-1",
+            )
         ],
     }
 

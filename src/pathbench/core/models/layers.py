@@ -1,8 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Tuple
-import math
 
 # =============================================================================
 # MLP Utils
@@ -197,7 +195,7 @@ else:
             # Robust Inverse
             try:
                 kernel_2_inv = torch.linalg.pinv(kernel_2)
-            except:
+            except RuntimeError:
                 # Fallback identity if singular
                 kernel_2_inv = torch.eye(kernel_2.shape[-1], device=x.device).expand_as(kernel_2)
 
@@ -246,7 +244,8 @@ class PPEG(nn.Module):
     def forward(self, x):
         # x: B, N, D
         B, N, D = x.shape
-        if N == 0: return x
+        if N == 0:
+            return x
         
         # Separate CLS token
         cls_token = x[:, 0:1, :] # B, 1, D

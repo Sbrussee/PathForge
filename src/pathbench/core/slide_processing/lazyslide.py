@@ -1,7 +1,7 @@
 # src/pathbench/core/slide_processing/lazyslide.py
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Optional, Tuple
 import logging
 
 import lazyslide as zs

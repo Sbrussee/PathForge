@@ -5,7 +5,6 @@ import cv2
 import numpy as np
 from PIL import Image
 import openslide
-from typing import Optional, Dict
 import json
 from functools import lru_cache
 import re
@@ -52,8 +51,9 @@ def _load_roi_crop(slide_path, roi_csv, target_w, target_h):
         W, H = maxx-minx, maxy-miny
 
         lvl, _ = find_best_level(slide, max(target_w, target_h))
-        ds     = slide.level_downsamples[lvl]
-        lvl_w  = int(W/ds); lvl_h = int(H/ds)
+        ds = slide.level_downsamples[lvl]
+        lvl_w = int(W / ds)
+        lvl_h = int(H / ds)
 
         crop   = slide.read_region((int(minx),int(miny)), lvl, (lvl_w, lvl_h)).convert("RGB")
     finally:

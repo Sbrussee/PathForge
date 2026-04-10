@@ -64,6 +64,7 @@ pathbench-benchmark = "pathbench.cli.benchmark:main"
 pathbench-evaluate = "pathbench.cli.evaluate:main"
 pathbench-optimize = "pathbench.cli.optimize:main"
 pathbench-features = "pathbench.cli.feature_extract:main"
+pathbench-mean-rgb = "pathbench.cli.mean_rgb:main"
 pathbench-infer = "pathbench.cli.inference:main"
 pathbench-visualize = "pathbench.cli.visualize:main"
 

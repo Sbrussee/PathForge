@@ -3,7 +3,10 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from pathbench.slide_retrieval.io import write_metrics_csv
+from pathbench.slide_retrieval.io import (
+    build_slide_retrieval_output_root,
+    write_metrics_csv,
+)
 
 
 def test_write_metrics_csv_writes_flat_metric_rows(tmp_path: Path) -> None:
@@ -71,3 +74,19 @@ def test_write_metrics_csv_writes_flat_metric_rows(tmp_path: Path) -> None:
             "value": "2",
         },
     ]
+
+
+def test_build_slide_retrieval_output_root_lowercases_name_components(
+    tmp_path: Path,
+) -> None:
+    output_root = build_slide_retrieval_output_root(
+        project_root=str(tmp_path),
+        tiling_id="256px_0.5mpp",
+        feature_name="UNI2_ColorNorm",
+        slide_representation="Yottixel_features",
+        search_method="RetCCL",
+    )
+
+    assert str(output_root).endswith(
+        "eval/slide_retrieval/256px_0.5mpp_uni2_colornorm/yottixel_features_retccl"
+    )

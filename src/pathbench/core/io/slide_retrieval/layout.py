@@ -18,7 +18,15 @@ class RetrievalH5Layout:
 
           retrieval_representations/
             {representation_id}/
-              {entry_id}/
+              (for case/patient aggregation)
+                {entry_id}/
+                  representation_type
+                  metadata
+                  params
+                  embedding
+                  additional_data/
+                    {name}
+              (for slide aggregation)
                 representation_type
                 metadata
                 params
@@ -34,14 +42,14 @@ class RetrievalH5Layout:
     - `representation_id`:
         Stable identifier for one retrieval-representation configuration.
         It is built from:
-            `feature_extraction__retrieval_representation__{params_hash}`
+            `feature_extraction_retrieval_representation_{params_hash}`
         where `params_hash` is derived from the normalized strategy params.
     - `entry_id`:
-        Stable identifier for the concrete member set stored in this file.
-        It is currently built from the sorted slide IDs of the sample:
+        Stable identifier for the concrete member set stored in this file for
+        multi-slide aggregations (`case`/`patient`):
             `members_{sha1(sorted_slide_ids)[:16]}`
-        This allows the same retrieval file to store multiple entry variants if
-        needed, while keeping the membership identity explicit.
+        For `slide` aggregation no entry layer is used, and datasets are stored
+        directly under `{representation_id}`.
     - `representation_type`:
         Human-readable output kind/schema for compatibility checks.
     - `metadata`:
@@ -89,9 +97,14 @@ class RetrievalH5Layout:
         self,
         tile_id: str,
         representation_id: str,
-        entry_id: str,
+        entry_id: str | None,
     ) -> str:
-        """Return the group for one stored retrieval entry under one representation."""
+        """Return the group for one stored retrieval entry under one representation.
+
+        When `entry_id` is `None`, the representation root itself is used.
+        """
+        if entry_id is None:
+            return self.retrieval_representation_group(tile_id, representation_id)
         _validate_name(entry_id, "entry_id")
         return f"{self.retrieval_representation_group(tile_id, representation_id)}/{entry_id}"
 
@@ -99,7 +112,7 @@ class RetrievalH5Layout:
         self,
         tile_id: str,
         representation_id: str,
-        entry_id: str,
+        entry_id: str | None,
     ) -> str:
         """Return the JSON metadata dataset for one retrieval entry."""
         return (
@@ -111,7 +124,7 @@ class RetrievalH5Layout:
         self,
         tile_id: str,
         representation_id: str,
-        entry_id: str,
+        entry_id: str | None,
     ) -> str:
         """Return the representation-type dataset for one retrieval entry."""
         return (
@@ -123,7 +136,7 @@ class RetrievalH5Layout:
         self,
         tile_id: str,
         representation_id: str,
-        entry_id: str,
+        entry_id: str | None,
     ) -> str:
         """Return the readable params dataset for one retrieval entry."""
         return (
@@ -135,7 +148,7 @@ class RetrievalH5Layout:
         self,
         tile_id: str,
         representation_id: str,
-        entry_id: str,
+        entry_id: str | None,
     ) -> str:
         """Return the main embedding dataset for one retrieval entry."""
         return (
@@ -147,7 +160,7 @@ class RetrievalH5Layout:
         self,
         tile_id: str,
         representation_id: str,
-        entry_id: str,
+        entry_id: str | None,
     ) -> str:
         """Return the group that stores extra strategy-specific arrays."""
         return (
@@ -159,7 +172,7 @@ class RetrievalH5Layout:
         self,
         tile_id: str,
         representation_id: str,
-        entry_id: str,
+        entry_id: str | None,
         name: str,
     ) -> str:
         """Return one dataset inside `additional_data/` for a retrieval entry."""

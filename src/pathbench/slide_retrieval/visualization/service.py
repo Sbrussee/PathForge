@@ -477,7 +477,10 @@ class SlideRetrievalVisualizationService:
         if not retrieval_artifact_path.is_file():
             return None
 
-        entry_id = build_retrieval_representation_entry_id([asset.slide_id])
+        entry_id = build_retrieval_representation_entry_id(
+            [asset.slide_id],
+            aggregation_level=str(self.manifest["aggregation_level"]),
+        )
         with FileHandleH5(retrieval_artifact_path, mode="r") as retrieval_artifact:
             return load_slide_retrieval_representation(
                 retrieval_artifact=retrieval_artifact,

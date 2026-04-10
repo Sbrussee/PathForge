@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Sequence
+from typing import Any, Sequence
 
 class RegistryBase(ABC):
     """

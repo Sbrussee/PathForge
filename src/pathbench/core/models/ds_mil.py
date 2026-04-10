@@ -35,5 +35,6 @@ class DSMIL(MILModelBase):
         if return_attention:
             results["attention"] = A.squeeze(-1)
             
-        if len(results) == 1: return logits
+        if len(results) == 1:
+            return logits
         return results

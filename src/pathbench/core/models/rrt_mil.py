@@ -37,7 +37,8 @@ class RRT_MIL(MILModelBase):
         outputs = []
         for i in range(bag.shape[0]):
             x = bag[i]
-            if mask is not None: x = x[mask[i]]
+            if mask is not None:
+                x = x[mask[i]]
             c = coords[i] if coords is not None else None
             
             x_emb = self.fc(x)
@@ -69,5 +70,6 @@ class RRT_MIL(MILModelBase):
         if return_attention:
             results["attention"] = None 
             
-        if len(results) == 1: return logits
+        if len(results) == 1:
+            return logits
         return results

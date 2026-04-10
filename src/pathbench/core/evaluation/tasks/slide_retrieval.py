@@ -12,7 +12,7 @@ from pathbench.benchmarking.registry import get_task, import_task_modules
 from pathbench.core.evaluation.base import TaskEvaluationAdapterBase
 from pathbench.core.evaluation.registry import evaluation_task_adapter
 from pathbench.core.evaluation.types import EvaluationRunContext
-from pathbench.core.experiments.combinations import ComboConfig, build_combinations
+from pathbench.core.experiments.combinations import build_combinations
 from pathbench.core.experiments.combo_ids import build_feature_name, build_tiling_id
 from pathbench.slide_retrieval.io import build_slide_retrieval_output_root
 from pathbench.utils.constants import CASE_ID_COL, PATIENT_ID_COL, SLIDE_ID_COL

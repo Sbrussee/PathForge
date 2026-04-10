@@ -228,11 +228,11 @@ def test_compute_map_at_k_returns_expected_average_precision_scores() -> None:
 
     assert payload["k"] == 3
     assert payload["per_label"]["tumor"] == pytest.approx((1.0 + (2.0 / 3.0)) / 2.0)
-    assert payload["per_label"]["normal"] == pytest.approx(((2.0 / 2.0) + (2.0 / 3.0)) / 2.0)
+    assert payload["per_label"]["normal"] == pytest.approx(((1.0 / 2.0) + (2.0 / 3.0)) / 2.0)
     assert payload["macro"] == pytest.approx(
         (
             ((1.0 + (2.0 / 3.0)) / 2.0)
-            + (((2.0 / 2.0) + (2.0 / 3.0)) / 2.0)
+            + (((1.0 / 2.0) + (2.0 / 3.0)) / 2.0)
         )
         / 2.0
     )

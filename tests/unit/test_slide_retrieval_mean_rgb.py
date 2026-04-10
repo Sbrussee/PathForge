@@ -34,9 +34,14 @@ def _write_artifact(
                 "backend": "lazyslide",
             },
         )
-        if mean_rgb is not None:
+    if mean_rgb is not None:
+        retrieval_artifact_path = mean_rgb_mod._slide_retrieval_artifact_path(
+            slide_artifact_path=artifact_path,
+            slide_id="slide-1",
+        )
+        with FileHandleH5(retrieval_artifact_path, mode="a") as retrieval_artifact:
             descriptors_io.write_descriptor(
-                slide_artifact,
+                retrieval_artifact,
                 bag_id,
                 "mean_rgb",
                 mean_rgb,
@@ -136,8 +141,12 @@ def test_resolve_sample_patch_mean_rgb_computes_and_persists_missing_descriptors
         np.full((2, 3), 128.0 / 255.0, dtype=np.float32),
     )
 
-    with FileHandleH5(artifact_path, mode="r") as slide_artifact:
-        stored = descriptors_io.read_descriptor(slide_artifact, bag_id, "mean_rgb")
+    retrieval_artifact_path = mean_rgb_mod._slide_retrieval_artifact_path(
+        slide_artifact_path=artifact_path,
+        slide_id="slide-1",
+    )
+    with FileHandleH5(retrieval_artifact_path, mode="r") as retrieval_artifact:
+        stored = descriptors_io.read_descriptor(retrieval_artifact, bag_id, "mean_rgb")
     np.testing.assert_allclose(stored, resolved)
 
 

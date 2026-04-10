@@ -1,5 +1,4 @@
 from __future__ import annotations
-from typing import Any
 
 try:
     from huggingface_hub import HfApi, create_repo, upload_folder

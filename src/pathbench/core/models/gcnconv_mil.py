@@ -38,7 +38,8 @@ class GCNConvMIL(MILModelBase):
     def forward_bag(self, bag: torch.Tensor, mask: Optional[torch.Tensor] = None, coords: Optional[torch.Tensor] = None, label=None, loss_fn=None, return_attention=False) -> Union[torch.Tensor, Dict]:
         assert coords is not None, "GCNConvMIL requires spatial coordinates."
         
-        if not self.has_pyg: return self.classifier(self.fc(bag).mean(dim=1))
+        if not self.has_pyg:
+            return self.classifier(self.fc(bag).mean(dim=1))
         
         import torch_geometric.nn as gnn
         outputs = []
@@ -46,9 +47,11 @@ class GCNConvMIL(MILModelBase):
         
         for i in range(bag.shape[0]):
             xi = bag[i]
-            if mask is not None: xi = xi[mask[i]]
+            if mask is not None:
+                xi = xi[mask[i]]
             pos = coords[i]
-            if mask is not None: pos = pos[mask[i]]
+            if mask is not None:
+                pos = pos[mask[i]]
             
             xi = self.fc(xi)
             edge_index = gnn.knn_graph(pos, k=8, loop=True)
@@ -71,5 +74,6 @@ class GCNConvMIL(MILModelBase):
         if return_attention:
             results["attention"] = attentions
             
-        if len(results) == 1: return logits
+        if len(results) == 1:
+            return logits
         return results

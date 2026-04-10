@@ -1,7 +1,6 @@
 from __future__ import annotations
-from typing import Any, Dict, Optional
+from typing import Optional
 import optuna
-import pandas as pd
 from pathbench.policy.base import PolicyBase
 from pathbench.config.config import Config
 from pathbench.utils.registries import MODELS, LOSSES, TRAINERS

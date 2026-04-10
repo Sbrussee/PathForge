@@ -116,3 +116,48 @@ def test_backend_constraint_success():
     }
     cfg = Config.model_validate(cfg_data)
     assert cfg.slide_processing.backend == "lazyslide"
+
+
+def test_num_workers_within_available_cpu_limit(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("pathbench.config.config.os.cpu_count", lambda: 4)
+    cfg_data = {
+        "experiment": {
+            "project_name": "test",
+            "annotation_file": "x",
+            "task": "classification",
+            "mode": "benchmark",
+            "num_workers": 4,
+        },
+        "slide_processing": {"backend": "lazyslide"},
+        "benchmark_parameters": {
+            "feature_extraction": [GENERIC_NAME],
+            "mil": [MIL_NAME],
+        },
+    }
+
+    cfg = Config.model_validate(cfg_data)
+    assert cfg.experiment.num_workers == 4
+
+
+def test_num_workers_exceeding_available_cpu_limit_fails(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr("pathbench.config.config.os.cpu_count", lambda: 4)
+    cfg_data = {
+        "experiment": {
+            "project_name": "test",
+            "annotation_file": "x",
+            "task": "classification",
+            "mode": "benchmark",
+            "num_workers": 5,
+        },
+        "slide_processing": {"backend": "lazyslide"},
+        "benchmark_parameters": {
+            "feature_extraction": [GENERIC_NAME],
+            "mil": [MIL_NAME],
+        },
+    }
+
+    with pytest.raises(ValidationError) as excinfo:
+        Config.model_validate(cfg_data)
+    assert "num_workers exceeds available CPUs" in str(excinfo.value)
