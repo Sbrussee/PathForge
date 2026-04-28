@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from typing import Any
 
 
-from pathbench.core.datasets.base import DatasetBase
-from pathbench.core.losses.base import LossBase
-from pathbench.core.models.base import MILBase
-from pathbench.core.tasks.base import TaskBase
+from pathbench.core.datasets.base import BagDatasetBase, DatasetBase
+from pathbench.core.losses.base import BaseLoss
+from pathbench.core.models.mil_base import MILModelBase
 
 
 class TrainerBase(ABC):
@@ -18,9 +17,9 @@ class TrainerBase(ABC):
     @abstractmethod
     def fit(
         self,
-        model: MILBase,
+        model: MILModelBase,
         dataset: DatasetBase,
-        task: TaskBase,
+        task: Any,
     ) -> Any:
         """Train the model on the given dataset using the specified loss function and task."""
         pass
@@ -28,9 +27,9 @@ class TrainerBase(ABC):
     @abstractmethod
     def predict(
         self,
-        model: MILBase,
+        model: MILModelBase,
         dataset: DatasetBase,
-        task: TaskBase,
+        task: Any,
     ) -> Any:
         """Make predictions using the trained model on the given dataset."""
         pass
@@ -47,8 +46,8 @@ class MILTrainer:
     trainer: TrainerBase
     model: MILModelBase
     dataset: BagDatasetBase
-    task: TaskBase
-    loss: LossBase
+    task: Any
+    loss: BaseLoss
 
     def run(self) -> None:
         self.trainer.fit(
@@ -56,5 +55,4 @@ class MILTrainer:
             dataset=self.dataset,
             task=self.task,
             loss=self.loss,
-            policy=self.policy,
         )

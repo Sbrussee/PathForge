@@ -6,6 +6,11 @@ from typing import Any, Callable, Optional
 
 from pathbench.utils.registry import Registry
 from pathbench.core.base import CoreRegistries
+from pathbench.utils.optional.torchmil import (
+    is_torchmetrics_available,
+    is_torchmil_available,
+    is_torchsurv_available,
+)
 
 # Define Registries
 REGISTRIES = CoreRegistries(
@@ -32,6 +37,9 @@ AUGMENTATION_METHODS = REGISTRIES.augmentation_methods
 # Infrastructure
 SLIDE_PROCESSORS = Registry()
 TRAINERS = Registry()
+CLASSIFICATION_METRICS = Registry()
+SURVIVAL_METRICS = Registry()
+SURVIVAL_LOSSES = Registry()
 
 # Track Lazyslide-specific models for validation (filled by populate_dynamic_registries)
 LAZYSLIDE_MODEL_NAMES: set[str] = set()
@@ -172,11 +180,11 @@ _populated = False
 
 def populate_dynamic_registries() -> None:
     """
-    Populate FEATURE_EXTRACTORS with entries from timm and lazyslide.
+    Populate optional backend registries with entries from installed packages.
 
     IMPORTANT:
     - This is NOT called automatically at import time.
-    - Call it explicitly in CLI/policy paths that require timm/lazyslide.
+    - Call it explicitly in CLI/policy paths that require optional backends.
     """
     global _populated
     if _populated:
@@ -198,5 +206,25 @@ def populate_dynamic_registries() -> None:
                 @FEATURE_EXTRACTORS.register(model_name)
                 def _zs_factory(name=model_name, **kwargs):
                     return name
+
+    if is_torchmil_available():
+        from pathbench.adapters.torchmil.backend import register_torchmil_backend
+        from pathbench.adapters.torchmil.heatmap_explainer import register_torchmil_heatmap_explainer
+
+        register_torchmil_backend()
+        register_torchmil_heatmap_explainer()
+
+    if is_torchmetrics_available() and not CLASSIFICATION_METRICS.is_available("torchmetrics"):
+        from pathbench.adapters.metrics.classification import TorchMetricsClassificationBackend
+
+        CLASSIFICATION_METRICS.register("torchmetrics")(TorchMetricsClassificationBackend)
+
+    if is_torchsurv_available():
+        from pathbench.adapters.metrics.survival import TorchSurvBackend
+
+        if not SURVIVAL_METRICS.is_available("torchsurv"):
+            SURVIVAL_METRICS.register("torchsurv")(TorchSurvBackend)
+        if not SURVIVAL_LOSSES.is_available("torchsurv"):
+            SURVIVAL_LOSSES.register("torchsurv")(TorchSurvBackend)
 
     _populated = True

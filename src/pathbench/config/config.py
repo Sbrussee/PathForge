@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Literal, List, Optional, Dict, Union
+from typing import Any, Literal, List, Optional, Dict
 import yaml
 import torch
 import inspect
@@ -12,7 +12,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator, Validat
 
 # Internal Imports
 from pathbench.utils.constants import TASK_TYPES, MODE_TYPES, EXPERIMENTS_DIR
-from pathbench.utils.registries import MODELS, FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES, is_feature_extractor_available, all_feature_extractor_names
+from pathbench.utils.optional.torchmil import (
+    is_torchmetrics_available,
+    is_torchmil_available,
+    is_torchsurv_available,
+)
+from pathbench.utils.registries import MODELS, LAZYSLIDE_MODEL_NAMES, is_feature_extractor_available, all_feature_extractor_names
 from pathbench.core.models.mil_base import MILModelBase
 
 TaskType = Literal[tuple(TASK_TYPES)]
@@ -61,6 +66,11 @@ class ExperimentConfig(BaseModel):
 
 class MILConfig(BaseModel):
     """MIL Model specific settings."""
+    backend: Literal["native", "torchmil"] = "torchmil"
+    torchmil_model: Optional[str] = None
+    torchmil_model_kwargs: Dict[str, Any] = Field(default_factory=dict)
+    use_torchmil_collate: bool = True
+
     # Training Loop
     epochs: int = Field(20, gt=0)
     batch_size: int = Field(1, gt=0)
@@ -88,6 +98,28 @@ class MILConfig(BaseModel):
 
     skip_extracted: bool = True
     skip_feature_extraction: bool = True
+
+
+class ExplainabilityConfig(BaseModel):
+    """Explainability backend selection."""
+
+    heatmap_backend: Literal["native", "torchmil"] = "native"
+
+
+class MetricsConfig(BaseModel):
+    """Metric and loss backend selection.
+
+    Examples:
+        ```yaml
+        metrics:
+          classification_backend: torchmetrics
+          survival_continuous_backend: torchsurv
+        ```
+    """
+
+    classification_backend: str = "torchmetrics"
+    survival_continuous_backend: str = "torchsurv"
+    registry_namespace: Optional[str] = None
 
 
 class SlideProcessingConfig(BaseModel):
@@ -207,6 +239,8 @@ class Config(BaseModel):
     experiment: ExperimentConfig
     mil: MILConfig = Field(default_factory=MILConfig)
     slide_processing: SlideProcessingConfig = Field(default_factory=SlideProcessingConfig)
+    explainability: ExplainabilityConfig = Field(default_factory=ExplainabilityConfig)
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
     datasets: List[DatasetEntry] = Field(default_factory=list)
     benchmark_parameters: BenchmarkParameters = Field(default_factory=BenchmarkParameters)
@@ -218,8 +252,7 @@ class Config(BaseModel):
     @model_validator(mode='after')
     def validate_backend_constraints(self) -> "Config":
         """
-        Ensures that if a Lazyslide-specific model is selected, 
-        the backend is set to 'lazyslide'.
+        Ensures selected optional backends are installed before runtime paths use them.
         """
         backend = self.slide_processing.backend
         fe_list = self.benchmark_parameters.feature_extraction
@@ -229,6 +262,36 @@ class Config(BaseModel):
                 raise ValueError(
                     f"Feature extractor '{fe}' requires 'lazyslide' backend. "
                     f"Current backend: '{backend}'."
+                )
+
+        if self.experiment.mode != "feature_extraction" and self.mil.backend == "torchmil":
+            if not is_torchmil_available():
+                raise RuntimeError(
+                    "MIL backend 'torchmil' selected, but 'torchmil' is not installed. "
+                    "Install torchmil or set mil.backend='native'."
+                )
+            if not self.mil.torchmil_model:
+                raise ValueError("mil.torchmil_model is required when mil.backend='torchmil'.")
+
+        if self.explainability.heatmap_backend == "torchmil" and not is_torchmil_available():
+            raise RuntimeError(
+                "Explainability heatmap backend 'torchmil' selected, but 'torchmil' is not installed. "
+                "Install torchmil or set explainability.heatmap_backend='native'."
+            )
+
+        task = self.experiment.task
+        if task == "classification" and self.metrics.classification_backend == "torchmetrics":
+            if not is_torchmetrics_available():
+                raise RuntimeError(
+                    "Classification metrics backend requires 'torchmetrics'. "
+                    "Install torchmetrics or choose another classification metrics backend."
+                )
+
+        if task == "survival" and self.metrics.survival_continuous_backend == "torchsurv":
+            if not is_torchsurv_available():
+                raise RuntimeError(
+                    "Continuous survival backend requires 'torchsurv'. "
+                    "Install torchsurv or choose another survival backend."
                 )
         
         if self.experiment.mode == "benchmark" and not self.benchmark_parameters.mil:
