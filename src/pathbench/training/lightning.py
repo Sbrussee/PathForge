@@ -1,7 +1,7 @@
 # src/pathbench/training/lightning.py
 from __future__ import annotations
 
-from typing import Any, Iterable, Dict, Optional, List, Union
+from typing import Any, List, Tuple
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
     ModelCheckpoint, 
@@ -12,9 +12,11 @@ from pytorch_lightning.callbacks import (
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from pathbench.adapters.torchmil.collate import torchmil_or_pathbench_collate
+from pathbench.core.datasets.bag_schema import assert_bag_schema
 from pathbench.core.models.mil_base import MILModelBase
 from pathbench.training.base import TrainerBase
-from pathbench.core.losses.base import Loss
+from pathbench.core.losses.base import BaseLoss
 from pathbench.config.config import Config
 from pathbench.utils.registries import TRAINERS
 
@@ -23,7 +25,7 @@ class LightningModuleAdapter(pl.LightningModule):
     Adapter: Wraps a PathBench MILModelBase into a PL LightningModule.
     Handles optimization logic, logging, and scheduler configuration via Config.
     """
-    def __init__(self, model: MILModelBase, loss_fn: Loss, config: Config):
+    def __init__(self, model: MILModelBase, loss_fn: BaseLoss, config: Config):
         super().__init__()
         self.model = model
         self.loss_fn = loss_fn
@@ -35,9 +37,16 @@ class LightningModuleAdapter(pl.LightningModule):
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
 
-    def training_step(self, batch, batch_idx):
-        bag, target = batch
-        logits = self.model(bag)
+    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+        bag, target, model_kwargs = self._unpack_batch(batch)
+        logits = self.model.forward_bag(bag, label=target, **model_kwargs)
+        if isinstance(logits, dict):
+            loss = logits.get("loss")
+            logits = logits.get("logits")
+            if loss is not None:
+                batch_size = bag.shape[0]
+                self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
+                return loss
         loss = self.loss_fn(logits, target)
         
         # Log with batch_size=1 assumption for MIL, or actual batch size
@@ -45,9 +54,11 @@ class LightningModuleAdapter(pl.LightningModule):
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        bag, target = batch
-        logits = self.model(bag)
+    def validation_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+        bag, target, model_kwargs = self._unpack_batch(batch)
+        logits = self.model.forward_bag(bag, label=target, **model_kwargs)
+        if isinstance(logits, dict):
+            logits = logits.get("logits")
         loss = self.loss_fn(logits, target)
         
         batch_size = bag.shape[0]
@@ -60,9 +71,37 @@ class LightningModuleAdapter(pl.LightningModule):
         
         return loss
         
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        bag, _ = batch
-        return self.model(bag)
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> torch.Tensor:
+        bag, _, model_kwargs = self._unpack_batch(batch)
+        output = self.model.forward_bag(bag, **model_kwargs)
+        if isinstance(output, dict):
+            output = output.get("logits")
+        return output
+
+    def _unpack_batch(self, batch: Any) -> tuple[torch.Tensor, Any, dict[str, torch.Tensor]]:
+        """
+        Normalize legacy tuple batches and canonical dict batches.
+
+        Args:
+            batch: Either ``(bag, target)`` with ``bag`` shaped ``[B, N, D]`` or a
+                canonical bag dictionary containing ``X`` shaped ``[B, N, D]``,
+                ``Y``, optional ``mask`` shaped ``[B, N]``, optional ``coords``
+                shaped ``[B, N, 2]``, and optional ``adj`` shaped ``[B, N, N]``.
+
+        Returns:
+            Tuple of feature tensor, task target, and model keyword tensors.
+        """
+
+        if isinstance(batch, dict):
+            assert_bag_schema(batch, batched=True)
+            kwargs = {key: batch[key] for key in ("mask", "coords", "adj") if key in batch and batch[key] is not None}
+            return batch["X"], batch["Y"], kwargs
+        if isinstance(batch, (tuple, list)) and len(batch) == 2:
+            bag, target = batch
+            if bag.ndim == 2:
+                bag = bag.unsqueeze(0)
+            return bag, target, {}
+        raise TypeError("Lightning MIL batches must be (bag, target) tuples or canonical bag dictionaries.")
 
     def configure_optimizers(self):
         """
@@ -116,7 +155,8 @@ class LightningTrainer(TrainerBase):
     - mil.gradient_clip_val
     - experiment.num_workers
     """
-def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None):
+
+    def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None):
         self.config = config
         self.extra_callbacks = extra_callbacks or []
         
@@ -168,12 +208,17 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
             log_every_n_steps=5 # Useful for small datasets
         )
 
+    def _collate_fn(self):
+        if self.config.mil.backend == "torchmil" and self.config.mil.use_torchmil_collate:
+            return lambda batch: torchmil_or_pathbench_collate(batch, use_torchmil=True)
+        return None
+
     def fit(
         self,
         model: MILModelBase,
         dataset_train: Dataset,
         dataset_val: Dataset,
-        loss_func: Loss,
+        loss_func: BaseLoss,
     ) -> Tuple[str, float]:
         """
         Train the model.
@@ -185,14 +230,16 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
             batch_size=self.config.mil.batch_size, 
             shuffle=True, 
             num_workers=self.config.experiment.num_workers,
-            pin_memory=True if torch.cuda.is_available() else False
+            pin_memory=True if torch.cuda.is_available() else False,
+            collate_fn=self._collate_fn(),
         )
         val_loader = DataLoader(
             dataset_val, 
             batch_size=self.config.mil.batch_size, 
             shuffle=False, 
             num_workers=self.config.experiment.num_workers,
-            pin_memory=True if torch.cuda.is_available() else False
+            pin_memory=True if torch.cuda.is_available() else False,
+            collate_fn=self._collate_fn(),
         )
 
         # Wrap model using the Adapter (Factory logic could go here if complex)
@@ -227,7 +274,8 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
             dataset, 
             batch_size=self.config.mil.batch_size, 
             shuffle=False, 
-            num_workers=self.config.experiment.num_workers
+            num_workers=self.config.experiment.num_workers,
+            collate_fn=self._collate_fn(),
         )
         
         # We reuse the LightningModuleAdapter, assuming model is already loaded
@@ -247,4 +295,3 @@ def __init__(self, config: Config, extra_callbacks: List[Callback] | None = None
 
         # Concatenate all predictions
         return torch.cat(predictions, dim=0)
-

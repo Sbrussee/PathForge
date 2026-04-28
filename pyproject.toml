@@ -47,6 +47,11 @@ cu128 = [
 ]
 
 survival = ["scikit-survival"]
+mil-backends = [
+    "torchmil",
+    "torchmetrics",
+    "torchsurv",
+]
 gnn = ["torch-geometric>=2.5"]
 hf = [
     "huggingface_hub>=1.0",
@@ -62,7 +67,7 @@ dev = [
 [project.scripts]
 pathbench-benchmark = "pathbench.cli.benchmark:main"
 pathbench-optimize = "pathbench.cli.optimize:main"
-pathbench-features = "pathbench.cli.feature_extract:main"
+pathbench-features = "pathbench.cli.feature_extraction:main"
 pathbench-infer = "pathbench.cli.inference:main"
 
 [tool.pytest.ini_options]
