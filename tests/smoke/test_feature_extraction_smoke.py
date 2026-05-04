@@ -15,9 +15,7 @@ from pathbench.core.io.h5.layout import DEFAULT_LAYOUT
 from pathbench.utils.registries import FEATURE_EXTRACTORS
 
 
-OPENSLIDE_SAMPLE_URL = (
-    "https://openslide.cs.cmu.edu/download/openslide-testdata/Aperio/CMU-1-Small-Region.svs"
-)
+OPENSLIDE_SAMPLE_URL = "https://openslide.cs.cmu.edu/download/openslide-testdata/Aperio/CMU-1-Small-Region.svs"
 
 
 def _ensure_feature_extractor_registered(name: str) -> None:
@@ -45,7 +43,9 @@ def _download_if_needed(url: str, dst: Path) -> Path:
 
 
 @pytest.mark.smoke
-def test_smoke_feature_extraction_lazyslide(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_smoke_feature_extraction_lazyslide(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # ---- choose a tiny-ish end-to-end workload ----
     extractor = "resnet18"
     tile_px = 256
@@ -54,7 +54,9 @@ def test_smoke_feature_extraction_lazyslide(tmp_path: Path, monkeypatch: pytest.
     _ensure_feature_extractor_registered(extractor)
 
     # ---- cache slide so repeated smoke runs don't keep downloading ----
-    cache_dir = Path(os.environ.get("PATHBENCH_SMOKE_CACHE", "~/.cache/pathbench_smoke")).expanduser()
+    cache_dir = Path(
+        os.environ.get("PATHBENCH_SMOKE_CACHE", "~/.cache/pathbench_smoke")
+    ).expanduser()
     slide_path = cache_dir / "CMU-1-Small-Region.svs"
     _download_if_needed(OPENSLIDE_SAMPLE_URL, slide_path)
 
@@ -72,8 +74,7 @@ def test_smoke_feature_extraction_lazyslide(tmp_path: Path, monkeypatch: pytest.
     # annotations.csv must match WSIDataset expectations: dataset, slide, patient, category
     ann_path = tmp_path / "annotations.csv"
     ann_path.write_text(
-        "dataset,slide,patient,category\n"
-        "smoke,CMU-1-Small-Region,P0,cat0\n",
+        "dataset,slide,patient,category\nsmoke,CMU-1-Small-Region,P0,cat0\n",
         encoding="utf-8",
     )
 
@@ -153,7 +154,11 @@ def test_smoke_feature_extraction_lazyslide(tmp_path: Path, monkeypatch: pytest.
         assert overview.size > 0
 
         # JPEG SOI marker (optional but useful sanity check)
-        overview_bytes = bytes(overview[:4].tolist()) if overview.size >= 4 else bytes(overview.tolist())
+        overview_bytes = (
+            bytes(overview[:4].tolist())
+            if overview.size >= 4
+            else bytes(overview.tolist())
+        )
         assert overview_bytes[:2] == b"\xff\xd8"
 
         assert feats.ndim == 2

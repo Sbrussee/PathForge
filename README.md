@@ -44,29 +44,35 @@ Primary functionality:
 
 ## Installation
 
-Install the base package in editable mode:
+**Recommended install** — includes all runtime dependencies (Lazyslide feature
+extraction backend, TorchMIL, TorchMetrics, TorchSurv):
 
 ```bash
-pip install -e .
+uv sync --extra lazyslide --extra mil-backends
 ```
 
-Install development tools:
+For GPU (CUDA 12.8) builds, add `--extra cu128`:
 
 ```bash
-pip install -e ".[dev]"
+uv sync --extra lazyslide --extra mil-backends --extra cu128
 ```
 
-Install feature extraction dependencies for the Lazyslide backend:
+Development install (adds pytest):
 
 ```bash
-pip install -e ".[lazyslide]"
+uv sync --extra lazyslide --extra mil-backends --extra dev
 ```
 
-Install optional MIL backend integrations:
+Individual extras:
 
-```bash
-pip install -e ".[mil-backends]"
-```
+| Extra | Installs |
+|---|---|
+| `lazyslide` | `lazyslide`, `wsidata`, `timm`, `geopandas`, `anndata` |
+| `mil-backends` | `torchmil`, `torchmetrics`, `torchsurv` |
+| `cu128` | CUDA 12.8 PyTorch builds (via the `pytorch-cu128` index) |
+| `gnn` | `torch-geometric` |
+| `hf` | `huggingface_hub`, `typer` |
+| `dev` | `pytest`, `pytest-cov` |
 
 `mil-backends` installs:
 
@@ -813,7 +819,7 @@ No slides are found for a dataset.
 Run focused tests for the backend integration and documentation:
 
 ```bash
-python -m pytest -q \
+uv run pytest -q \
   tests/unit/test_torchmil_optional.py \
   tests/unit/test_bag_schema_collate.py \
   tests/unit/test_torchmil_task_output.py \
@@ -826,10 +832,10 @@ python -m pytest -q \
 Run the standard repository checks before merging:
 
 ```bash
-ruff check . --fix
-ruff format .
-ruff check .
-python -m pytest -q
+uv run ruff check . --fix
+uv run ruff format .
+uv run ruff check .
+uv run pytest -q
 ```
 
 For CI, use at least two profiles:

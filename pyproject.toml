@@ -46,7 +46,6 @@ cu128 = [
     "torchaudio==2.9.1",
 ]
 
-survival = ["scikit-survival"]
 mil-backends = [
     "torchmil",
     "torchmetrics",
