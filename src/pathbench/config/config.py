@@ -66,7 +66,7 @@ class ExperimentConfig(BaseModel):
 
 class MILConfig(BaseModel):
     """MIL Model specific settings."""
-    backend: Literal["native", "torchmil"] = "torchmil"
+    backend: Literal["native", "torchmil"] = "native"
     torchmil_model: Optional[str] = None
     torchmil_model_kwargs: Dict[str, Any] = Field(default_factory=dict)
     use_torchmil_collate: bool = True
@@ -80,6 +80,7 @@ class MILConfig(BaseModel):
     gradient_clip_val: float = Field(0.0, ge=0.0)
 
     # Optimization
+    optimizer: str = "Adam"
     lr: float = Field(1e-4, gt=0)
     weight_decay: float = Field(1e-5, ge=0)
     scheduler: Literal["none", "reduce_on_plateau", "cosine"] = "none"

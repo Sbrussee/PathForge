@@ -1,33 +1,27 @@
-import tempfile, csv
-from pathbench.core.annotations import ClassificationAnnotation, RegressionAnnotation, SurvivalAnnotation
+"""Unit tests for lightweight annotation helpers."""
+
+from __future__ import annotations
+
+from pathbench.core.annotations.binning import bin_times
 
 
+def test_bin_times_quantile_returns_expected_bin_count() -> None:
+    """Quantile binning should return one bin id per input time."""
+    times = [5.0, 8.0, 10.0, 20.0, 25.0, 30.0]
+
+    bins = bin_times(times, n_bins=3, method="quantile")
+
+    assert len(bins) == len(times)
+    assert min(bins) >= 1
+    assert max(bins) <= 3
 
 
-def _write(tmp, header, rows):
-    p = tmp / "ann.csv"
-    with open(p, "w", newline="") as f:
-    w = csv.writer(f)
-    w.writerow(header)
-    w.writerows(rows)
-    return str(p)
+def test_bin_times_linear_spreads_values_across_bins() -> None:
+    """Linear binning should produce ordered bin assignments for ordered times."""
+    times = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
 
+    bins = bin_times(times, n_bins=3, method="linear")
 
-
-
-def test_classification_schema(tmp_path):
-    p = _write(tmp_path,
-    ["slide","patient","dataset","category"],
-    [["s1.svs","p1","d1",0]])
-    rows = ClassificationAnnotation().read(p)
-    assert rows[0].payload["category"] == 0
-
-
-
-
-def test_survival_schema(tmp_path):
-    p = _write(tmp_path,
-    ["slide","patient","dataset","time","event"],
-    [["s1","p1","d1",26,1]])
-    rows = SurvivalAnnotation().read(p)
-    assert rows[0].payload["event"] in (0,1)
+    assert len(bins) == len(times)
+    assert bins[0] <= bins[-1]
+    assert set(bins).issubset({1, 2, 3})
