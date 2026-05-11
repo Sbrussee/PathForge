@@ -154,6 +154,35 @@ datasets:
 artifacts_dir/{slide_id}.h5
 ```
 
+## TCGA-Tools Datasets
+
+PathBench can call the `tcga-tools` package to check whether requested datasets
+exist in TCGA or TCIA, download metadata first, select the configured task
+column, and download image data only when it is missing.
+
+```yaml
+datasets:
+  - source: gdc
+    dataset_names: ["TCGA-LUSC", "TCGA-LUAD"]
+    annotation_column: diagnoses.0.vital_status
+    metadata_table: clinical_csv
+    annotations: ["clinical"]
+    datatype: ["wsi"]
+    used_for: ["training", "testing"]
+```
+
+This allows users to:
+
+- specify TCGA or TCIA datasets directly in the PathBench config
+- let PathBench validate those dataset names through `tcga-tools`
+- generate a PathBench annotation CSV automatically under `datasets/`
+- split one downloaded dataset across multiple roles when `used_for` contains more than one role
+
+To find which columns exist for a dataset, use `tcga-tools` to do a metadata-only
+download first and inspect the generated CSV files such as `files_metadata.csv`,
+`clinical.csv`, `molecular_index.csv`, or `diagnosis.csv`. The chosen column name
+then becomes `annotation_column` in the PathBench config.
+
 ## Configuration Reference
 
 Minimal feature extraction config:

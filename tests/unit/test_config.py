@@ -1,31 +1,42 @@
-#tests/unit/test_config.py
+# tests/unit/test_config.py
 
 from pathlib import Path
 import pytest
 from textwrap import dedent
 
 from pathbench.config.config import Config
+from pathbench.utils.registries import FEATURE_EXTRACTORS
+from tests.conftest import DUMMY_FE
+
+
+if not FEATURE_EXTRACTORS.is_available("resnet18"):
+
+    @FEATURE_EXTRACTORS.register("resnet18")
+    def _test_resnet18():  # pragma: no cover
+        return "resnet18"
 
 
 def test_from_yaml_loads_minimal_valid_config(tmp_path):
     # Minimal config that satisfies validators (benchmark requires task + mil)
-    yaml_text = dedent("""
-                        experiment:
-                            project_name: testproj
-                            annotation_file: dummy.csv
-                            mode: feature_extraction
+    yaml_text = dedent(
+        f"""
+        experiment:
+            project_name: testproj
+            annotation_file: dummy.csv
+            mode: feature_extraction
 
-                        slide_processing:
-                            backend: lazyslide
+        slide_processing:
+            backend: lazyslide
 
-                        datasets: []
+        datasets: []
 
-                        benchmark_parameters:
-                            tile_px: [256]
-                            tile_mpp: [0.5]
-                            feature_extraction: ["resnet18"]
-                            mil: []
-                        """).lstrip()
+        benchmark_parameters:
+            tile_px: [256]
+            tile_mpp: [0.5]
+            feature_extraction: ["{DUMMY_FE}"]
+            mil: []
+        """
+    ).lstrip()
 
     p = tmp_path / "cfg.yaml"
     p.write_text(yaml_text, encoding="utf-8")
@@ -49,4 +60,9 @@ def test_example_yaml_loads():
         pytest.skip("configs/config.example.yaml not present in this environment")
 
     cfg = Config.from_yaml(example_yaml_path)
-    assert cfg.experiment.task in {"classification", "regression", "survival", "survival_discrete"}
+    assert cfg.experiment.task in {
+        "classification",
+        "regression",
+        "survival",
+        "survival_discrete",
+    }

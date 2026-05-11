@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 from pathbench.config.config import DatasetEntry
 from pathbench.core.datasets.wsi_dataset import WSIDataset
@@ -89,7 +88,9 @@ def test_find_wsi_path_multiple_matches_returns_one_allowed(tmp_path: Path) -> N
     assert found in expected
 
 
-def test_build_samples_filters_by_dataset_and_skips_missing_slides(tmp_path: Path) -> None:
+def test_build_samples_filters_by_dataset_and_skips_missing_slides(
+    tmp_path: Path,
+) -> None:
     slides_dir = tmp_path / "slides"
     slides_dir.mkdir(parents=True, exist_ok=True)
 
@@ -113,9 +114,19 @@ def test_build_samples_filters_by_dataset_and_skips_missing_slides(tmp_path: Pat
 
     ann_df = pd.DataFrame(
         [
-            {"dataset": "ds", "slide": "S1", "patient": "P1", "category": "C1"},      # kept
-            {"dataset": "ds", "slide": "S2", "patient": "P2", "category": "C2"},      # missing -> skipped
-            {"dataset": "other", "slide": "S3", "patient": "P3", "category": "C3"},   # ignored
+            {"dataset": "ds", "slide": "S1", "patient": "P1", "category": "C1"},  # kept
+            {
+                "dataset": "ds",
+                "slide": "S2",
+                "patient": "P2",
+                "category": "C2",
+            },  # missing -> skipped
+            {
+                "dataset": "other",
+                "slide": "S3",
+                "patient": "P3",
+                "category": "C3",
+            },  # ignored
         ]
     )
 
@@ -134,3 +145,40 @@ def test_build_samples_filters_by_dataset_and_skips_missing_slides(tmp_path: Pat
 
     assert wsi.path == (slides_dir / f"S1{suf}").resolve()
     assert wsi.artifact_path == (ds.artifacts_dir / "S1.h5").resolve()
+
+
+def test_build_samples_prefers_explicit_wsi_path_from_annotations(
+    tmp_path: Path,
+) -> None:
+    slides_dir = tmp_path / "slides"
+    slides_dir.mkdir(parents=True, exist_ok=True)
+    artifacts_dir = tmp_path / "artifacts"
+
+    explicit_slide = tmp_path / "downloaded" / "remote_slide.svs"
+    explicit_slide.parent.mkdir(parents=True, exist_ok=True)
+    explicit_slide.write_bytes(b"")
+
+    ds_cfg = DatasetEntry(
+        name="remote_ds",
+        slides_dir=str(slides_dir),
+        artifacts_dir=str(artifacts_dir),
+        tissue_annotations_dir=None,
+        used_for="training",
+    )
+
+    ann_df = pd.DataFrame(
+        [
+            {
+                "dataset": "remote_ds",
+                "slide": "S1",
+                "patient": "P1",
+                "category": "C1",
+                "wsi_path": str(explicit_slide),
+            }
+        ]
+    )
+
+    ds = WSIDataset(ds_cfg, ann_df)
+
+    assert len(ds.samples) == 1
+    assert ds.samples[0].path == explicit_slide.resolve()
