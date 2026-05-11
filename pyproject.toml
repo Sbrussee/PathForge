@@ -28,6 +28,7 @@ dependencies = [
     "reportlab>=4.4.10",
     "einops>=0.8.2",
     "einops-exts>=0.0.4",
+    "tcga-tools",
 ]
 
 [project.optional-dependencies]
@@ -81,6 +82,7 @@ markers = [
 torch = [{ index = "pytorch-cu128", extra = "cu128" }]
 torchvision = [{ index = "pytorch-cu128", extra = "cu128" }]
 torchaudio = [{ index = "pytorch-cu128", extra = "cu128" }]
+tcga-tools = { path = "../TCGA_TOOLS_2.0", editable = true }
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

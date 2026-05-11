@@ -33,7 +33,9 @@ class WSI:
     @property
     def obj(self) -> Any:
         if self._obj is None:
-            raise RuntimeError("WSI not loaded. Backend must call processor.load_wsi(wsi) first.")
+            raise RuntimeError(
+                "WSI not loaded. Backend must call processor.load_wsi(wsi) first."
+            )
         return self._obj
 
 
@@ -69,13 +71,22 @@ class WSIDataset(DatasetBase):
         )
 
         if not self._slides_dir.is_dir():
-            logger.warning("[%s] slides_dir does not exist or is not a directory: %s", self.name, self._slides_dir)
+            logger.warning(
+                "[%s] slides_dir does not exist or is not a directory: %s",
+                self.name,
+                self._slides_dir,
+            )
 
         self._artifacts_dir.mkdir(parents=True, exist_ok=True)
 
         self.samples = self._build_samples(annotations_df)
 
-        logger.info("[%s] Built %d WSI samples (used_for=%s)", self.name, len(self.samples), self.used_for)
+        logger.info(
+            "[%s] Built %d WSI samples (used_for=%s)",
+            self.name,
+            len(self.samples),
+            self.used_for,
+        )
 
     # ---- DatasetBase API -------------------------------------------------
 
@@ -144,11 +155,30 @@ class WSIDataset(DatasetBase):
 
         return candidates[0]
 
+    def _resolve_row_wsi_path(self, row: pd.Series) -> Optional[Path]:
+        """Return a directly annotated WSI path when one is available."""
+        if "wsi_path" not in row.index or pd.isna(row["wsi_path"]):
+            return None
+
+        candidate = Path(str(row["wsi_path"])).expanduser().resolve()
+        if not candidate.exists():
+            logger.warning(
+                "[%s] Annotated wsi_path does not exist for slide '%s': %s",
+                self.name,
+                row.get("slide", "<unknown>"),
+                candidate,
+            )
+            return None
+        return candidate
+
     def _build_samples(self, ann_df: pd.DataFrame) -> list[WSI]:
         df = ann_df[ann_df["dataset"] == self.config.name]
 
         if df.empty:
-            logger.warning("[%s] No annotation rows found for this dataset name in the CSV.", self.name)
+            logger.warning(
+                "[%s] No annotation rows found for this dataset name in the CSV.",
+                self.name,
+            )
             return []
 
         samples: list[WSI] = []
@@ -188,7 +218,9 @@ class WSIDataset(DatasetBase):
                 category,
             )
 
-            slide_path = self._find_wsi_path(slide_id)
+            slide_path = self._resolve_row_wsi_path(row)
+            if slide_path is None:
+                slide_path = self._find_wsi_path(slide_id)
             if slide_path is None:
                 continue
 
@@ -204,6 +236,10 @@ class WSIDataset(DatasetBase):
             )
 
         if not samples:
-            logger.warning("[%s] No valid slides were found after scanning '%s'.", self.name, self._slides_dir)
+            logger.warning(
+                "[%s] No valid slides were found after scanning '%s'.",
+                self.name,
+                self._slides_dir,
+            )
 
         return samples
