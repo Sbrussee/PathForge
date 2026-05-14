@@ -53,6 +53,9 @@ def normalize_torchmil_output(output: Any, *, task: TaskName | str) -> torch.Ten
         return tensor
     if task == "regression":
         assert tensor.ndim in {1, 2}, "Regression output must have shape [B] or [B, K]."
+        if tensor.ndim == 2:
+            assert tensor.shape[1] == 1, "Regression output [B, K] requires K=1 for continuous regression."
+            return tensor.reshape(-1)
         return tensor
     raise ValueError(f"Unsupported task for TorchMIL output normalization: {task!r}")
 

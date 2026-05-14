@@ -15,6 +15,7 @@ from pathbench.core.io.h5.layout import DEFAULT_LAYOUT
 from ._smoke_dataset import (
     ExtractedWsiWorkspace,
     PreparedBagWorkspace,
+    attach_smoke_outputs,
     capture_smoke_metrics,
     read_h5_coords,
     save_slide_feature_matrix,
@@ -30,7 +31,7 @@ def test_tile_level_feature_extraction_reuses_downloaded_hf_slides(
     metrics = json.loads(
         extracted_wsi_workspace.metrics_path.read_text(encoding="utf-8")
     )
-    assert metrics["num_slides"] == 3
+    assert metrics["num_slides"] == 45
     assert metrics["elapsed_seconds"] > 0
 
     bag_id = extracted_wsi_workspace.bag_id
@@ -78,11 +79,20 @@ def test_slide_level_feature_aggregation_reuses_tile_artifacts(
         tmp_path / "metrics",
         step_name="hf_slide_level_feature_aggregation",
         metadata={"num_slides": len(slide_ids)},
-    ):
+    ) as metadata:
         saved_path = save_slide_feature_matrix(
             output_path,
             slide_ids=slide_ids,
             slide_features=slide_features,
+        )
+        attach_smoke_outputs(
+            metadata,
+            step_name="hf_slide_level_feature_aggregation",
+            intermediate={"source_artifacts_dir": extracted_wsi_workspace.artifacts_dir},
+            final={
+                "slide_feature_matrix": saved_path,
+                "slide_feature_metadata": saved_path.with_suffix(".json"),
+            },
         )
 
     assert slide_ids == sorted(extracted_wsi_workspace.artifact_paths)

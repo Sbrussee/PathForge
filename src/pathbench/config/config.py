@@ -16,17 +16,40 @@ from pathbench.utils.optional.torchmil import (
     is_torchmil_available,
     is_torchsurv_available,
 )
+from pathbench.utils.optional.mil_lab import is_mil_lab_available
 from pathbench.utils.registries import (
     MODELS,
     LAZYSLIDE_MODEL_NAMES,
     is_feature_extractor_available,
     all_feature_extractor_names,
+    populate_dynamic_registries,
 )
 from pathbench.core.models.mil_base import MILModelBase
 from pathbench.adapters.tcga_tools import resolve_external_dataset_sources
 
 TaskType = Literal[tuple(TASK_TYPES)]
 ModeType = Literal[tuple(MODE_TYPES)]
+
+CLASSIFICATION_METRIC_NAMES = {
+    "accuracy",
+    "balanced_accuracy",
+    "f1",
+    "auroc",
+    "pr_auc",
+    "brier_score",
+}
+SURVIVAL_METRIC_NAMES = {
+    "c_index",
+    "td_auc",
+    "num_eval_times",
+}
+REGRESSION_METRIC_NAMES = {
+    "mae",
+    "mse",
+    "rmse",
+    "r2",
+}
+MONITOR_FALLBACK_NAMES = {"val_loss", "train_loss", "loss"}
 
 # ---------------------------------------------------------------------------
 # Config Sections
@@ -49,6 +72,10 @@ class ExperimentConfig(BaseModel):
     task: Optional[TaskType] = None
     mode: ModeType = "benchmark"
     aggregation_level: Literal["slide", "patient"] = "slide"
+    label_column: str = "category"
+    slide_column: str = "slide"
+    survival_time_column: Optional[str] = None
+    survival_event_column: Optional[str] = None
 
     # Global behavior
     report: bool = False
@@ -75,10 +102,13 @@ class ExperimentConfig(BaseModel):
 class MILConfig(BaseModel):
     """MIL Model specific settings."""
 
-    backend: Literal["native", "torchmil"] = "native"
+    backend: Literal["native", "torchmil", "mil-lab"] = "native"
     torchmil_model: Optional[str] = None
     torchmil_model_kwargs: Dict[str, Any] = Field(default_factory=dict)
     use_torchmil_collate: bool = True
+    mil_lab_model: Optional[str] = None
+    mil_lab_model_kwargs: Dict[str, Any] = Field(default_factory=dict)
+    mil_lab_from_pretrained: bool = False
 
     # Training Loop
     epochs: int = Field(20, gt=0)
@@ -100,7 +130,7 @@ class MILConfig(BaseModel):
     class_weighting: bool = False
 
     # Architecture (General)
-    bag_size: int = 512
+    bag_size: int | None = Field(default=None, gt=0)
     encoder_layers: int = 1
     z_dim: int = 256
     dropout_p: float = Field(0.1, ge=0.0, le=1.0)
@@ -114,6 +144,11 @@ class ExplainabilityConfig(BaseModel):
     """Explainability backend selection."""
 
     heatmap_backend: Literal["native", "torchmil"] = "native"
+    heatmap_colormap: str = "inferno"
+    heatmap_tile_alpha: float = Field(0.65, ge=0.0, le=1.0)
+    heatmap_smoothed_alpha: float = Field(0.8, ge=0.0, le=1.0)
+    heatmap_smoothing_sigma_scale: float = Field(0.75, gt=0.0)
+    heatmap_top_k_tiles: int = Field(10, ge=1)
 
 
 class MetricsConfig(BaseModel):
@@ -130,6 +165,90 @@ class MetricsConfig(BaseModel):
     classification_backend: str = "torchmetrics"
     survival_continuous_backend: str = "torchsurv"
     registry_namespace: Optional[str] = None
+    classification_metrics: list[str] = Field(
+        default_factory=lambda: [
+            "accuracy",
+            "balanced_accuracy",
+            "f1",
+            "auroc",
+            "pr_auc",
+        ]
+    )
+    survival_metrics: list[str] = Field(
+        default_factory=lambda: ["c_index", "td_auc", "num_eval_times"]
+    )
+    regression_metrics: list[str] = Field(default_factory=lambda: ["mae", "mse"])
+
+    @field_validator("classification_metrics")
+    @classmethod
+    def validate_classification_metrics(cls, value: list[str]) -> list[str]:
+        invalid = sorted(set(value) - CLASSIFICATION_METRIC_NAMES)
+        if invalid:
+            raise ValueError(
+                "Unsupported classification metrics: "
+                f"{invalid}. Allowed metrics: {sorted(CLASSIFICATION_METRIC_NAMES)}."
+            )
+        return value
+
+    @field_validator("survival_metrics")
+    @classmethod
+    def validate_survival_metrics(cls, value: list[str]) -> list[str]:
+        invalid = sorted(set(value) - SURVIVAL_METRIC_NAMES)
+        if invalid:
+            raise ValueError(
+                "Unsupported survival metrics: "
+                f"{invalid}. Allowed metrics: {sorted(SURVIVAL_METRIC_NAMES)}."
+            )
+        return value
+
+    @field_validator("regression_metrics")
+    @classmethod
+    def validate_regression_metrics(cls, value: list[str]) -> list[str]:
+        invalid = sorted(set(value) - REGRESSION_METRIC_NAMES)
+        if invalid:
+            raise ValueError(
+                "Unsupported regression metrics: "
+                f"{invalid}. Allowed metrics: {sorted(REGRESSION_METRIC_NAMES)}."
+            )
+        return value
+
+    def metrics_for_task(self, task: str | None) -> list[str]:
+        """Return the configured metric names compatible with one task."""
+
+        if task == "classification":
+            return list(self.classification_metrics)
+        if task in {"survival", "survival_discrete"}:
+            return list(self.survival_metrics)
+        if task == "regression":
+            return list(self.regression_metrics)
+        return []
+
+
+class SearchSpaceParameter(BaseModel):
+    """One optimization search-space parameter specification."""
+
+    kind: Literal["categorical", "float", "int"]
+    choices: list[Any] = Field(default_factory=list)
+    low: float | int | None = None
+    high: float | int | None = None
+    step: float | int | None = None
+    log: bool = False
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "SearchSpaceParameter":
+        if self.kind == "categorical":
+            if not self.choices:
+                raise ValueError(
+                    "categorical search-space parameters require non-empty choices."
+                )
+            return self
+        if self.low is None or self.high is None:
+            raise ValueError(
+                "float/int search-space parameters require both low and high values."
+            )
+        if self.high < self.low:
+            raise ValueError("search-space parameter high must be >= low.")
+        return self
 
 
 class SlideProcessingConfig(BaseModel):
@@ -155,6 +274,16 @@ class OptimizationConfig(BaseModel):
     sampler: str = "TPESampler"
     trials: int = Field(100, gt=0)
     pruner: Optional[str] = "HyperbandPruner"
+    search_space: dict[str, SearchSpaceParameter] = Field(
+        default_factory=lambda: {
+            "lr": SearchSpaceParameter(kind="float", low=1e-5, high=1e-3, log=True),
+            "dropout_p": SearchSpaceParameter(kind="float", low=0.1, high=0.5),
+            "mil": SearchSpaceParameter(
+                kind="categorical",
+                choices=["AttentionMIL", "TransMIL"],
+            ),
+        }
+    )
 
 
 class DatasetEntry(BaseModel):
@@ -163,6 +292,7 @@ class DatasetEntry(BaseModel):
     name: str
     slides_dir: str
     artifacts_dir: str
+    features_dir: Optional[str] = None
     tissue_annotations_dir: Optional[str] = None
     used_for: Literal["training", "testing", "validation", "ignore", "all"]
 
@@ -176,13 +306,14 @@ class BenchmarkParameters(BaseModel):
     tile_px: List[int] = Field(default_factory=lambda: [256])
     tile_mpp: List[float] = Field(default_factory=lambda: [0.5])
     feature_extraction: List[str] = Field(default_factory=list)
-    normalization: Optional[List[str]] = (
-        None  # TODO: Do we want to keep this and is it available in lazyslide?
-    )
     mil: List[str] = Field(default_factory=list)
     loss: List[str] = Field(default_factory=list)
     activation_function: List[str] = Field(default_factory=list)
     optimizer: List[str] = Field(default_factory=list)
+    batch_size: List[int] = Field(default_factory=lambda: [1])
+    lr: List[float] = Field(default_factory=list)
+    dropout_p: List[float] = Field(default_factory=list)
+    seeds: List[int] = Field(default_factory=lambda: [1, 2, 3])
 
     @field_validator("tile_px")
     @classmethod
@@ -203,6 +334,7 @@ class BenchmarkParameters(BaseModel):
     @field_validator("feature_extraction")
     @classmethod
     def validate_feature_extractors(cls, v: list[str]) -> list[str]:
+        populate_dynamic_registries()
         for fe in v:
             if not is_feature_extractor_available(fe):
                 raise ValueError(
@@ -215,6 +347,7 @@ class BenchmarkParameters(BaseModel):
     @field_validator("mil")
     @classmethod
     def validate_mil_models(cls, v: List[str]) -> List[str]:
+        populate_dynamic_registries()
         for model_name in v:
             if not MODELS.is_available(model_name):
                 raise ValueError(f"MIL model '{model_name}' not found in registry.")
@@ -254,6 +387,32 @@ class BenchmarkParameters(BaseModel):
             if opt not in valid_optimizers:
                 raise ValueError(f"Optimizer '{opt}' not found in torch.optim.")
         return v
+
+    @field_validator("batch_size")
+    @classmethod
+    def validate_batch_sizes(cls, value: list[int]) -> list[int]:
+        for batch_size in value:
+            if batch_size <= 0:
+                raise ValueError(f"Invalid batch_size: {batch_size}. Must be > 0.")
+        return value
+
+    @field_validator("lr")
+    @classmethod
+    def validate_learning_rates(cls, value: list[float]) -> list[float]:
+        for lr in value:
+            if lr <= 0:
+                raise ValueError(f"Invalid lr: {lr}. Must be > 0.")
+        return value
+
+    @field_validator("dropout_p")
+    @classmethod
+    def validate_dropouts(cls, value: list[float]) -> list[float]:
+        for dropout in value:
+            if dropout < 0.0 or dropout > 1.0:
+                raise ValueError(
+                    f"Invalid dropout_p: {dropout}. Must be inside [0, 1]."
+                )
+        return value
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +472,21 @@ class Config(BaseModel):
                 )
 
         if (
+            self.experiment.mode != "feature_extraction"
+            and self.mil.backend == "mil-lab"
+        ):
+            if not is_mil_lab_available():
+                raise RuntimeError(
+                    "MIL backend 'mil-lab' selected, but 'MIL-Lab' is not installed. "
+                    "Install MIL-Lab following its upstream README or set mil.backend to "
+                    "'native' or 'torchmil'."
+                )
+            if not self.mil.mil_lab_model:
+                raise ValueError(
+                    "mil.mil_lab_model is required when mil.backend='mil-lab'."
+                )
+
+        if (
             self.explainability.heatmap_backend == "torchmil"
             and not is_torchmil_available()
         ):
@@ -345,6 +519,22 @@ class Config(BaseModel):
         if self.experiment.mode == "benchmark" and not self.benchmark_parameters.mil:
             raise ValueError(
                 "Mode is 'benchmark' but no MIL models specified in benchmark_parameters."
+            )
+
+        task_metrics = set(self.metrics.metrics_for_task(task))
+        allowed_monitor_names = task_metrics | MONITOR_FALLBACK_NAMES
+        if self.mil.best_epoch_based_on not in allowed_monitor_names:
+            raise ValueError(
+                "mil.best_epoch_based_on must be compatible with the configured task. "
+                f"Got {self.mil.best_epoch_based_on!r}; allowed values: {sorted(allowed_monitor_names)}."
+            )
+        if (
+            self.experiment.mode == "optimization"
+            and self.optimization.objective_metric not in allowed_monitor_names
+        ):
+            raise ValueError(
+                "optimization.objective_metric must be compatible with the configured task. "
+                f"Got {self.optimization.objective_metric!r}; allowed values: {sorted(allowed_monitor_names)}."
             )
 
         return self

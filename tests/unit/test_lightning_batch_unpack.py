@@ -1,6 +1,8 @@
 import torch
 
+from pathbench.training.lightning import LightningTrainer
 from pathbench.training.lightning import LightningModuleAdapter
+from tests.smoke._smoke_training import make_training_config
 
 
 class _ToyModel(torch.nn.Module):
@@ -42,3 +44,18 @@ def test_unpack_batch_accepts_canonical_dict():
     assert bag.shape == (2, 3, 4)
     assert target.tolist() == [1, 0]
     assert kwargs["mask"].shape == (2, 3)
+
+
+def test_native_trainer_uses_padded_collate_for_multi_bag_batches(tmp_path):
+    cfg = make_training_config(
+        tmp_path / "native_batching",
+        task="classification",
+        epochs=1,
+        lr=1e-3,
+        dropout=0.0,
+        batch_size=2,
+    )
+
+    trainer = LightningTrainer(cfg)
+
+    assert trainer._collate_fn() is not None

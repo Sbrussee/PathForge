@@ -51,6 +51,7 @@ mil-backends = [
     "torchmil",
     "torchmetrics",
     "torchsurv",
+    "pycox",
 ]
 gnn = ["torch-geometric>=2.5"]
 hf = [

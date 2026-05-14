@@ -1,10 +1,30 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
 
 import numpy as np
 from PIL import Image, ImageDraw
+
+
+@dataclass(frozen=True)
+class TilesOverviewRenderResult:
+    """JPEG overview image plus the thumbnail-space mapping used to render it.
+
+    Attributes:
+        image_bytes: JPEG-encoded thumbnail with tile grid overlay.
+        downscale_x: Effective level-0-to-thumbnail x downscale.
+        downscale_y: Effective level-0-to-thumbnail y downscale.
+        image_width_px: Rendered overview width in pixels.
+        image_height_px: Rendered overview height in pixels.
+    """
+
+    image_bytes: bytes
+    downscale_x: float
+    downscale_y: float
+    image_width_px: int
+    image_height_px: int
 
 
 def _to_pil_rgb(image: Any) -> Image.Image:
@@ -55,6 +75,33 @@ def render_tiles_overview_image(
     jpeg_quality: int = 65,
     max_long_side: int | None = 1200,
 ) -> bytes:
+    """Backward-compatible wrapper returning only JPEG bytes."""
+
+    return render_tiles_overview(
+        thumbnail_image=thumbnail_image,
+        coords_array=coords_array,
+        downscale_x=downscale_x,
+        downscale_y=downscale_y,
+        slide_id=slide_id,
+        tiling_spec=tiling_spec,
+        base_mpp=base_mpp,
+        jpeg_quality=jpeg_quality,
+        max_long_side=max_long_side,
+    ).image_bytes
+
+
+def render_tiles_overview(
+    *,
+    thumbnail_image: Any,
+    coords_array: np.ndarray,
+    downscale_x: float,
+    downscale_y: float,
+    slide_id: str,
+    tiling_spec: dict[str, Any] | None = None,
+    base_mpp: float | None = None,
+    jpeg_quality: int = 65,
+    max_long_side: int | None = 1200,
+) -> TilesOverviewRenderResult:
     """
     Render a tile overview image (thumbnail + tile grid overlay) and return JPEG bytes.
 
@@ -200,4 +247,10 @@ def render_tiles_overview_image(
         save_kwargs.pop("progressive", None)
         pil_img.save(buf, **save_kwargs)
 
-    return buf.getvalue()
+    return TilesOverviewRenderResult(
+        image_bytes=buf.getvalue(),
+        downscale_x=float(downscale_x),
+        downscale_y=float(downscale_y),
+        image_width_px=int(img_w),
+        image_height_px=int(img_h),
+    )

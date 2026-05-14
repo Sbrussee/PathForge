@@ -48,5 +48,11 @@ def test_trainer_base_method_names_remain_stable() -> None:
     fit_signature = inspect.signature(TrainerBase.fit)
     predict_signature = inspect.signature(TrainerBase.predict)
 
-    assert list(fit_signature.parameters)[:3] == ["self", "model", "dataset"]
+    assert list(fit_signature.parameters)[:5] == [
+        "self",
+        "model",
+        "dataset_train",
+        "dataset_val",
+        "loss_func",
+    ]
     assert list(predict_signature.parameters)[:3] == ["self", "model", "dataset"]

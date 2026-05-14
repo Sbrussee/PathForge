@@ -4,11 +4,15 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from PIL import Image
 
 from pathbench.core.io.h5.base import FileHandleH5
 from pathbench.core.io.h5 import heatmaps as heatmap_io
 from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.inference.heatmaps import create_inference_heatmap
+from pathbench.inference.heatmaps import (
+    _coords_to_pixel_rectangles,
+    create_inference_heatmap,
+)
 from pathbench.utils.registries import EXPLAINERS
 
 
@@ -29,7 +33,9 @@ class _FakeHeatmapExplainer:
             mask = input["mask"].bool()
             coords = coords[mask]
             scores = scores[mask]
-        scores = (scores - scores.min()) / torch.clamp(scores.max() - scores.min(), min=1e-12)
+        scores = (scores - scores.min()) / torch.clamp(
+            scores.max() - scores.min(), min=1e-12
+        )
         return _FakeHeatmap(coords=coords, scores=scores)
 
 
@@ -44,6 +50,7 @@ def test_create_inference_heatmap_persists_h5_and_json_sidecar(tmp_path):
     artifact_path = tmp_path / "slide.h5"
     scores_path = tmp_path / "scores.npy"
     output_path = tmp_path / "heatmap.json"
+    image_output_path = tmp_path / "heatmap.png"
     np.save(scores_path, np.asarray([0.2, 0.5, 1.0], dtype=np.float32))
 
     with FileHandleH5(artifact_path, mode="a") as slide_artifact:
@@ -59,6 +66,22 @@ def test_create_inference_heatmap_persists_h5_and_json_sidecar(tmp_path):
                 dtype=np.int32,
             ),
         )
+        tiles_io.write_tiling_spec(
+            slide_artifact,
+            "256px_0.5mpp",
+            {
+                "tile_px": 256,
+                "tile_mpp": 0.5,
+                "coord_space": "level0",
+                "tiles_overview_downscale_x": 2.0,
+                "tiles_overview_downscale_y": 2.0,
+            },
+        )
+        tiles_io.write_tiles_overview(
+            slide_artifact,
+            "256px_0.5mpp",
+            _overview_bytes(width=384, height=192),
+        )
 
     result = create_inference_heatmap(
         artifact_path=artifact_path,
@@ -67,17 +90,37 @@ def test_create_inference_heatmap_persists_h5_and_json_sidecar(tmp_path):
         heatmap_backend="fake_inference_heatmap",
         heatmap_name="attention",
         output_path=output_path,
+        image_output_path=image_output_path,
         model_path="model.ckpt",
     )
 
     assert result.num_points == 3
     assert output_path.exists()
+    assert image_output_path.exists()
+    assert result.smoothed_image_output_path is not None
+    assert result.smoothed_image_output_path.exists()
+    assert result.top_tiles_output_path is not None
+    assert result.top_tiles_output_path.exists()
+    assert result.image_output_path == image_output_path
     with FileHandleH5(artifact_path, mode="r") as slide_artifact:
-        heatmap = heatmap_io.read_prediction_heatmap(slide_artifact, "256px_0.5mpp", "attention")
+        heatmap = heatmap_io.read_prediction_heatmap(
+            slide_artifact, "256px_0.5mpp", "attention"
+        )
 
     assert heatmap["coords"].shape == (3, 2)
     assert heatmap["scores"].shape == (3,)
     assert heatmap["metadata"]["backend"] == "fake_inference_heatmap"
+
+
+def test_coords_to_pixel_rectangles_preserves_tile_square_alignment() -> None:
+    rectangles = _coords_to_pixel_rectangles(
+        coords=np.asarray([[0.0, 0.0], [200.0, 0.0]], dtype=np.float32),
+        tile_sizes=np.asarray([[200.0, 200.0], [200.0, 200.0]], dtype=np.float32),
+        downscale_x=2.0,
+        downscale_y=2.0,
+    )
+
+    assert rectangles.tolist() == [[0, 0, 100, 100], [100, 0, 100, 100]]
 
 
 def test_create_inference_heatmap_applies_mask(tmp_path):
@@ -102,6 +145,24 @@ def test_create_inference_heatmap_applies_mask(tmp_path):
 
     assert result.num_points == 2
     with FileHandleH5(artifact_path, mode="r") as slide_artifact:
-        heatmap = heatmap_io.read_prediction_heatmap(slide_artifact, "256px_0.5mpp", "masked_attention")
+        heatmap = heatmap_io.read_prediction_heatmap(
+            slide_artifact, "256px_0.5mpp", "masked_attention"
+        )
 
     assert heatmap["coords"].tolist() == [[0.0, 0.0], [512.0, 0.0]]
+
+
+def _overview_bytes(
+    *,
+    width: int,
+    height: int,
+    color: tuple[int, int, int] = (255, 255, 255),
+) -> bytes:
+    """Create deterministic JPEG overview bytes for rendering tests."""
+
+    from io import BytesIO
+
+    image = Image.new("RGB", (width, height), color=color)
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG")
+    return buffer.getvalue()

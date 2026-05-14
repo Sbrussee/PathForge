@@ -51,7 +51,9 @@ class _FakeSlideProcessor:
         self.get_thumbnail_calls += 1
         return self.thumbnail.copy(), 10.0, 10.0
 
-    def extract_features(self, wsi: WSI, coords: np.ndarray, tiling_spec: dict, config: dict[str, Any]) -> np.ndarray:
+    def extract_features(
+        self, wsi: WSI, coords: np.ndarray, tiling_spec: dict, config: dict[str, Any]
+    ) -> np.ndarray:
         self.extract_features_calls += 1
         n = int(coords.shape[0])
         return np.zeros((n, 8), dtype=np.float32)
@@ -154,7 +156,9 @@ def _install_common_mocks(
     monkeypatch.setattr(fe_mod, "FileHandleH5", _FakeFileHandleH5)
 
     def _no_logger_exception(*args, **kwargs):
-        raise AssertionError("Unexpected exception inside FeatureExtractionPolicy._execute_wsi")
+        raise AssertionError(
+            "Unexpected exception inside FeatureExtractionPolicy._execute_wsi"
+        )
 
     monkeypatch.setattr(fe_mod.logger, "exception", _no_logger_exception)
 
@@ -164,12 +168,22 @@ def _install_common_mocks(
         lambda **kwargs: _render_stub(state, **kwargs),
     )
 
-    monkeypatch.setattr(fe_mod.tiles_io, "coords_num_rows", lambda *a, **k: int(coords_arr.shape[0]))
+    monkeypatch.setattr(
+        fe_mod.tiles_io, "coords_num_rows", lambda *a, **k: int(coords_arr.shape[0])
+    )
 
-    monkeypatch.setattr(fe_mod.tiles_io, "coords_exist", lambda *a, **k: bool(coords_are_valid))
-    monkeypatch.setattr(fe_mod.tiles_io, "tiling_spec_matches", lambda *a, **k: bool(coords_are_valid))
-    monkeypatch.setattr(fe_mod.tiles_io, "read_coords", lambda *a, **k: coords_arr.copy())
-    monkeypatch.setattr(fe_mod.tiles_io, "read_tiling_spec", lambda *a, **k: dict(tiling_spec_obj))
+    monkeypatch.setattr(
+        fe_mod.tiles_io, "coords_exist", lambda *a, **k: bool(coords_are_valid)
+    )
+    monkeypatch.setattr(
+        fe_mod.tiles_io, "tiling_spec_matches", lambda *a, **k: bool(coords_are_valid)
+    )
+    monkeypatch.setattr(
+        fe_mod.tiles_io, "read_coords", lambda *a, **k: coords_arr.copy()
+    )
+    monkeypatch.setattr(
+        fe_mod.tiles_io, "read_tiling_spec", lambda *a, **k: dict(tiling_spec_obj)
+    )
 
     def _tiles_overview_exists(*args, **kwargs) -> bool:
         state["tiles_overview_exists_calls"] += 1
@@ -177,7 +191,9 @@ def _install_common_mocks(
             return bool(overview_seq.pop(0))
         return False
 
-    monkeypatch.setattr(fe_mod.tiles_io, "tiles_overview_exists", _tiles_overview_exists)
+    monkeypatch.setattr(
+        fe_mod.tiles_io, "tiles_overview_exists", _tiles_overview_exists
+    )
 
     def _write_tiles_overview(*args, **kwargs) -> None:
         state["write_tiles_overview_calls"] += 1
@@ -187,17 +203,31 @@ def _install_common_mocks(
             state["last_written_overview"] = kwargs.get("image_bytes")
 
     monkeypatch.setattr(fe_mod.tiles_io, "write_tiles_overview", _write_tiles_overview)
-    monkeypatch.setattr(fe_mod.tiles_io, "write_coords", lambda *a, **k: _bump(state, "write_coords_calls"))
-    monkeypatch.setattr(fe_mod.tiles_io, "write_tiling_spec", lambda *a, **k: _bump(state, "write_tiling_spec_calls"))
+    monkeypatch.setattr(
+        fe_mod.tiles_io,
+        "write_coords",
+        lambda *a, **k: _bump(state, "write_coords_calls"),
+    )
+    monkeypatch.setattr(
+        fe_mod.tiles_io,
+        "write_tiling_spec",
+        lambda *a, **k: _bump(state, "write_tiling_spec_calls"),
+    )
 
     def _features_exist(*args, **kwargs) -> bool:
         state["features_exist_calls"].append(kwargs.get("expected_rows"))
         if not features_exist_sequence:
-            raise AssertionError("features_exist called more often than expected in test")
+            raise AssertionError(
+                "features_exist called more often than expected in test"
+            )
         return bool(features_exist_sequence.pop(0))
 
     monkeypatch.setattr(fe_mod.features_io, "features_exist", _features_exist)
-    monkeypatch.setattr(fe_mod.features_io, "write_features", lambda *a, **k: _bump(state, "write_features_calls"))
+    monkeypatch.setattr(
+        fe_mod.features_io,
+        "write_features",
+        lambda *a, **k: _bump(state, "write_features_calls"),
+    )
 
     return state
 
@@ -220,7 +250,9 @@ def _dataset_stub() -> Any:
     return SimpleNamespace(tissue_annotations_dir=None, name="ds")
 
 
-def _execute(policy: FeatureExtractionPolicy, processor: _FakeSlideProcessor, tmp_path: Path) -> None:
+def _execute(
+    policy: FeatureExtractionPolicy, processor: _FakeSlideProcessor, tmp_path: Path
+) -> None:
     policy._execute_wsi(
         dataset=_dataset_stub(),
         wsi=_make_wsi(tmp_path),
@@ -229,7 +261,9 @@ def _execute(policy: FeatureExtractionPolicy, processor: _FakeSlideProcessor, tm
     )
 
 
-def test_report_false_no_overview_generation_attempt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_report_false_no_overview_generation_attempt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     policy = _make_policy(report=False)
     processor = _FakeSlideProcessor()
 
