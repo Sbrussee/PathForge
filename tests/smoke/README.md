@@ -30,3 +30,4 @@ Notes:
 
 - The suite skips cleanly when optional runtime dependencies such as `lazyslide`, `torch`, `timm`, or `anndata` are unavailable.
 - The survival smoke currently exercises PathBench trainer/model/loss contracts using precomputed slide-level features from the sample dataset as one-instance MIL bags. This keeps the test lightweight while still covering survival task plumbing end to end.
+- When `PATHBENCH_SMOKE_REPORT_DIR` is set, each smoke step mirrors its metrics JSON into `steps/` under that directory and the session writes aggregate `smoke_summary.json` and `smoke_summary.md` reports containing intermediate and final artifact paths for investigation.

@@ -10,7 +10,7 @@ from pathbench.core.registry import MODELS
 
 @MODELS.register("GCNConvMIL")
 class GCNConvMIL(MILModelBase):
-    """
+    r"""
     Graph Convolutional Network MIL.
     
     Uses simple GCN layers on a KNN graph followed by global attention pooling.

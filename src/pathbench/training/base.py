@@ -18,21 +18,21 @@ class TrainerBase(ABC):
     def fit(
         self,
         model: MILModelBase,
-        dataset: DatasetBase,
-        task: Any,
+        dataset_train: DatasetBase,
+        dataset_val: DatasetBase,
+        loss_func: BaseLoss,
     ) -> Any:
-        """Train the model on the given dataset using the specified loss function and task."""
-        pass
+        """Train a model on train/validation datasets and return trainer-specific results."""
+        ...
     
     @abstractmethod
     def predict(
         self,
         model: MILModelBase,
         dataset: DatasetBase,
-        task: Any,
     ) -> Any:
-        """Make predictions using the trained model on the given dataset."""
-        pass
+        """Run inference on a dataset using a trained model."""
+        ...
     
 @dataclass
 class MILTrainer:
@@ -45,14 +45,14 @@ class MILTrainer:
 
     trainer: TrainerBase
     model: MILModelBase
-    dataset: BagDatasetBase
-    task: Any
+    dataset_train: BagDatasetBase
+    dataset_val: BagDatasetBase
     loss: BaseLoss
 
-    def run(self) -> None:
-        self.trainer.fit(
+    def run(self) -> Any:
+        return self.trainer.fit(
             model=self.model,
-            dataset=self.dataset,
-            task=self.task,
-            loss=self.loss,
+            dataset_train=self.dataset_train,
+            dataset_val=self.dataset_val,
+            loss_func=self.loss,
         )

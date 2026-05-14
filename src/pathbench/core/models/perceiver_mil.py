@@ -9,7 +9,7 @@ from pathbench.core.registry import MODELS
 
 @MODELS.register("PerceiverMIL")
 class PerceiverMIL(MILModelBase):
-    """
+    r"""
     Perceiver-based MIL.
     
     Uses a fixed set of latent query vectors to attend to the variable-sized bag input 

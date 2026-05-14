@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+from PIL import Image
 
 from pathbench.cli.tiles_report import _unique_bag_ids_from_config
 from pathbench.core.datasets.wsi_dataset import WSI
@@ -42,7 +44,9 @@ def _make_dataset(tmp_path: Path) -> SimpleNamespace:
     )
 
 
-def _write_reportable_artifact(artifact_path: Path, *, bag_id: str, image_bytes: bytes) -> None:
+def _write_reportable_artifact(
+    artifact_path: Path, *, bag_id: str, image_bytes: bytes
+) -> None:
     """Write the minimal H5 contents required for tiles report generation."""
     coords = np.asarray(
         [
@@ -63,14 +67,24 @@ def _write_reportable_artifact(artifact_path: Path, *, bag_id: str, image_bytes:
         tiles_io.write_tiles_overview(slide_artifact, bag_id, image_bytes)
 
 
-def test_collect_tiles_overview_entries_counts_present_and_missing_slides(tmp_path: Path) -> None:
+def _valid_overview_bytes(color: tuple[int, int, int] = (10, 120, 200)) -> bytes:
+    """Create a small valid PNG payload for tiles_overview tests."""
+    image = Image.new("RGB", (16, 16), color=color)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_collect_tiles_overview_entries_counts_present_and_missing_slides(
+    tmp_path: Path,
+) -> None:
     """Collection should include reportable slides and count missing overviews."""
     dataset = _make_dataset(tmp_path)
     bag_id = "256px_0.5mpp"
     _write_reportable_artifact(
         dataset.samples[0].artifact_path,
         bag_id=bag_id,
-        image_bytes=b"\xff\xd8\xff\xe0valid_overview",
+        image_bytes=_valid_overview_bytes(),
     )
 
     collection = collect_tiles_overview_entries(dataset=dataset, bag_id=bag_id)
@@ -90,7 +104,7 @@ def test_create_tiles_report_pdf_writes_pdf(tmp_path: Path) -> None:
         _write_reportable_artifact(
             sample.artifact_path,
             bag_id=bag_id,
-            image_bytes=b"\xff\xd8\xff\xe0valid_overview_bytes",
+            image_bytes=_valid_overview_bytes(),
         )
 
     output_path = tmp_path / "tiles_report.pdf"

@@ -20,10 +20,20 @@ from pathbench.core.io.h5 import tiles as tiles_io
 from pathbench.core.io.h5 import features as features_io
 from pathbench.core.io.h5 import tissue as tissue_io
 
-from pathbench.core.visualization.tiles_overview import render_tiles_overview_image
-from pathbench.core.reports.tiles_report_pdf import create_tiles_report_pdf 
+from pathbench.core.visualization.tiles_overview import render_tiles_overview
+from pathbench.core.reports.tiles_report_pdf import create_tiles_report_pdf
 
 logger = logging.getLogger(__name__)
+
+
+def render_tiles_overview_image(**kwargs):
+    """Backward-compatible overview render hook for policy tests and callers.
+
+    Returns either raw JPEG bytes (legacy test stubs) or a
+    ``TilesOverviewRenderResult`` from the visualization module.
+    """
+
+    return render_tiles_overview(**kwargs)
 
 
 class FeatureExtractionPolicy(PolicyBase):
@@ -81,7 +91,9 @@ class FeatureExtractionPolicy(PolicyBase):
                 run_configs=run_configs,
             )
 
-    def process_slide(self, dataset: WSIDataset, wsi: WSI, combo_cfg: ComboConfig) -> None:
+    def process_slide(
+        self, dataset: WSIDataset, wsi: WSI, combo_cfg: ComboConfig
+    ) -> None:
         slide_processor = self._build_processor()
         run_configs = self._build_run_configs(combo_cfg)
         self._execute_wsi(
@@ -130,7 +142,7 @@ class FeatureExtractionPolicy(PolicyBase):
             "tile_px": tile_px,
             "tile_mpp": tile_mpp,
             "stride_px": tile_px,
-            "coord_space": "level0"
+            "coord_space": "level0",
         }
 
         try:
@@ -146,12 +158,21 @@ class FeatureExtractionPolicy(PolicyBase):
 
                 # Only skip immediately if we do NOT need to create a missing tiles_overview
                 if features_already_exist:
-                    if (not report_enabled) or tiles_io.tiles_overview_exists(slide_artifact, bag_id):
-                        logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, bag_id, extractor_name)
+                    if (not report_enabled) or tiles_io.tiles_overview_exists(
+                        slide_artifact, bag_id
+                    ):
+                        logger.info(
+                            "[Policy] Features exist for slide %s (%s/%s), skipping.",
+                            slide_id,
+                            bag_id,
+                            extractor_name,
+                        )
                         return
 
                 # ---- Coords reuse or recompute ----
-                coords_are_valid = tiles_io.coords_exist(slide_artifact, bag_id) and tiles_io.tiling_spec_matches(
+                coords_are_valid = tiles_io.coords_exist(
+                    slide_artifact, bag_id
+                ) and tiles_io.tiling_spec_matches(
                     slide_artifact,
                     bag_id=bag_id,
                     expected_tiling_spec=expected_tiling_spec,
@@ -185,14 +206,18 @@ class FeatureExtractionPolicy(PolicyBase):
                         slide_processor.close_wsi(wsi)
 
                     coords_array = self._ensure_coords_array(coords_array)
-                    tiling_spec = self._ensure_tiling_spec_dict(tiling_spec, expected_tiling_spec=expected_tiling_spec)
+                    tiling_spec = self._ensure_tiling_spec_dict(
+                        tiling_spec, expected_tiling_spec=expected_tiling_spec
+                    )
 
                     tiles_io.write_coords(slide_artifact, bag_id, coords_array)
                     tiles_io.write_tiling_spec(slide_artifact, bag_id, tiling_spec)
                     tiles_newly_created = True
 
                 if coords_array is None or tiling_spec is None:
-                    raise RuntimeError("[Policy] Internal error: coords_array/tiling_spec not resolved.")
+                    raise RuntimeError(
+                        "[Policy] Internal error: coords_array/tiling_spec not resolved."
+                    )
 
                 # ---- tiles_overview (optional report visualization) ----
                 if report_enabled:
@@ -203,10 +228,12 @@ class FeatureExtractionPolicy(PolicyBase):
                     if should_write_tiles_overview:
                         slide_processor.load_wsi(wsi)
                         try:
-                            thumbnail_image, downscale_x, downscale_y = slide_processor.get_thumbnail(wsi, level=-1)
+                            thumbnail_image, downscale_x, downscale_y = (
+                                slide_processor.get_thumbnail(wsi, level=-1)
+                            )
                             base_mpp = slide_processor.get_base_mpp(wsi)
 
-                            tiles_overview_bytes = render_tiles_overview_image(
+                            tiles_overview = render_tiles_overview_image(
                                 thumbnail_image=thumbnail_image,
                                 coords_array=coords_array,
                                 downscale_x=downscale_x,
@@ -218,7 +245,32 @@ class FeatureExtractionPolicy(PolicyBase):
                         finally:
                             slide_processor.close_wsi(wsi)
 
-                        tiles_io.write_tiles_overview(slide_artifact, bag_id, tiles_overview_bytes)
+                        if isinstance(tiles_overview, bytes):
+                            tiles_overview_bytes = tiles_overview
+                        else:
+                            tiling_spec = {
+                                **tiling_spec,
+                                "tiles_overview_downscale_x": float(
+                                    tiles_overview.downscale_x
+                                ),
+                                "tiles_overview_downscale_y": float(
+                                    tiles_overview.downscale_y
+                                ),
+                                "tiles_overview_width_px": int(
+                                    tiles_overview.image_width_px
+                                ),
+                                "tiles_overview_height_px": int(
+                                    tiles_overview.image_height_px
+                                ),
+                            }
+                            tiles_io.write_tiling_spec(
+                                slide_artifact, bag_id, tiling_spec
+                            )
+                            tiles_overview_bytes = tiles_overview.image_bytes
+
+                        tiles_io.write_tiles_overview(
+                            slide_artifact, bag_id, tiles_overview_bytes
+                        )
 
                 # ---- Features reuse or recompute ----
                 if features_io.features_exist(
@@ -227,7 +279,12 @@ class FeatureExtractionPolicy(PolicyBase):
                     extractor_name=extractor_name,
                     expected_rows=int(coords_array.shape[0]),
                 ):
-                    logger.info("[Policy] Features exist for slide %s (%s/%s), skipping.", slide_id, bag_id, extractor_name)
+                    logger.info(
+                        "[Policy] Features exist for slide %s (%s/%s), skipping.",
+                        slide_id,
+                        bag_id,
+                        extractor_name,
+                    )
                     return
 
                 slide_processor.load_wsi(wsi)
@@ -241,8 +298,12 @@ class FeatureExtractionPolicy(PolicyBase):
                 finally:
                     slide_processor.close_wsi(wsi)
 
-                feature_matrix = self._ensure_feature_matrix(feature_matrix, expected_rows=int(coords_array.shape[0]))
-                features_io.write_features(slide_artifact, bag_id, extractor_name, feature_matrix)
+                feature_matrix = self._ensure_feature_matrix(
+                    feature_matrix, expected_rows=int(coords_array.shape[0])
+                )
+                features_io.write_features(
+                    slide_artifact, bag_id, extractor_name, feature_matrix
+                )
 
         except Exception:
             logger.exception("[Policy] Error processing slide %s", slide_id)
@@ -258,20 +319,26 @@ class FeatureExtractionPolicy(PolicyBase):
     ) -> tissue_io.TissuePolygons:
         slide_id = wsi.slide
 
-        # 1) Cache first 
+        # 1) Cache first
         if tissue_io.tissue_exists(slide_artifact):
             polygons = tissue_io.read_tissue(slide_artifact)
             if polygons:
                 return polygons
 
         # 2) If no cache yet: try external tissue (e.g. geojson), then cache it in H5
-        external_roi_path = self._find_external_roi_file(dataset=dataset, slide_id=slide_id)
+        external_roi_path = self._find_external_roi_file(
+            dataset=dataset, slide_id=slide_id
+        )
         if external_roi_path is not None:
             polygons = tissue_io.load_external_tissue_polygons(external_roi_path)
             if polygons:
                 tissue_io.write_tissue(slide_artifact, polygons)
                 return polygons
-            logger.warning("[Policy] External ROI found but empty for slide %s: %s", slide_id, external_roi_path)
+            logger.warning(
+                "[Policy] External ROI found but empty for slide %s: %s",
+                slide_id,
+                external_roi_path,
+            )
 
         # 3) Otherwise: compute with backend and cache in H5
         slide_processor.load_wsi(wsi)
@@ -283,7 +350,9 @@ class FeatureExtractionPolicy(PolicyBase):
         tissue_io.write_tissue(slide_artifact, polygons)
         return polygons
 
-    def _find_external_roi_file(self, *, dataset: WSIDataset, slide_id: str) -> Optional[Path]:
+    def _find_external_roi_file(
+        self, *, dataset: WSIDataset, slide_id: str
+    ) -> Optional[Path]:
         roi_root = dataset.tissue_annotations_dir
         if roi_root is None or not roi_root.is_dir():
             return None
@@ -309,20 +378,32 @@ class FeatureExtractionPolicy(PolicyBase):
 
         ProcessorClass = SLIDE_PROCESSORS.get(self.backend_name)
         if not ProcessorClass:
-            raise ValueError(f"Slide processing backend '{self.backend_name}' not found in registry.")
+            raise ValueError(
+                f"Slide processing backend '{self.backend_name}' not found in registry."
+            )
 
         slide_processor: SlideProcessorBase = ProcessorClass()
-        logger.info("[Policy] Using backend '%s' -> %s", self.backend_name, slide_processor)
+        logger.info(
+            "[Policy] Using backend '%s' -> %s", self.backend_name, slide_processor
+        )
         return slide_processor
 
     def _build_seg_config(self) -> dict[str, Any]:
         return {
             "method": self.config.slide_processing.segmentation_method,
-            "params": (self.config.slide_processing.qc_filters[0] if self.config.slide_processing.qc_filters else {}),
+            "params": (
+                self.config.slide_processing.qc_filters[0]
+                if self.config.slide_processing.qc_filters
+                else {}
+            ),
         }
 
     def _build_tile_config(self, combo_cfg: ComboConfig) -> dict[str, Any]:
-        return {"tile_px": combo_cfg.tile_px, "tile_mpp": combo_cfg.tile_mpp, "params": {}}
+        return {
+            "tile_px": combo_cfg.tile_px,
+            "tile_mpp": combo_cfg.tile_mpp,
+            "params": {},
+        }
 
     def _build_feat_config(self, combo_cfg: ComboConfig) -> dict[str, Any]:
         return {"model": combo_cfg.feature_extraction, "params": {}}
@@ -333,19 +414,27 @@ class FeatureExtractionPolicy(PolicyBase):
     def _ensure_coords_array(self, coords_array: Any) -> np.ndarray:
         coords_array = np.asarray(coords_array, dtype=np.int32)
         if coords_array.ndim != 2 or coords_array.shape[1] != 5:
-            raise ValueError(f"[Policy] coords must have shape (N,5), got {coords_array.shape}.")
+            raise ValueError(
+                f"[Policy] coords must have shape (N,5), got {coords_array.shape}."
+            )
         return coords_array
 
-    def _ensure_tiling_spec_dict(self, tiling_spec: Any, *, expected_tiling_spec: dict[str, Any]) -> dict[str, Any]:
+    def _ensure_tiling_spec_dict(
+        self, tiling_spec: Any, *, expected_tiling_spec: dict[str, Any]
+    ) -> dict[str, Any]:
         if not isinstance(tiling_spec, dict):
-            raise TypeError(f"[Policy] tiling_spec must be a dict, got {type(tiling_spec)}.")
+            raise TypeError(
+                f"[Policy] tiling_spec must be a dict, got {type(tiling_spec)}."
+            )
 
         for key in ("tile_px", "tile_mpp", "stride_px", "coord_space"):
             if key not in tiling_spec:
                 raise ValueError(f"[Policy] tiling_spec missing required key '{key}'.")
 
         if str(tiling_spec["coord_space"]) != "level0":
-            raise ValueError(f"[Policy] tiling_spec.coord_space must be 'level0', got {tiling_spec['coord_space']!r}.")
+            raise ValueError(
+                f"[Policy] tiling_spec.coord_space must be 'level0', got {tiling_spec['coord_space']!r}."
+            )
 
         # enforce the expected tiling (source of truth is current run params)
         tiling_spec["tile_px"] = int(expected_tiling_spec["tile_px"])
@@ -353,10 +442,14 @@ class FeatureExtractionPolicy(PolicyBase):
 
         return tiling_spec
 
-    def _ensure_feature_matrix(self, feature_matrix: Any, *, expected_rows: int) -> np.ndarray:
+    def _ensure_feature_matrix(
+        self, feature_matrix: Any, *, expected_rows: int
+    ) -> np.ndarray:
         feature_matrix = np.asarray(feature_matrix, dtype=np.float32)
         if feature_matrix.ndim != 2:
-            raise ValueError(f"[Policy] features must be 2D (N,D), got shape {feature_matrix.shape}.")
+            raise ValueError(
+                f"[Policy] features must be 2D (N,D), got shape {feature_matrix.shape}."
+            )
         if int(feature_matrix.shape[0]) != int(expected_rows):
             raise ValueError(
                 f"[Policy] features rows must match coords rows: expected {expected_rows}, got {feature_matrix.shape[0]}."
@@ -371,7 +464,9 @@ class FeatureExtractionPolicy(PolicyBase):
         unique_bag_ids = self._collect_unique_report_bag_ids()
 
         if not unique_bag_ids:
-            logger.info("[Policy] report=True but no tiling combos found; skipping tile reports.")
+            logger.info(
+                "[Policy] report=True but no tiling combos found; skipping tile reports."
+            )
             return
 
         logger.info(
@@ -383,7 +478,9 @@ class FeatureExtractionPolicy(PolicyBase):
         for dataset in self.datasets:
             for bag_id in unique_bag_ids:
                 try:
-                    self._generate_tiles_report_for_dataset_bag(dataset=dataset, bag_id=bag_id)
+                    self._generate_tiles_report_for_dataset_bag(
+                        dataset=dataset, bag_id=bag_id
+                    )
                 except Exception:
                     logger.exception(
                         "[Policy] Failed to generate tile report for dataset='%s', bag_id='%s'",
@@ -413,7 +510,9 @@ class FeatureExtractionPolicy(PolicyBase):
 
         return bag_ids
 
-    def _generate_tiles_report_for_dataset_bag(self, *, dataset: WSIDataset, bag_id: str) -> None:
+    def _generate_tiles_report_for_dataset_bag(
+        self, *, dataset: WSIDataset, bag_id: str
+    ) -> None:
         """
         Wrapper around the PDF report generator.
 
@@ -431,8 +530,8 @@ class FeatureExtractionPolicy(PolicyBase):
         output_pdf = create_tiles_report_pdf(
             dataset=dataset,
             bag_id=bag_id,
-            output_path=None,   # timestamped default in dataset.artifacts_dir
-            timestamp=None,     # use current time
+            output_path=None,  # timestamped default in dataset.artifacts_dir
+            timestamp=None,  # use current time
         )
 
         logger.info(

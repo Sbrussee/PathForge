@@ -1,14 +1,14 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
-from typing import Any, Optional, Dict, Iterable, Union
+from abc import abstractmethod
+from typing import Any, Dict, Optional, Union
 import torch
 import torch.nn as nn
-from pathbench.core.models.base import ModelBase
+from pathbench.core.models.base import TorchModelBase
 
 # =============================================================================
 # Slide-Level Model Abstraction (Vector Input)
 # =============================================================================
-class SlideLevelModel(ModelBase, nn.Module):
+class SlideLevelModel(TorchModelBase):
     """
     Base class for models that operate on pre-aggregated slide vectors.
     Expects input: (Batch, Dim).
@@ -30,16 +30,3 @@ class SlideLevelModel(ModelBase, nn.Module):
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> Union[torch.Tensor, Dict[str, Any]]:
         return self.forward_slide(x, *args, **kwargs)
-
-    # --- PyTorch Implementation of ModelBase ---
-    def initialize(self, config: Optional[Dict[str, Any]] = None) -> None:
-        pass
-
-    def save(self, path: str) -> None:
-        torch.save(self.state_dict(), path)
-
-    def load(self, path: str) -> None:
-        self.load_state_dict(torch.load(path, map_location='cpu'))
-
-    def get_learnable_parameters(self) -> Iterable[torch.nn.Parameter]:
-        return (p for p in self.parameters() if p.requires_grad)

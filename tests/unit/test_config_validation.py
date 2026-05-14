@@ -23,12 +23,14 @@ LAZYSLIDE_MODEL_NAMES.add(LAZY_NAME)
 
 # --- Register dummy feature extractors (idempotent) ---
 if not FEATURE_EXTRACTORS.is_available(GENERIC_NAME):
+
     @FEATURE_EXTRACTORS.register(GENERIC_NAME)
     def _generic_model():  # pragma: no cover
         return "generic"
 
 
 if not FEATURE_EXTRACTORS.is_available(LAZY_NAME):
+
     @FEATURE_EXTRACTORS.register(LAZY_NAME)
     def _lazy_model():  # pragma: no cover
         return "lazy"
@@ -36,6 +38,7 @@ if not FEATURE_EXTRACTORS.is_available(LAZY_NAME):
 
 # --- Register dummy MIL model (idempotent) ---
 if not MODELS.is_available(MIL_NAME):
+
     @MODELS.register(MIL_NAME)
     class MockMIL(MILModelBase):
         @property
@@ -47,6 +50,7 @@ if not MODELS.is_available(MIL_NAME):
 
 
 if not MODELS.is_available(TORCHMIL_BACKEND_NAME):
+
     @MODELS.register(TORCHMIL_BACKEND_NAME)
     class MockTorchMILBackend(MILModelBase):
         @property
@@ -69,6 +73,7 @@ from pathbench.config.config import Config, BenchmarkParameters  # noqa: E402
 
 
 # --- Tests ---
+
 
 def test_valid_benchmark_params():
     bp = BenchmarkParameters(
@@ -145,7 +150,10 @@ def test_torchmil_backend_requires_package_when_selected(monkeypatch):
         "slide_processing": {"backend": "lazyslide"},
         "mil": {"backend": "torchmil", "torchmil_model": "ABMIL"},
         "metrics": {"classification_backend": "native"},
-        "benchmark_parameters": {"feature_extraction": [GENERIC_NAME], "mil": ["torchmil"]},
+        "benchmark_parameters": {
+            "feature_extraction": [GENERIC_NAME],
+            "mil": ["torchmil"],
+        },
     }
 
     with pytest.raises(RuntimeError, match="MIL backend 'torchmil' selected"):
@@ -164,7 +172,10 @@ def test_torchmil_backend_requires_model_name_when_available(monkeypatch):
         "slide_processing": {"backend": "lazyslide"},
         "mil": {"backend": "torchmil"},
         "metrics": {"classification_backend": "native"},
-        "benchmark_parameters": {"feature_extraction": [GENERIC_NAME], "mil": ["torchmil"]},
+        "benchmark_parameters": {
+            "feature_extraction": [GENERIC_NAME],
+            "mil": ["torchmil"],
+        },
     }
 
     with pytest.raises(ValueError, match="mil.torchmil_model is required"):
@@ -173,7 +184,9 @@ def test_torchmil_backend_requires_model_name_when_available(monkeypatch):
 
 def test_classification_metrics_backend_requires_torchmetrics(monkeypatch):
     monkeypatch.setattr("pathbench.config.config.is_torchmil_available", lambda: True)
-    monkeypatch.setattr("pathbench.config.config.is_torchmetrics_available", lambda: False)
+    monkeypatch.setattr(
+        "pathbench.config.config.is_torchmetrics_available", lambda: False
+    )
     cfg_data = {
         "experiment": {
             "project_name": "test",
@@ -183,16 +196,23 @@ def test_classification_metrics_backend_requires_torchmetrics(monkeypatch):
         },
         "slide_processing": {"backend": "lazyslide"},
         "mil": {"backend": "torchmil", "torchmil_model": "ABMIL"},
-        "benchmark_parameters": {"feature_extraction": [GENERIC_NAME], "mil": ["torchmil"]},
+        "benchmark_parameters": {
+            "feature_extraction": [GENERIC_NAME],
+            "mil": ["torchmil"],
+        },
     }
 
-    with pytest.raises(RuntimeError, match="Classification metrics backend requires 'torchmetrics'"):
+    with pytest.raises(
+        RuntimeError, match="Classification metrics backend requires 'torchmetrics'"
+    ):
         Config.model_validate(cfg_data)
 
 
 def test_native_backend_does_not_require_optional_backend_packages(monkeypatch):
     monkeypatch.setattr("pathbench.config.config.is_torchmil_available", lambda: False)
-    monkeypatch.setattr("pathbench.config.config.is_torchmetrics_available", lambda: False)
+    monkeypatch.setattr(
+        "pathbench.config.config.is_torchmetrics_available", lambda: False
+    )
     cfg_data = {
         "experiment": {
             "project_name": "test",
@@ -203,9 +223,57 @@ def test_native_backend_does_not_require_optional_backend_packages(monkeypatch):
         "slide_processing": {"backend": "lazyslide"},
         "mil": {"backend": "native"},
         "metrics": {"classification_backend": "native"},
-        "benchmark_parameters": {"feature_extraction": [GENERIC_NAME], "mil": [MIL_NAME]},
+        "benchmark_parameters": {
+            "feature_extraction": [GENERIC_NAME],
+            "mil": [MIL_NAME],
+        },
     }
 
     cfg = Config.model_validate(cfg_data)
 
     assert cfg.mil.backend == "native"
+
+
+def test_invalid_classification_metric_name_is_rejected() -> None:
+    cfg_data = {
+        "experiment": {
+            "project_name": "test",
+            "annotation_file": "x",
+            "task": "classification",
+            "mode": "benchmark",
+        },
+        "slide_processing": {"backend": "lazyslide"},
+        "mil": {"backend": "native"},
+        "metrics": {
+            "classification_backend": "native",
+            "classification_metrics": ["balanced_accuracy", "c_index"],
+        },
+        "benchmark_parameters": {
+            "feature_extraction": [GENERIC_NAME],
+            "mil": [MIL_NAME],
+        },
+    }
+
+    with pytest.raises(ValidationError, match="Unsupported classification metrics"):
+        Config.model_validate(cfg_data)
+
+
+def test_best_epoch_monitor_must_match_task_metrics() -> None:
+    cfg_data = {
+        "experiment": {
+            "project_name": "test",
+            "annotation_file": "x",
+            "task": "classification",
+            "mode": "benchmark",
+        },
+        "slide_processing": {"backend": "lazyslide"},
+        "mil": {"backend": "native", "best_epoch_based_on": "c_index"},
+        "metrics": {"classification_backend": "native"},
+        "benchmark_parameters": {
+            "feature_extraction": [GENERIC_NAME],
+            "mil": [MIL_NAME],
+        },
+    }
+
+    with pytest.raises(ValueError, match="mil.best_epoch_based_on must be compatible"):
+        Config.model_validate(cfg_data)

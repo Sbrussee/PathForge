@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import difflib
+from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Callable, Optional
+from importlib import import_module
+from typing import Any
 
 from pathbench.utils.registry import Registry
 from pathbench.core.base import CoreRegistries
+from pathbench.utils.optional.mil_lab import is_mil_lab_available
 from pathbench.utils.optional.torchmil import (
     is_torchmetrics_available,
     is_torchmil_available,
@@ -43,6 +45,33 @@ SURVIVAL_LOSSES = Registry()
 
 # Track Lazyslide-specific models for validation (filled by populate_dynamic_registries)
 LAZYSLIDE_MODEL_NAMES: set[str] = set()
+
+
+@dataclass(frozen=True)
+class BackendCatalogEntry:
+    """One backend-aware catalog entry for user-selectable components.
+
+    Attributes:
+        name: User-facing model or extractor name.
+        backend: Backend required to use this entry, such as ``native``,
+            ``torchmil``, ``mil-lab``, ``timm``, or ``lazyslide``.
+        config_field: Config field used to select this entry.
+        source: Origin namespace that provides the entry.
+        available: Whether the required backend is currently installed and the
+            entry can be selected in this environment.
+
+    Example:
+        ```python
+        entries = list_mil_models()
+        torchmil_names = [item.name for item in entries if item.backend == "torchmil"]
+        ```
+    """
+
+    name: str
+    backend: str
+    config_field: str
+    source: str
+    available: bool
 
 # ---------------------------------------------------------------------------
 # Optional dependency discovery (safe, lazy)
@@ -177,6 +206,42 @@ def is_feature_extractor_available(name: str) -> bool:
 
 _populated = False
 
+_NATIVE_MODEL_MODULES: tuple[str, ...] = (
+    "pathbench.core.models.gcnconv_mil",
+    "pathbench.core.models.perceiver_mil",
+    "pathbench.core.models.prototype_mil",
+    "pathbench.core.models.var_mil",
+)
+
+_OPTIONAL_NATIVE_MODEL_MODULES: dict[str, str] = {
+    "pathbench.core.models.mamba_mil": "mamba",
+}
+
+_NATIVE_MIL_MODEL_NAMES: tuple[str, ...] = (
+    "GCNConvMIL",
+    "PerceiverMIL",
+    "PrototypeMIL",
+    "VarMIL",
+)
+
+_OPTIONAL_NATIVE_MIL_MODELS: dict[str, str] = {
+    "MambaMIL": "mamba",
+}
+
+
+def _import_native_model_modules() -> None:
+    """Import native PathBench model modules so their registry decorators run."""
+
+    for module_name in _NATIVE_MODEL_MODULES:
+        import_module(module_name)
+
+    for module_name, dependency_name in _OPTIONAL_NATIVE_MODEL_MODULES.items():
+        try:
+            __import__(dependency_name)
+        except Exception:
+            continue
+        import_module(module_name)
+
 
 def populate_dynamic_registries() -> None:
     """
@@ -189,6 +254,8 @@ def populate_dynamic_registries() -> None:
     global _populated
     if _populated:
         return
+
+    _import_native_model_modules()
 
     timm = _timm_module()
     if timm is not None:
@@ -210,9 +277,16 @@ def populate_dynamic_registries() -> None:
     if is_torchmil_available():
         from pathbench.adapters.torchmil.backend import register_torchmil_backend
         from pathbench.adapters.torchmil.heatmap_explainer import register_torchmil_heatmap_explainer
+        from pathbench.adapters.mil_lab.backend import register_torchmil_fallback_aliases
 
         register_torchmil_backend()
+        register_torchmil_fallback_aliases()
         register_torchmil_heatmap_explainer()
+
+    if is_mil_lab_available():
+        from pathbench.adapters.mil_lab.backend import register_mil_lab_backend
+
+        register_mil_lab_backend()
 
     if is_torchmetrics_available() and not CLASSIFICATION_METRICS.is_available("torchmetrics"):
         from pathbench.adapters.metrics.classification import TorchMetricsClassificationBackend
@@ -228,3 +302,125 @@ def populate_dynamic_registries() -> None:
             SURVIVAL_LOSSES.register("torchsurv")(TorchSurvBackend)
 
     _populated = True
+
+
+def _sorted_catalog(entries: list[BackendCatalogEntry]) -> list[BackendCatalogEntry]:
+    """Return catalog entries sorted by backend and then name."""
+
+    return sorted(entries, key=lambda item: (item.backend, item.name.casefold()))
+
+
+def list_feature_extractors() -> list[BackendCatalogEntry]:
+    """List user-selectable feature extractors across supported backends.
+
+    Returns:
+        list[BackendCatalogEntry]: Catalog entries sorted by backend and name.
+            For optional backends such as ``timm`` and ``lazyslide``, only
+            installed catalogs can be enumerated because their model lists come
+            from the backend package itself.
+
+    Example:
+        ```python
+        entries = list_feature_extractors()
+        lazyslide_only = [item.name for item in entries if item.backend == "lazyslide"]
+        ```
+    """
+
+    config_field = "benchmark_parameters.feature_extraction"
+    entries = [
+        BackendCatalogEntry(
+            name=name,
+            backend="native",
+            config_field=config_field,
+            source="pathbench",
+            available=True,
+        )
+        for name in registered_feature_extractor_names()
+    ]
+    entries.extend(
+        BackendCatalogEntry(
+            name=name,
+            backend="timm",
+            config_field=config_field,
+            source="timm",
+            available=True,
+        )
+        for name in timm_model_names()
+    )
+    entries.extend(
+        BackendCatalogEntry(
+            name=name,
+            backend="lazyslide",
+            config_field=config_field,
+            source="lazyslide",
+            available=True,
+        )
+        for name in lazyslide_model_names()
+    )
+    return _sorted_catalog(entries)
+
+
+def list_mil_models() -> list[BackendCatalogEntry]:
+    """List user-selectable MIL models across native and adapter backends.
+
+    Returns:
+        list[BackendCatalogEntry]: Catalog entries sorted by backend and name.
+            Native PathBench MIL models are always listed. Backend-adapter model
+            catalogs are listed even when their backend is unavailable so the
+            caller can present supported choices together with installation
+            requirements.
+
+    Example:
+        ```python
+        entries = list_mil_models()
+        mil_lab_models = [item.name for item in entries if item.backend == "mil-lab"]
+        ```
+    """
+
+    from pathbench.adapters.mil_lab.backend import MILLAB_MODEL_SPECS
+    from pathbench.adapters.torchmil.backend import TORCHMIL_MODEL_SPECS
+
+    _import_native_model_modules()
+
+    entries = [
+        BackendCatalogEntry(
+            name=name,
+            backend="native",
+            config_field="benchmark_parameters.mil",
+            source="pathbench",
+            available=MODELS.is_available(name),
+        )
+        for name in _NATIVE_MIL_MODEL_NAMES
+    ]
+
+    entries.extend(
+        BackendCatalogEntry(
+            name=name,
+            backend="native",
+            config_field="benchmark_parameters.mil",
+            source="pathbench",
+            available=MODELS.is_available(name),
+        )
+        for name in _OPTIONAL_NATIVE_MIL_MODELS
+    )
+    entries.extend(
+        BackendCatalogEntry(
+            name=name,
+            backend="torchmil",
+            config_field="mil.torchmil_model",
+            source="torchmil",
+            available=is_torchmil_available(),
+        )
+        for name in TORCHMIL_MODEL_SPECS
+    )
+    entries.extend(
+        BackendCatalogEntry(
+            name=name,
+            backend="mil-lab",
+            config_field="mil.mil_lab_model",
+            source="mil-lab",
+            available=is_mil_lab_available(),
+        )
+        for name in MILLAB_MODEL_SPECS
+    )
+    return _sorted_catalog(entries)

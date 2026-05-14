@@ -11,7 +11,7 @@ from pathbench.core.registry import MODELS
 
 @MODELS.register("VarMIL")
 class VarMIL(MILModelBase):
-    """
+    r"""
     Variance-aware Multiple Instance Learning.
     
     Aggregates statistics using both the weighted mean and the weighted variance of the bag.
@@ -50,4 +50,3 @@ class VarMIL(MILModelBase):
             
         if len(results) == 1: return logits
         return results
-
