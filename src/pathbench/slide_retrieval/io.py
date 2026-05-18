@@ -7,6 +7,7 @@ import re
 from typing import Any, Mapping
 
 import numpy as np
+import pandas as pd
 
 from pathbench.core.io.slide_artifacts import tiles as tiles_io
 from pathbench.core.io.slide_artifacts.base import FileHandleH5
@@ -45,6 +46,57 @@ def _safe_output_name(value: Any, *, hyphenate_underscores: bool = False) -> str
     return "".join(allowed).strip("-")
 
 
+def _safe_inference_output_name(value: Any) -> str:
+    text = str(value).strip().lower()
+    for old, new in (
+        (" ", "_"),
+        ("/", "_"),
+        ("\\", "_"),
+        ("-", "_"),
+    ):
+        text = text.replace(old, new)
+
+    allowed: list[str] = []
+    for character in text:
+        if character.isalnum() or character in "._":
+            allowed.append(character)
+        else:
+            allowed.append("_")
+
+    safe_name = "".join(allowed)
+    while "__" in safe_name:
+        safe_name = safe_name.replace("__", "_")
+    return safe_name.strip("_")
+
+
+def build_slide_retrieval_inference_output_root(
+    *,
+    inference_run_root: str | Path,
+    tiling_id: str,
+    feature_name: str,
+    slide_representation: str,
+    search_method: str,
+    run_hash: str,
+) -> Path:
+    """
+    Build the flat inference output root for one slide-retrieval combo.
+
+    Layout:
+    - `{inference_run_root}/{tiling_id}_{feature_name}/`
+      `{slide_representation}_{search_method}_{run_hash12}/`
+    """
+    tiling_component = (
+        f"{_safe_inference_output_name(tiling_id)}_"
+        f"{_safe_inference_output_name(feature_name)}"
+    )
+    method_component = (
+        f"{_safe_inference_output_name(slide_representation)}_"
+        f"{_safe_inference_output_name(search_method)}_"
+        f"{_safe_inference_output_name(str(run_hash)[:12])}"
+    )
+    return Path(inference_run_root) / tiling_component / method_component
+
+
 def build_slide_retrieval_output_root(
     *,
     project_root: str,
@@ -54,7 +106,7 @@ def build_slide_retrieval_output_root(
     search_method: str,
 ) -> Path:
     """
-    Build the canonical output root for one slide-retrieval combo.
+    Build the canonical search-specific output root for one slide-retrieval combo.
 
     Inputs:
     - `project_root`: experiment project root.
@@ -64,20 +116,43 @@ def build_slide_retrieval_output_root(
     - `search_method`: search strategy name.
 
     Returns:
-    - `Path` to the combo-specific slide-retrieval output root.
+    - `Path` to the search-specific slide-retrieval output root.
+    """
+
+    representation_root = build_slide_retrieval_representation_root(
+        project_root=project_root,
+        tiling_id=tiling_id,
+        feature_name=feature_name,
+        slide_representation=slide_representation,
+    )
+    search_component = _safe_output_name(search_method, hyphenate_underscores=True)
+    return representation_root / search_component
+
+
+def build_slide_retrieval_representation_root(
+    *,
+    project_root: str,
+    tiling_id: str,
+    feature_name: str,
+    slide_representation: str,
+) -> Path:
+    """
+    Build the canonical representation-specific root for slide-retrieval outputs.
+
+    Layout:
+    - `eval_slide_retrieval/<tiling+feature>/<retrieval_representation>/`
     """
 
     tiling_component = f"{_safe_output_name(tiling_id)}_{_safe_output_name(feature_name)}"
-    method_component = (
-        f"{_safe_output_name(slide_representation)}_"
-        f"{_safe_output_name(search_method, hyphenate_underscores=True)}"
+    representation_component = _safe_output_name(
+        slide_representation,
+        hyphenate_underscores=True,
     )
     return (
         Path(project_root)
-        / "eval"
-        / "slide_retrieval"
+        / "eval_slide_retrieval"
         / tiling_component
-        / method_component
+        / representation_component
     )
 
 
@@ -178,7 +253,17 @@ def write_slide_retrieval_results_csv(
     path: str | Path,
     results: list[SearchResult],
 ) -> None:
+    """Backward-compatible wrapper that now writes Excel ranked results."""
+    write_slide_retrieval_results_xlsx(path, results)
+
+
+def write_slide_retrieval_results_xlsx(
+    path: str | Path,
+    results: list[SearchResult],
+) -> None:
     path = Path(path)
+    if path.suffix.lower() != ".xlsx":
+        path = path.with_suffix(".xlsx")
     max_hits = max((len(result.hits) for result in results), default=0)
 
     fieldnames = ["query_sample_id"]
@@ -190,21 +275,41 @@ def write_slide_retrieval_results_csv(
             ]
         )
 
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
+    rows: list[dict[str, Any]] = []
+    for result in results:
+        row: dict[str, Any] = {
+            "query_sample_id": str(result.query_sample_id),
+        }
 
-        for result in results:
-            row: dict[str, Any] = {
-                "query_sample_id": str(result.query_sample_id),
-            }
+        hits = sorted(result.hits, key=lambda hit: hit.rank)
+        for idx, hit in enumerate(hits, start=1):
+            row[f"rank_{idx}_sample_id"] = str(hit.sample_id)
+            row[f"rank_{idx}_score"] = _stringify(hit.score)
 
-            hits = sorted(result.hits, key=lambda hit: hit.rank)
-            for idx, hit in enumerate(hits, start=1):
-                row[f"rank_{idx}_sample_id"] = str(hit.sample_id)
-                row[f"rank_{idx}_score"] = _stringify(hit.score)
+        rows.append(row)
 
-            writer.writerow(row)
+    pd.DataFrame(rows, columns=fieldnames).to_excel(path, index=False)
+
+
+def resolve_slide_retrieval_results_path(path: str | Path) -> Path:
+    """
+    Resolve the ranked-results file for a run, preferring Excel over legacy CSV.
+    """
+    path = Path(path)
+    candidates: list[Path]
+
+    if path.suffix.lower() == ".xlsx":
+        candidates = [path, path.with_suffix(".csv")]
+    elif path.suffix.lower() == ".csv":
+        candidates = [path.with_suffix(".xlsx"), path]
+    else:
+        candidates = [path.with_suffix(".xlsx"), path.with_suffix(".csv"), path]
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
+    return candidates[0]
 
 
 def read_slide_retrieval_results_csv(path: str | Path) -> list[SearchResult]:
@@ -217,35 +322,40 @@ def read_slide_retrieval_results_csv(path: str | Path) -> list[SearchResult]:
     Returns:
     - List of `SearchResult` objects with ranked hits reconstructed from CSV.
     """
+    path = resolve_slide_retrieval_results_path(path)
+    if path.suffix.lower() == ".xlsx":
+        results_df = pd.read_excel(path)
+        records = results_df.to_dict(orient="records")
+    else:
+        with path.open("r", newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            records = list(reader)
 
-    path = Path(path)
-    with path.open("r", newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        results: list[SearchResult] = []
-        for row in reader:
-            hits = []
-            for column_name, value in row.items():
-                match = _RANK_SAMPLE_PATTERN.fullmatch(str(column_name))
-                if match is None or not value:
-                    continue
+    results: list[SearchResult] = []
+    for row in records:
+        hits = []
+        for column_name, value in row.items():
+            match = _RANK_SAMPLE_PATTERN.fullmatch(str(column_name))
+            if match is None or pd.isna(value) or value == "":
+                continue
 
-                rank = int(match.group("rank"))
-                score_raw = row.get(f"rank_{rank}_score", "")
-                score = float(score_raw) if score_raw not in ("", None) else 0.0
-                hits.append(
-                    SearchHit(
-                        sample_id=str(value),
-                        score=score,
-                        rank=rank,
-                    )
-                )
-
-            results.append(
-                SearchResult(
-                    query_sample_id=str(row["query_sample_id"]),
-                    hits=sorted(hits, key=lambda hit: hit.rank),
+            rank = int(match.group("rank"))
+            score_raw = row.get(f"rank_{rank}_score", "")
+            score = 0.0 if pd.isna(score_raw) or score_raw in ("", None) else float(score_raw)
+            hits.append(
+                SearchHit(
+                    sample_id=str(value),
+                    score=score,
+                    rank=rank,
                 )
             )
+
+        results.append(
+            SearchResult(
+                query_sample_id=str(row["query_sample_id"]),
+                hits=sorted(hits, key=lambda hit: hit.rank),
+            )
+        )
 
     return results
 

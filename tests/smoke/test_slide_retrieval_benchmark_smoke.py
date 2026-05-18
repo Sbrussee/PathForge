@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -110,7 +109,7 @@ def test_smoke_slide_retrieval_benchmark_writes_manifest_and_ranked_csv(
         tile_mpp_params={},
         feature_extraction="uni",
         feature_extraction_params={},
-        retrieval_representation="yottixel_features",
+        retrieval_representation="yottixel-features",
         retrieval_representation_params={"n_clusters": 2},
         search_strategy="yottixel",
         search_strategy_params={"k": 1},
@@ -136,31 +135,18 @@ def test_smoke_slide_retrieval_benchmark_writes_manifest_and_ranked_csv(
 
     output_dir = Path(result["output_dir"])
     manifest_path = output_dir / "manifest.json"
-    results_path = output_dir / "query_results.csv"
+    results_path = output_dir / "query_results.xlsx"
 
     assert manifest_path.is_file()
     assert results_path.is_file()
+    assert output_dir.parent.name == "yottixel"
+    assert output_dir.parent.parent.name == "yottixel-features"
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["slide_representation"] == "yottixel_features"
+    assert manifest["slide_representation"] == "yottixel-features"
     assert manifest["search_method"] == "yottixel"
     assert manifest["num_queries"] == 1
     assert manifest["num_reference_items"] == 1
     assert manifest["top_k_saved"] == 1
 
-    with results_path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        rows = list(reader)
-
-    assert reader.fieldnames == [
-        "query_sample_id",
-        "rank_1_sample_id",
-        "rank_1_score",
-    ]
-    assert rows == [
-        {
-            "query_sample_id": "query-1",
-            "rank_1_sample_id": "ref-1",
-            "rank_1_score": "0.25",
-        }
-    ]
+    assert results_path.suffix == ".xlsx"

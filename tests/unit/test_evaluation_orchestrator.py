@@ -73,7 +73,7 @@ def test_evaluation_orchestrator_writes_run_level_metrics_json(
 
     output = EvaluationOrchestrator(experiment).evaluate()
 
-    metrics_path = run_dir / "evaluation" / "metrics.json"
+    metrics_path = run_dir / "evaluation_metrics.json"
     assert output["status"] == "evaluation_done"
     assert output["num_runs"] == 1
     assert metrics_path.is_file()

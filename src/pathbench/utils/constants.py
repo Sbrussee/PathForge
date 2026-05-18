@@ -8,7 +8,7 @@ TASK_TYPES = [
     "survival_discrete",
     "slide_retrieval",
 ]
-MODE_TYPES = ["benchmark", "optimization", "feature_extraction"]
+MODE_TYPES = ["benchmark", "optimization", "feature_extraction", "inference"]
 
 AGGREGATION_LEVELS = ["slide", "case", "patient"]
 

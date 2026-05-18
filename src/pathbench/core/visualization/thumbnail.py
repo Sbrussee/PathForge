@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from io import BytesIO
+import math
+from typing import Sequence
 from typing import Any
 
 from PIL import Image
@@ -124,3 +126,51 @@ def project_level0_to_thumbnail(
     if downscale_x <= 0 or downscale_y <= 0:
         raise ValueError("downscale_x and downscale_y must be > 0.")
     return (float(x_level0) / downscale_x, float(y_level0) / downscale_y)
+
+
+def crop_thumbnail_to_tissue_bounds(
+    image: Image.Image,
+    *,
+    tissue_polygons: Sequence[Sequence[Sequence[Sequence[float]]]] | None,
+    downscale_x: float,
+    downscale_y: float,
+    border_px: int = 12,
+) -> Image.Image:
+    """
+    Crop one thumbnail to the tight tissue bounding box plus a small border.
+
+    Returns the original image when no valid tissue polygons are available.
+    """
+    if not tissue_polygons:
+        return image.convert("RGB")
+
+    rgb_image = image.convert("RGB")
+    x_points: list[float] = []
+    y_points: list[float] = []
+
+    for polygon in tissue_polygons:
+        if not polygon:
+            continue
+        outer_ring = polygon[0]
+        for point in outer_ring:
+            if len(point) < 2:
+                continue
+            x_thumb, y_thumb = project_level0_to_thumbnail(
+                x_level0=float(point[0]),
+                y_level0=float(point[1]),
+                downscale_x=downscale_x,
+                downscale_y=downscale_y,
+            )
+            x_points.append(x_thumb)
+            y_points.append(y_thumb)
+
+    if not x_points or not y_points:
+        return rgb_image
+
+    left = max(0, int(math.floor(min(x_points))) - int(border_px))
+    top = max(0, int(math.floor(min(y_points))) - int(border_px))
+    right = min(rgb_image.width, int(math.ceil(max(x_points))) + int(border_px))
+    bottom = min(rgb_image.height, int(math.ceil(max(y_points))) + int(border_px))
+    if right <= left or bottom <= top:
+        return rgb_image
+    return rgb_image.crop((left, top, right, bottom))

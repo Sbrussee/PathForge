@@ -292,8 +292,8 @@ def test_build_combinations_preserves_hyperparams_on_combo_cfg(tmp_path: Path) -
                 {"yottixel": {"k": 5}},
             ],
             "retrieval_representation": [
-                "sdm_features",
-                {"hshr_features": {"n_patches": 10}},
+                "sdm-features",
+                {"hshr-features": {"n_patches": 10}},
             ],
         },
     )

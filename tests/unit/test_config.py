@@ -44,6 +44,31 @@ def test_from_yaml_missing_file_raises(tmp_path):
         Config.from_yaml(tmp_path / "does_not_exist.yaml")
 
 
+def test_inference_mode_requires_task(tmp_path):
+    yaml_text = dedent("""
+                        experiment:
+                            project_name: testproj
+                            annotation_file: dummy.csv
+                            mode: inference
+
+                        slide_processing:
+                            backend: lazyslide
+
+                        datasets: []
+
+                        benchmark_parameters:
+                            tile_px: [256]
+                            tile_mpp: [0.5]
+                            feature_extraction: ["resnet18"]
+                        """).lstrip()
+
+    p = tmp_path / "cfg.yaml"
+    p.write_text(yaml_text, encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="experiment.task is required"):
+        Config.from_yaml(p)
+
+
 def test_example_yaml_loads():
     example_yaml_path = Path("configs/config.example.yaml")
     if not example_yaml_path.exists():

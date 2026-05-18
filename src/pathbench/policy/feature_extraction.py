@@ -70,42 +70,71 @@ class _PendingArtifactWrites:
 class FeatureExtractionPolicy(PolicyBase):
     """Extract tile features into per-slide H5 artifacts."""
 
-    def __init__(self, experiment: Experiment):
+    combo_keys = [
+        "feature_extraction",
+        "tile_px",
+        "tile_mpp",
+        "color_norm",
+    ]
+
+    def __init__(
+        self,
+        experiment: Experiment,
+    ):
         super().__init__(experiment)
-        self.datasets: list[WSIDataset] = build_wsi_datasets(
-            cfg=self.experiment.cfg,
-            annotations_df=self.experiment.load_annotations(),
-        )
-        self.combos: list[ComboConfig] = build_combinations(
-            cfg=self.experiment.cfg,
-            keys=["feature_extraction", "tile_px", "tile_mpp", "color_norm"],
-        )
         self.config = experiment.cfg
         self.backend_name = self.config.slide_processing.backend
 
-    def execute(self) -> dict[str, Any]:
-        logger.info("[Policy] Number of parameter combos: %d", len(self.combos))
+    def build_combos(self) -> list[ComboConfig]:
+        return build_combinations(
+            cfg=self.experiment.cfg,
+            keys=self.combo_keys,
+        )
 
-        for combo_index, combo_cfg in enumerate(self.combos, start=1):
+    def execute(
+        self,
+        *,
+        datasets: list[WSIDataset] | None = None,
+        combos: list[ComboConfig] | None = None,
+    ) -> dict[str, Any]:
+        if datasets is None:
+            datasets = build_wsi_datasets(
+                cfg=self.experiment.cfg,
+                annotations_df=self.experiment.load_annotations(),
+            )
+        if combos is None:
+            combos = self.build_combos()
+
+        logger.info("[Policy] Number of parameter combos: %d", len(combos))
+
+        for combo_index, combo_cfg in enumerate(combos, start=1):
             logger.info(
                 "[Policy] === Combo %d/%d: extractor=%s, tile_px=%s, tile_mpp=%s ===",
                 combo_index,
-                len(self.combos),
+                len(combos),
                 combo_cfg.feature_extraction,
                 combo_cfg.tile_px,
                 combo_cfg.tile_mpp,
             )
-            self.execute_combo(combo_cfg)
+            self.execute_combo(combo_cfg=combo_cfg, datasets=datasets)
 
         # ---- Generate tile reports once after all combos (dedupe on bag_id) ----
         if bool(self.config.experiment.report):
-            self._generate_tiles_reports_after_extraction()
+            self._generate_tiles_reports_after_extraction(
+                datasets=datasets,
+                combos=combos,
+            )
 
         logger.info("[Policy] Feature extraction DONE.")
         return {"status": "feature_extraction_done"}
 
-    def execute_combo(self, combo_cfg: ComboConfig) -> None:
-        for dataset in self.datasets:
+    def execute_combo(
+        self,
+        *,
+        combo_cfg: ComboConfig,
+        datasets: list[WSIDataset],
+    ) -> None:
+        for dataset in datasets:
             logger.info(
                 "[Policy] Dataset '%s' (%d slides, used_for=%s)",
                 dataset.name,
@@ -652,8 +681,13 @@ class FeatureExtractionPolicy(PolicyBase):
     # Report generation (after all combos)
     # ------------------------------------------------------------------
 
-    def _generate_tiles_reports_after_extraction(self) -> None:
-        unique_bag_ids = self._collect_unique_report_bag_ids()
+    def _generate_tiles_reports_after_extraction(
+        self,
+        *,
+        datasets: list[WSIDataset],
+        combos: list[ComboConfig],
+    ) -> None:
+        unique_bag_ids = self._collect_unique_report_bag_ids(combos=combos)
 
         if not unique_bag_ids:
             logger.info("[Policy] report=True but no tiling combos found; skipping tile reports.")
@@ -662,10 +696,10 @@ class FeatureExtractionPolicy(PolicyBase):
         logger.info(
             "[Policy] Generating tile overview PDF reports for %d unique bag_ids across %d datasets.",
             len(unique_bag_ids),
-            len(self.datasets),
+            len(datasets),
         )
 
-        for dataset in self.datasets:
+        for dataset in datasets:
             for bag_id in unique_bag_ids:
                 try:
                     self._generate_tiles_report_for_dataset_bag(dataset=dataset, bag_id=bag_id)
@@ -676,7 +710,11 @@ class FeatureExtractionPolicy(PolicyBase):
                         bag_id,
                     )
 
-    def _collect_unique_report_bag_ids(self) -> list[str]:
+    def _collect_unique_report_bag_ids(
+        self,
+        *,
+        combos: list[ComboConfig],
+    ) -> list[str]:
         """
         Deduplicate bag_ids across combos while preserving order.
 
@@ -686,7 +724,7 @@ class FeatureExtractionPolicy(PolicyBase):
         seen: set[str] = set()
         bag_ids: list[str] = []
 
-        for combo_cfg in self.combos:
+        for combo_cfg in combos:
             tiling_id = build_tiling_id(combo_cfg)
             if tiling_id in seen:
                 continue

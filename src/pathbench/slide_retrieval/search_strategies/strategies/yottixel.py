@@ -31,6 +31,12 @@ from pathbench.slide_retrieval.search_strategies.types import (
     SearchResult,
 )
 
+_BIT_COUNT_LOOKUP = np.unpackbits(
+    np.arange(256, dtype=np.uint8)[:, np.newaxis],
+    axis=1,
+).sum(axis=1).astype(np.uint8)
+_DISTANCE_CHUNK_ROWS = 64
+
 
 def _count_xor(left: np.ndarray, right: np.ndarray) -> int:
     """
@@ -87,6 +93,14 @@ class BoB:
                 "BoB barcodes must have shape (N, D_barcode). "
                 f"Got {self.barcodes.shape}."
             )
+        self._packed_barcodes: np.ndarray | None = None
+
+    @property
+    def packed_barcodes(self) -> np.ndarray:
+        """Return bit-packed barcodes for vectorized Hamming distance."""
+        if self._packed_barcodes is None:
+            self._packed_barcodes = np.packbits(self.barcodes, axis=1)
+        return self._packed_barcodes
 
     def distance(self, other_bob: BoB) -> float:
         """
@@ -111,11 +125,18 @@ class BoB:
         if len(self.barcodes) == 0 or len(other_bob.barcodes) == 0:
             return float("inf")
 
-        total_dist: list[int] = []
-        for feat in self.barcodes:
-            # Compute XOR distance between this barcode and all in the other BoB.
-            distances = [_count_xor(feat, other) for other in other_bob.barcodes]
-            total_dist.append(int(np.min(distances)))
+        query_barcodes = self.packed_barcodes
+        reference_barcodes = other_bob.packed_barcodes
+        total_dist = np.empty(len(query_barcodes), dtype=np.uint16)
+
+        for start in range(0, len(query_barcodes), _DISTANCE_CHUNK_ROWS):
+            stop = min(start + _DISTANCE_CHUNK_ROWS, len(query_barcodes))
+            xor = np.bitwise_xor(
+                query_barcodes[start:stop, np.newaxis, :],
+                reference_barcodes[np.newaxis, :, :],
+            )
+            distances = _BIT_COUNT_LOOKUP[xor].sum(axis=2)
+            total_dist[start:stop] = distances.min(axis=1)
 
         return float(np.median(total_dist))
 
@@ -175,8 +196,17 @@ class YottixelSearch(BaseSearchStrategy):
             data=self._build_bob(
                 data=representation.data,
                 slide_id=representation.sample_id,
+                exclusion_key=representation.exclusion_key,
             ),
         )
+
+    def build_index(self) -> None:
+        """Index prepared database items so shared query/reference items are reused."""
+        self._database_items_by_sample_id = {
+            item.sample_id: item for item in self.search_database
+        }
+        for item in self.search_database:
+            _ = self._as_bob(item).packed_barcodes
 
     def prepare_query(
         self,
@@ -194,14 +224,31 @@ class YottixelSearch(BaseSearchStrategy):
             Returns ``SearchDatabaseItem`` whose ``data`` field stores a ``BoB``.
         """
         self._validate_representations([query_representation])
+        cached_item = getattr(self, "_database_items_by_sample_id", {}).get(
+            str(query_representation.sample_id)
+        )
+        if cached_item is not None:
+            return cached_item
+
         return SearchDatabaseItem(
             sample_id=query_representation.sample_id,
             exclusion_key=query_representation.exclusion_key,
             data=self._build_bob(
                 data=query_representation.data,
                 slide_id=query_representation.sample_id,
+                exclusion_key=query_representation.exclusion_key,
             ),
         )
+
+    def prepare_queries(
+        self,
+        query_representations: list[RetrievalRepresentation],
+    ) -> list[SearchDatabaseItem]:
+        """Prepare each query once before ranking starts."""
+        return [
+            self.prepare_query(query_representation)
+            for query_representation in query_representations
+        ]
 
     def search(
         self,
@@ -223,6 +270,26 @@ class YottixelSearch(BaseSearchStrategy):
         """
         query_item = self.prepare_query(query_representation)
 
+        hits = self.rank(
+            query_item=query_item,
+            database_items=self.filter_database_by_exclusion_key(
+                query_item=query_item,
+                database_items=self.search_database,
+            ),
+            **kwargs,
+        )
+
+        return SearchResult(
+            query_sample_id=query_item.sample_id,
+            hits=hits,
+        )
+
+    def search_prepared(
+        self,
+        query_item: SearchDatabaseItem,
+        **kwargs: Any,
+    ) -> SearchResult:
+        """Run Yottixel retrieval for one already-prepared query item."""
         hits = self.rank(
             query_item=query_item,
             database_items=self.filter_database_by_exclusion_key(
@@ -285,6 +352,7 @@ class YottixelSearch(BaseSearchStrategy):
         *,
         data: Any,
         slide_id: str,
+        exclusion_key: str | None = None,
     ) -> BoB:
         """
         Build one ``BoB`` from retrieval representation data.
@@ -314,6 +382,7 @@ class YottixelSearch(BaseSearchStrategy):
         return BoB(
             barcodes=barcodes,
             slide_id=slide_id,
+            exclusion_key=exclusion_key,
         )
 
     def _as_bob(self, item: SearchDatabaseItem) -> BoB:

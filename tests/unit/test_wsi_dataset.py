@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from pathbench.config.config import DatasetEntry
 from pathbench.core.datasets.wsi_dataset import WSIDataset
@@ -131,3 +133,30 @@ def test_build_samples_filters_by_dataset_and_skips_missing_slides(tmp_path: Pat
 
     assert wsi.path == (slides_dir / f"S1{suf}").resolve()
     assert wsi.artifact_path == (ds.artifacts_dir / "S1.h5").resolve()
+
+
+def test_can_suppress_missing_slide_source_warnings(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    slides_dir = tmp_path / "slides"
+    slides_dir.mkdir(parents=True, exist_ok=True)
+    artifacts_dir = tmp_path / "artifacts"
+
+    ds_cfg = DatasetEntry(
+        name="ds",
+        slides_dir=str(slides_dir),
+        artifacts_dir=str(artifacts_dir),
+        tissue_annotations_dir=None,
+        used_for="all",
+    )
+    ann_df = pd.DataFrame(
+        [{"dataset": "ds", "slide": "S1", "patient": "P1", "category": "C1"}]
+    )
+
+    with caplog.at_level(logging.WARNING, logger="pathbench.core.datasets.wsi_dataset"):
+        ds = WSIDataset(ds_cfg, ann_df, warn_on_missing_slide_sources=False)
+
+    assert ds.samples == []
+    assert "No valid slide source found" not in caplog.text
+    assert "No valid slides were found" not in caplog.text

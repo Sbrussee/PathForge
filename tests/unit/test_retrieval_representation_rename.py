@@ -73,11 +73,11 @@ def test_retrieval_representation_id_lowercases_non_hash_parts() -> None:
 
     representation_id = build_retrieval_representation_id(
         feature_extraction="UNI2",
-        retrieval_representation="Yottixel_Features",
+        retrieval_representation="Yottixel-Features",
         params=params,
     )
 
-    assert representation_id == f"uni2_yottixel_features_{expected_hash}"
+    assert representation_id == f"uni2_yottixel-features_{expected_hash}"
 
 
 def test_retrieval_representation_entry_id_is_none_for_slide_aggregation() -> None:

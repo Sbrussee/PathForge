@@ -22,7 +22,7 @@ from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
 
-@register_representation_strategy("hshr_features")
+@register_representation_strategy("hshr-features")
 class HSHRFeatures(BaseRetrievalRepresentationStrategy):
     """
     HSHR-Features retrieval representation.
@@ -64,7 +64,7 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
         patch selection logic are kept intentionally close to the original code.
     """
 
-    name = "hshr_features"
+    name = "hshr-features"
     n_patches = HyperParam(
         int,
         default=25,

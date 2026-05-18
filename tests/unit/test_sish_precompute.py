@@ -7,7 +7,7 @@ import numpy as np
 from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.sish_precompute import SISHPrecompute
+from pathbench.slide_retrieval.search_strategies.strategies.sish.sish_precompute import SISHPrecompute
 from pathbench.slide_retrieval.types import RetrievalItemMetadata
 
 

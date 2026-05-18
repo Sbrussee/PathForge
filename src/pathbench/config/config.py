@@ -134,6 +134,28 @@ class ClassificationConfig(BaseModel):
 class SlideRetrievalConfig(BaseModel):
     """Slide retrieval task settings."""
     exclusion_level: Literal["none", "slide", "case", "patient"] = "patient"
+    search_workers: int = Field(1, ge=1)
+    representation_loader_workers: int | None = Field(default=None, ge=0)
+    representation_workers: int | None = Field(default=None, ge=1)
+    visualization_metadata_columns: List[str] = Field(default_factory=list)
+    visualization_top_k: int = Field(10, ge=1)
+    prototypes_root: str | None = None
+
+    @field_validator("visualization_metadata_columns")
+    @classmethod
+    def validate_visualization_metadata_columns(
+        cls,
+        value: List[str],
+    ) -> List[str]:
+        normalized_columns: list[str] = []
+        for column_name in value:
+            normalized_name = str(column_name).strip()
+            if not normalized_name:
+                raise ValueError(
+                    "slide_retrieval.visualization_metadata_columns may not contain empty values."
+                )
+            normalized_columns.append(normalized_name)
+        return normalized_columns
 
 
 class SlideProcessingConfig(BaseModel):
@@ -164,9 +186,7 @@ class EvaluationConfig(BaseModel):
     label_column: str | None = None
     metrics: List[str] = Field(default_factory=list)
     visualization: List[str] = Field(default_factory=list)
-    visualization_metadata_columns: List[str] = Field(default_factory=list)
     visualization_subset_file: str | None = None
-    visualization_top_k: int = Field(10, ge=1)
 
     @field_validator("label_column")
     @classmethod
@@ -178,22 +198,6 @@ class EvaluationConfig(BaseModel):
         if not normalized_value:
             raise ValueError("evaluation.label_column must be a non-empty string.")
         return normalized_value
-
-    @field_validator("visualization_metadata_columns")
-    @classmethod
-    def validate_visualization_metadata_columns(
-        cls,
-        value: List[str],
-    ) -> List[str]:
-        normalized_columns: list[str] = []
-        for column_name in value:
-            normalized_name = str(column_name).strip()
-            if not normalized_name:
-                raise ValueError(
-                    "evaluation.visualization_metadata_columns may not contain empty values."
-                )
-            normalized_columns.append(normalized_name)
-        return normalized_columns
 
     @field_validator("visualization_subset_file")
     @classmethod

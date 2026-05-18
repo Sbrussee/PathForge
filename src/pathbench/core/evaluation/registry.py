@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from pkgutil import iter_modules
 import re
+from types import ModuleType
 from typing import TYPE_CHECKING, Any, Callable, Pattern
 
 from pathbench.core.evaluation.types import MetricRequest
@@ -92,8 +93,23 @@ def list_task_evaluation_adapters() -> list[str]:
     return sorted(_TASK_EVALUATION_ADAPTER_REGISTRY)
 
 
+def _iter_non_private_modules(package: ModuleType, prefix: str) -> list[str]:
+    """List direct non-private modules for one package."""
+
+    if not hasattr(package, "__path__"):
+        raise ValueError(f"Package '{package.__name__}' does not have a __path__ attribute.")
+
+    module_names: list[str] = []
+    for module_info in iter_modules(package.__path__, prefix):
+        module_name = module_info.name.rsplit(".", 1)[-1]
+        if module_name.startswith("_"):
+            continue
+        module_names.append(module_info.name)
+    return module_names
+
+
 def import_task_evaluation_adapter_modules(
-    package_name: str = "pathbench.core.evaluation.tasks",
+    package_name: str = "pathbench.core.evaluation",
 ) -> None:
     """Import all task-evaluation adapter modules so registration side effects run."""
 
@@ -101,11 +117,30 @@ def import_task_evaluation_adapter_modules(
     if not hasattr(package, "__path__"):
         raise ValueError(f"Package '{package_name}' does not have a __path__ attribute.")
 
+    tasks_package_name = package_name + ".tasks"
+    try:
+        tasks_package = import_module(tasks_package_name)
+    except ModuleNotFoundError:
+        tasks_package = None
+    if tasks_package is not None:
+        for module_name in _iter_non_private_modules(
+            tasks_package,
+            tasks_package_name + ".",
+        ):
+            import_module(module_name)
+
     for module_info in iter_modules(package.__path__, package_name + "."):
         module_name = module_info.name.rsplit(".", 1)[-1]
-        if module_name.startswith("_"):
+        if module_name.startswith("_") or not module_info.ispkg:
             continue
-        import_module(module_info.name)
+        if module_name in {"tasks", "metrics"}:
+            continue
+        adapter_module_name = module_info.name + ".adapter"
+        try:
+            import_module(adapter_module_name)
+        except ModuleNotFoundError as exc:
+            if exc.name != adapter_module_name:
+                raise
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +245,7 @@ def _register_metric_spec(
 
 
 def import_evaluation_metric_modules(
-    package_name: str = "pathbench.core.evaluation.metrics",
+    package_name: str = "pathbench.core.evaluation",
 ) -> None:
     """Import all evaluation-metric modules so registration side effects run."""
 
@@ -218,11 +253,37 @@ def import_evaluation_metric_modules(
     if not hasattr(package, "__path__"):
         raise ValueError(f"Package '{package_name}' does not have a __path__ attribute.")
 
+    metrics_package_name = package_name + ".metrics"
+    try:
+        metrics_package = import_module(metrics_package_name)
+    except ModuleNotFoundError:
+        metrics_package = None
+    if metrics_package is not None:
+        for module_name in _iter_non_private_modules(
+            metrics_package,
+            metrics_package_name + ".",
+        ):
+            import_module(module_name)
+
     for module_info in iter_modules(package.__path__, package_name + "."):
         module_name = module_info.name.rsplit(".", 1)[-1]
-        if module_name.startswith("_"):
+        if module_name.startswith("_") or not module_info.ispkg:
             continue
-        import_module(module_info.name)
+        if module_name in {"tasks", "metrics"}:
+            continue
+        task_metrics_package_name = module_info.name + ".metrics"
+        try:
+            task_metrics_package = import_module(task_metrics_package_name)
+        except ModuleNotFoundError as exc:
+            if exc.name != task_metrics_package_name:
+                raise
+            continue
+
+        for submodule_name in _iter_non_private_modules(
+            task_metrics_package,
+            task_metrics_package_name + ".",
+        ):
+            import_module(submodule_name)
 
 
 def resolve_metric_request(

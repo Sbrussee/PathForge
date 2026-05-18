@@ -34,10 +34,17 @@ class _FakeSlideRetrievalBagDataset:
         return ""
 
 
-def _make_task(tmp_path: Path) -> SlideRetrievalTask:
+def _make_task(
+    tmp_path: Path,
+    *,
+    search_workers: int | None = None,
+) -> SlideRetrievalTask:
+    slide_retrieval_kwargs = {"exclusion_level": "patient"}
+    if search_workers is not None:
+        slide_retrieval_kwargs["search_workers"] = search_workers
     cfg = SimpleNamespace(
         experiment=SimpleNamespace(aggregation_level="slide"),
-        slide_retrieval=SimpleNamespace(exclusion_level="patient"),
+        slide_retrieval=SimpleNamespace(**slide_retrieval_kwargs),
     )
     experiment = SimpleNamespace(cfg=cfg, project_root=str(tmp_path))
     return SlideRetrievalTask(experiment)
@@ -108,6 +115,45 @@ def test_split_representations_by_use_supports_query_reference(tmp_path: Path) -
     assert query_items == [query_only, shared_item]
 
 
+def test_split_representations_by_use_can_exclude_query_reference_from_queries(
+    tmp_path: Path,
+) -> None:
+    task = _make_task(tmp_path)
+    reference_only = RetrievalRepresentation(sample_id="ref", data=[1.0])
+    shared_item = RetrievalRepresentation(sample_id="shared", data=[2.0])
+    query_only = RetrievalRepresentation(sample_id="query", data=[3.0])
+
+    reference_items, query_items = task._split_representations_by_use(
+        representations_by_use={
+            "reference": [reference_only],
+            "query_reference": [shared_item],
+            "query": [query_only],
+        },
+        include_query_reference_as_queries=False,
+    )
+
+    assert reference_items == [reference_only, shared_item]
+    assert query_items == [query_only]
+
+
+def test_resolve_search_workers_caps_to_query_count(tmp_path: Path) -> None:
+    task = _make_task(tmp_path, search_workers=8)
+
+    assert task._resolve_search_workers(num_queries=3) == 3
+
+
+def test_run_search_items_preserves_order_with_threads(tmp_path: Path) -> None:
+    task = _make_task(tmp_path)
+
+    results = task._run_search_items(
+        search_items=["slow", "fast", "middle"],
+        search_fn=lambda item: f"result-{item}",
+        search_workers=3,
+    )
+
+    assert results == ["result-slow", "result-fast", "result-middle"]
+
+
 def test_validate_combination_compatibility_accepts_supported_registered_pair(
     tmp_path: Path,
 ) -> None:
@@ -122,7 +168,7 @@ def test_validate_combination_compatibility_accepts_supported_registered_pair(
                 )
             ]
         },
-        representation_name="splice_features",
+        representation_name="splice-features",
         search_strategy_name="sish",
         aggregation_level="slide",
         exclusion_level="patient",
@@ -157,7 +203,7 @@ def test_validate_combination_compatibility_rejects_mismatched_representation_ki
                 )
             ]
         },
-        representation_name="splice_features",
+        representation_name="splice-features",
         search_strategy_name="sish",
         aggregation_level="slide",
         exclusion_level="patient",
@@ -179,7 +225,7 @@ def test_execute_requires_retrieval_dataset_type(
         tile_mpp_params={},
         feature_extraction="uni",
         feature_extraction_params={},
-        retrieval_representation="splice_features",
+        retrieval_representation="splice-features",
         retrieval_representation_params={},
         search_strategy="sish",
         search_strategy_params={},
@@ -223,7 +269,7 @@ def test_execute_raises_when_representation_creation_failed(
         tile_mpp_params={},
         feature_extraction="uni",
         feature_extraction_params={},
-        retrieval_representation="splice_features",
+        retrieval_representation="splice-features",
         retrieval_representation_params={},
         search_strategy="sish",
         search_strategy_params={},
