@@ -65,12 +65,19 @@ def test_continuous_survival_metrics_and_artifacts_are_saved(tmp_path: Path) -> 
     )
 
     assert metrics["c_index"] > 0.5
+    assert metrics["brier_score"] >= 0.0
+    assert metrics["td_auc"] >= 0.0
     assert metrics["num_eval_times"] >= 1.0
+    assert artifacts.figure_paths["brier_score_curve"].exists()
     assert artifacts.figure_paths["td_auc_curve"].exists()
     assert artifacts.figure_paths["concordance_index"].exists()
+    assert artifacts.figure_paths["kaplan_meier"].exists()
     curve_payload = json.loads(artifacts.curve_data_path.read_text(encoding="utf-8"))
+    assert "brier_score" in curve_payload
+    assert len(curve_payload["brier_times"]) >= 1
     assert len(curve_payload["c_index_times"]) >= 1
     assert len(curve_payload["c_index_times"]) == len(curve_payload["c_index_curve"])
+    assert "kaplan_meier" in curve_payload
 
 
 def test_discrete_survival_metrics_and_artifacts_are_saved(tmp_path: Path) -> None:
@@ -98,12 +105,16 @@ def test_discrete_survival_metrics_and_artifacts_are_saved(tmp_path: Path) -> No
     )
 
     assert metrics["c_index"] >= 0.5
+    assert metrics["brier_score"] >= 0.0
+    assert artifacts.figure_paths["brier_score_curve"].exists()
     assert artifacts.metrics_path.exists()
     assert artifacts.figure_paths["td_auc_curve"].exists()
     assert artifacts.figure_paths["concordance_index"].exists()
+    assert artifacts.figure_paths["kaplan_meier"].exists()
     curve_payload = json.loads(artifacts.curve_data_path.read_text(encoding="utf-8"))
     assert len(curve_payload["c_index_times"]) >= 1
     assert len(curve_payload["c_index_times"]) == len(curve_payload["c_index_curve"])
+    assert "kaplan_meier" in curve_payload
 
 
 def test_compute_task_metrics_filters_to_selected_metrics() -> None:

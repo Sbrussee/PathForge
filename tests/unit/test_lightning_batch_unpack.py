@@ -21,16 +21,6 @@ class _Config:
     pass
 
 
-def test_unpack_batch_accepts_legacy_tuple():
-    adapter = LightningModuleAdapter(_ToyModel(), _ToyLoss(), _Config())
-
-    bag, target, kwargs = adapter._unpack_batch((torch.zeros(2, 3, 4), torch.tensor([1, 0])))
-
-    assert bag.shape == (2, 3, 4)
-    assert target.tolist() == [1, 0]
-    assert kwargs == {}
-
-
 def test_unpack_batch_accepts_canonical_dict():
     adapter = LightningModuleAdapter(_ToyModel(), _ToyLoss(), _Config())
     batch = {

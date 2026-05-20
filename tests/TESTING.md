@@ -1,9 +1,10 @@
 # Testing Guide
 
-This directory contains two main test layers:
+This directory contains the main PathBench test layers:
 
 - `tests/unit`: fast unit and contract tests
 - `tests/interface`: architecture and interface-boundary tests
+- `tests/integration`: multi-module workflow tests
 - `tests/smoke`: broader end-to-end sanity checks, including the Hugging Face-backed smoke suite
 
 All commands below assume you are running from:
@@ -85,6 +86,20 @@ uv run pytest -q \
   tests/smoke/test_benchmark_cli.py
 ```
 
+## Run Integration Tests
+
+Run the full integration suite:
+
+```bash
+uv run pytest tests/integration -q
+```
+
+Run one integration test module:
+
+```bash
+uv run pytest tests/integration/test_sklearn_slide_trainer.py -q
+```
+
 ## Run Everything
 
 Run the full repository test suite:
@@ -99,10 +114,10 @@ Run unit plus smoke explicitly:
 uv run pytest -q tests/unit tests/smoke
 ```
 
-Run unit, interface, and smoke explicitly:
+Run unit, interface, integration, and smoke explicitly:
 
 ```bash
-uv run pytest -q tests/unit tests/interface tests/smoke
+uv run pytest -q tests/unit tests/interface tests/integration tests/smoke
 ```
 
 ## Quality Checks
@@ -149,6 +164,9 @@ uv run pytest tests/smoke/test_hf_survival_optuna_inference.py -vv -s
 - The realistic smoke suite depends on optional packages such as `torch`,
   `pytorch-lightning`, `lazyslide`, `timm`, `huggingface_hub`, `anndata`, and
   `optuna`.
+- The docs are validated by `tests/unit/test_docs_build.py` and
+  `tests/unit/test_docs_code_examples.py`. Install the `docs` extra if you want
+  the warning-as-error Sphinx build to run locally.
 - The smoke fixtures reuse extracted H5 artifacts and prepared MIL bags within
   a test session to avoid duplicate computation.
 - Additional smoke-specific notes are documented in

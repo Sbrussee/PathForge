@@ -3,8 +3,14 @@ from typing import Any, Sequence
 import torch
 from .mil_base import MILModel
 
-
 class EnsembleMILModel(MILModel):
+    """Average the predictions from multiple MIL members.
+
+    This lightweight utility model is intentionally not registry-exposed for
+    benchmark selection. It remains available as an importable composition
+    helper and as interface coverage for the shared MIL base classes.
+    """
+
     def __init__(self, members: Sequence[MILModel]):
         super().__init__()
         self.members = torch.nn.ModuleList(members)

@@ -444,6 +444,7 @@ def test_heatmap_overlays_from_benchmark_models(
                 heatmap_backend="torchmil",
                 heatmap_name=f"smoke_{backend_name}_attention",
                 image_output_path=heatmap_png,
+                slide_path=extracted_wsi_workspace.slides_dir / f"{slide_id}.svs",
             )
             final_outputs[f"{backend_name}_heatmap_png"] = heatmap_png
 

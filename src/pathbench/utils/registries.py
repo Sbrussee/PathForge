@@ -5,6 +5,7 @@ from functools import lru_cache
 from importlib import import_module
 from typing import Any
 
+from pathbench.adapters.losses import register_builtin_loss_factories
 from pathbench.utils.registry import Registry
 from pathbench.core.base import CoreRegistries
 from pathbench.utils.optional.mil_lab import is_mil_lab_available
@@ -43,6 +44,8 @@ CLASSIFICATION_METRICS = Registry()
 SURVIVAL_METRICS = Registry()
 SURVIVAL_LOSSES = Registry()
 
+register_builtin_loss_factories(LOSSES)
+
 # Track Lazyslide-specific models for validation (filled by populate_dynamic_registries)
 LAZYSLIDE_MODEL_NAMES: set[str] = set()
 
@@ -73,14 +76,17 @@ class BackendCatalogEntry:
     source: str
     available: bool
 
+
 # ---------------------------------------------------------------------------
 # Optional dependency discovery (safe, lazy)
 # ---------------------------------------------------------------------------
+
 
 @lru_cache(maxsize=1)
 def _timm_module():
     try:
         import timm  # noqa: WPS433
+
         return timm
     except Exception:
         return None
@@ -90,6 +96,7 @@ def _timm_module():
 def _lazyslide_module():
     try:
         import lazyslide as zs  # noqa: WPS433
+
         return zs
     except Exception:
         return None
@@ -207,9 +214,9 @@ def is_feature_extractor_available(name: str) -> bool:
 _populated = False
 
 _NATIVE_MODEL_MODULES: tuple[str, ...] = (
-    "pathbench.core.models.gcnconv_mil",
     "pathbench.core.models.perceiver_mil",
     "pathbench.core.models.prototype_mil",
+    "pathbench.core.models.slide_mlp",
     "pathbench.core.models.var_mil",
 )
 
@@ -218,9 +225,9 @@ _OPTIONAL_NATIVE_MODEL_MODULES: dict[str, str] = {
 }
 
 _NATIVE_MIL_MODEL_NAMES: tuple[str, ...] = (
-    "GCNConvMIL",
     "PerceiverMIL",
     "PrototypeMIL",
+    "SlideVectorMLP",
     "VarMIL",
 )
 
@@ -261,6 +268,7 @@ def populate_dynamic_registries() -> None:
     if timm is not None:
         for model_name in timm_model_names():
             if not FEATURE_EXTRACTORS.is_available(model_name):
+
                 @FEATURE_EXTRACTORS.register(model_name)
                 def _timm_factory(name=model_name, pretrained=True, **kwargs):
                     return timm.create_model(name, pretrained=pretrained, **kwargs)
@@ -270,14 +278,19 @@ def populate_dynamic_registries() -> None:
         for model_name in lazyslide_model_names():
             LAZYSLIDE_MODEL_NAMES.add(model_name)
             if not FEATURE_EXTRACTORS.is_available(model_name):
+
                 @FEATURE_EXTRACTORS.register(model_name)
                 def _zs_factory(name=model_name, **kwargs):
                     return name
 
     if is_torchmil_available():
         from pathbench.adapters.torchmil.backend import register_torchmil_backend
-        from pathbench.adapters.torchmil.heatmap_explainer import register_torchmil_heatmap_explainer
-        from pathbench.adapters.mil_lab.backend import register_torchmil_fallback_aliases
+        from pathbench.adapters.torchmil.heatmap_explainer import (
+            register_torchmil_heatmap_explainer,
+        )
+        from pathbench.adapters.mil_lab.backend import (
+            register_torchmil_fallback_aliases,
+        )
 
         register_torchmil_backend()
         register_torchmil_fallback_aliases()
@@ -288,10 +301,16 @@ def populate_dynamic_registries() -> None:
 
         register_mil_lab_backend()
 
-    if is_torchmetrics_available() and not CLASSIFICATION_METRICS.is_available("torchmetrics"):
-        from pathbench.adapters.metrics.classification import TorchMetricsClassificationBackend
+    if is_torchmetrics_available() and not CLASSIFICATION_METRICS.is_available(
+        "torchmetrics"
+    ):
+        from pathbench.adapters.metrics.classification import (
+            TorchMetricsClassificationBackend,
+        )
 
-        CLASSIFICATION_METRICS.register("torchmetrics")(TorchMetricsClassificationBackend)
+        CLASSIFICATION_METRICS.register("torchmetrics")(
+            TorchMetricsClassificationBackend
+        )
 
     if is_torchsurv_available():
         from pathbench.adapters.metrics.survival import TorchSurvBackend

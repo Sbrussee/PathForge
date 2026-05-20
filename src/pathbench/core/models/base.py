@@ -54,6 +54,42 @@ class ModelBase(ABC):
         return []
 
 
+class ScikitBase(ModelBase):
+    """
+    Abstract base for scikit-learn / scikit-survival slide-level estimators.
+
+    Concrete subclasses wrap a fitted sklearn estimator and expose a
+    task-specific ``predict_as_tensor`` method so the shared
+    ``save_task_evaluation_artifacts`` path can evaluate them without
+    touching PyTorch training infrastructure.
+    """
+
+    @abstractmethod
+    def fit(self, X: Any, y: Any) -> "ScikitBase":
+        """Fit the estimator on numpy feature matrix X and targets y."""
+        ...
+
+    @abstractmethod
+    def predict_as_tensor(self, X: Any) -> Any:
+        """Return predictions as a torch.Tensor compatible with metrics helpers."""
+        ...
+
+    def save(self, path: str) -> None:
+        """Persist the estimator to disk via pickle."""
+        import pickle
+        from pathlib import Path
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as fh:
+            pickle.dump(self, fh)
+
+    def load(self, path: str) -> None:
+        """Replace this instance's state from a pickle file."""
+        import pickle
+        with open(path, "rb") as fh:
+            other = pickle.load(fh)
+        self.__dict__.update(other.__dict__)
+
+
 class TorchModelBase(ModelBase, nn.Module):
     """
     Canonical PyTorch implementation of the PathBench model interface.

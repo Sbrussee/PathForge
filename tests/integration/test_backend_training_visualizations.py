@@ -4,7 +4,6 @@ from pathlib import Path
 
 import torch
 
-import pathbench.core.losses.classification  # noqa: F401
 from pathbench.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
 from pathbench.adapters.torchmil.backend import (
     TorchMILBackendModel,

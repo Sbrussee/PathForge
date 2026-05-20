@@ -29,6 +29,7 @@ class SmokeTrainingResult:
         output_dim: Number of output channels produced by the trained model.
         task_name: PathBench task name used for the run.
         artifacts_dir: Directory containing post-training metric JSON and plots.
+        config: PathBench Config used during training.
     """
 
     best_model_path: str
@@ -36,6 +37,7 @@ class SmokeTrainingResult:
     output_dim: int
     task_name: str
     artifacts_dir: str
+    config: Any
 
 
 def training_artifact_outputs(result: SmokeTrainingResult) -> dict[str, Path]:
@@ -64,6 +66,7 @@ def training_artifact_outputs(result: SmokeTrainingResult) -> dict[str, Path]:
     elif result.task_name in {"survival", "survival_discrete"}:
         outputs["val_td_auc_curve_png"] = artifacts_dir / "val_td_auc_curve.png"
         outputs["val_concordance_index_png"] = artifacts_dir / "val_concordance_index.png"
+        outputs["val_kaplan_meier_png"] = artifacts_dir / "val_kaplan_meier.png"
     return outputs
 
 
@@ -80,8 +83,8 @@ class SurvivalBagDataset:
             survival; otherwise return floating survival times.
 
     Returns from ``__getitem__``:
-        Tuple of bag tensor shaped ``[num_instances, feature_dim]`` and a target
-        dict with ``time`` and ``event`` tensors shaped ``[]``.
+        BagBatch dict with ``X`` shaped ``[num_instances, feature_dim]`` and ``Y``
+        as a target dict with ``time`` and ``event`` tensors shaped ``[]``.
     """
 
     def __init__(
@@ -105,7 +108,7 @@ class SurvivalBagDataset:
     def __len__(self) -> int:
         return len(self.metadata_df)
 
-    def __getitem__(self, index: int) -> tuple[Any, dict[str, Any]]:
+    def __getitem__(self, index: int) -> dict[str, Any]:
         row = self.metadata_df.iloc[index]
         bag = self._torch.load(self.feature_dir / f"{row['slide_id']}.pt")
         time_value = row[self.time_column]
@@ -117,15 +120,11 @@ class SurvivalBagDataset:
             ),
             "event": self._torch.tensor(float(event_value), dtype=self._torch.float32),
         }
-        return bag.float(), target
+        return {"X": bag.float(), "Y": target}
 
 
 def register_smoke_components() -> None:
     """Register production components required by the smoke suite once."""
-
-    import pathbench.core.losses.classification  # noqa: F401
-    import pathbench.core.losses.survival_continuous  # noqa: F401
-    import pathbench.core.losses.survival_discrete  # noqa: F401
 
     from pathbench.utils.registries import populate_dynamic_registries
 
@@ -280,4 +279,5 @@ def fit_smoke_model(
         output_dim=output_dim,
         task_name=task,
         artifacts_dir=str(trainer.metrics_artifacts_dir),
+        config=cfg,
     )

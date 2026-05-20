@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib
 import json
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,8 @@ from sklearn.metrics import (
 )
 from sklearn.calibration import calibration_curve
 from sklearn.preprocessing import label_binarize
+
+from pathbench.utils.optional.torchmil import is_torchsurv_available
 
 
 @dataclass(frozen=True)
@@ -412,15 +415,26 @@ def _compute_survival_metrics(
         event=event,
         task=task,
     )
+    brier_times, brier_scores = _survival_brier_score_curve(
+        predictions,
+        time=time,
+        event=event,
+        task=task,
+    )
     finite_auc = td_auc[np.isfinite(td_auc)]
+    finite_brier = brier_scores[np.isfinite(brier_scores)]
     return {
+        "brier_score": float(np.nanmean(finite_brier))
+        if finite_brier.size
+        else float("nan"),
         "c_index": float(_concordance_index(risk, time, event)),
+        "td_auc": float(np.nanmean(finite_auc)) if finite_auc.size else float("nan"),
         "td_auc_mean": float(np.nanmean(finite_auc))
         if finite_auc.size
         else float("nan"),
         "td_auc_max": float(np.nanmax(finite_auc)) if finite_auc.size else float("nan"),
         "td_auc_min": float(np.nanmin(finite_auc)) if finite_auc.size else float("nan"),
-        "num_eval_times": float(len(eval_times)),
+        "num_eval_times": float(max(len(eval_times), len(brier_times))),
     }
 
 
@@ -454,7 +468,13 @@ def _save_regression_artifacts(
     ax.scatter(y_true, y_pred, alpha=0.8)
     diag_min = float(min(np.min(y_true), np.min(y_pred)))
     diag_max = float(max(np.max(y_true), np.max(y_pred)))
-    ax.plot([diag_min, diag_max], [diag_min, diag_max], linestyle="--", color="grey", linewidth=1)
+    ax.plot(
+        [diag_min, diag_max],
+        [diag_min, diag_max],
+        linestyle="--",
+        color="grey",
+        linewidth=1,
+    )
     ax.set_xlabel("True value")
     ax.set_ylabel("Predicted value")
     ax.set_title("Regression Scatter")
@@ -464,7 +484,9 @@ def _save_regression_artifacts(
 
     residuals_path = output_dir / f"{prefix}_residuals.png"
     fig, ax = plt.subplots(figsize=(5, 4))
-    ax.hist(residuals, bins=min(10, max(3, residuals.shape[0])), color="#4477AA", alpha=0.9)
+    ax.hist(
+        residuals, bins=min(10, max(3, residuals.shape[0])), color="#4477AA", alpha=0.9
+    )
     ax.set_xlabel("Residual")
     ax.set_ylabel("Count")
     ax.set_title("Residual Distribution")
@@ -481,6 +503,104 @@ def _save_regression_artifacts(
         "regression_scatter": scatter_path,
         "residuals": residuals_path,
     }
+
+
+def _kaplan_meier_curve(
+    time: np.ndarray,
+    event: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute a Kaplan-Meier step-function survival estimate.
+
+    Args:
+        time: Observed times shaped ``[N]``.
+        event: Event indicators shaped ``[N]`` with values in ``{0, 1}``.
+
+    Returns:
+        Tuple of ``(times, survival)`` arrays starting at ``(0, 1.0)``.
+    """
+    times_out: list[float] = [0.0]
+    survival_out: list[float] = [1.0]
+    current_survival = 1.0
+    for t in np.sort(np.unique(time[event > 0.5])):
+        at_risk = float(np.sum(time >= t))
+        if at_risk <= 0.0:
+            continue
+        events_at_t = float(np.sum((time == t) & (event > 0.5)))
+        current_survival *= 1.0 - events_at_t / at_risk
+        times_out.append(float(t))
+        survival_out.append(float(current_survival))
+    return np.array(times_out, dtype=np.float32), np.array(
+        survival_out, dtype=np.float32
+    )
+
+
+def _save_kaplan_meier_plot(
+    time: np.ndarray,
+    event: np.ndarray,
+    risk: np.ndarray,
+    *,
+    output_dir: Path,
+    prefix: str,
+) -> tuple[Path | None, dict[str, Any]]:
+    """Save a Kaplan-Meier plot with high/low risk groups split at the median.
+
+    Args:
+        time: Observed times shaped ``[N]``.
+        event: Event indicators shaped ``[N]``.
+        risk: Risk scores shaped ``[N]``; higher score implies earlier event.
+        output_dir: Destination directory.
+        prefix: Filename prefix such as ``"val"``.
+
+    Returns:
+        Tuple of the saved PNG path (or ``None`` when there are too few events
+        to produce a meaningful plot) and a JSON-serializable payload.
+    """
+    num_events = int(np.sum(event > 0.5))
+    if num_events < 2:
+        return None, {}
+
+    plt = _load_matplotlib_pyplot()
+    median_risk = float(np.median(risk))
+    high_mask = risk > median_risk
+    low_mask = ~high_mask
+    n_high = int(high_mask.sum())
+    n_low = int(low_mask.sum())
+    if n_high == 0 or n_low == 0:
+        return None, {}
+
+    t_high, s_high = _kaplan_meier_curve(time[high_mask], event[high_mask])
+    t_low, s_low = _kaplan_meier_curve(time[low_mask], event[low_mask])
+
+    km_path = output_dir / f"{prefix}_kaplan_meier.png"
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.step(
+        t_high, s_high, where="post", color="#CC4444", label=f"High risk (n={n_high})"
+    )
+    ax.step(t_low, s_low, where="post", color="#4477AA", label=f"Low risk (n={n_low})")
+    ax.set_xlim(left=0.0)
+    ax.set_ylim(0.0, 1.05)
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Survival probability")
+    ax.set_title("Kaplan-Meier Survival Curves (Median Split)")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(km_path, dpi=150)
+    plt.close(fig)
+
+    payload: dict[str, Any] = {
+        "median_risk": median_risk,
+        "high_risk": {
+            "n": n_high,
+            "times": t_high.tolist(),
+            "survival": s_high.tolist(),
+        },
+        "low_risk": {
+            "n": n_low,
+            "times": t_low.tolist(),
+            "survival": s_low.tolist(),
+        },
+    }
+    return km_path, payload
 
 
 def _save_survival_artifacts(
@@ -500,6 +620,12 @@ def _save_survival_artifacts(
         event=event,
         task=task,
     )
+    brier_times, brier_scores = _survival_brier_score_curve(
+        predictions,
+        time=time,
+        event=event,
+        task=task,
+    )
     c_index_value = _concordance_index(risk, time, event)
     c_index_times, c_index_curve = _concordance_index_curve(risk, time, event)
 
@@ -512,6 +638,17 @@ def _save_survival_artifacts(
     ax.set_title("Time-Dependent AUC")
     fig.tight_layout()
     fig.savefig(td_auc_path, dpi=150)
+    plt.close(fig)
+
+    brier_path = output_dir / f"{prefix}_brier_score_curve.png"
+    fig, ax = plt.subplots(figsize=(5, 4))
+    ax.plot(brier_times, brier_scores, marker="o", color="#228833")
+    ax.set_xlabel("Evaluation time")
+    ax.set_ylabel("Brier score")
+    ax.set_ylim(bottom=0.0)
+    ax.set_title("Time-Dependent Brier Score")
+    fig.tight_layout()
+    fig.savefig(brier_path, dpi=150)
     plt.close(fig)
 
     c_index_path = output_dir / f"{prefix}_concordance_index.png"
@@ -533,17 +670,31 @@ def _save_survival_artifacts(
     fig.savefig(c_index_path, dpi=150)
     plt.close(fig)
 
-    payload = {
+    km_path, km_payload = _save_kaplan_meier_plot(
+        time, event, risk, output_dir=output_dir, prefix=prefix
+    )
+
+    payload: dict[str, Any] = {
         "evaluation_times": eval_times.tolist(),
         "td_auc": td_auc.tolist(),
+        "brier_times": brier_times.tolist(),
+        "brier_score_curve": brier_scores.tolist(),
+        "brier_score": float(np.nanmean(brier_scores[np.isfinite(brier_scores)]))
+        if np.isfinite(brier_scores).any()
+        else float("nan"),
         "c_index": float(c_index_value),
         "c_index_times": c_index_times.tolist(),
         "c_index_curve": c_index_curve.tolist(),
+        "kaplan_meier": km_payload,
     }
-    return payload, {
+    figure_paths: dict[str, Path] = {
+        "brier_score_curve": brier_path,
         "td_auc_curve": td_auc_path,
         "concordance_index": c_index_path,
     }
+    if km_path is not None:
+        figure_paths["kaplan_meier"] = km_path
+    return payload, figure_paths
 
 
 def _survival_target_arrays(target: Any) -> tuple[np.ndarray, np.ndarray]:
@@ -618,6 +769,83 @@ def _time_dependent_auc_curve(
             risk = 1.0 - survival[:, tau_index]
             auc_values.append(_td_auc_at_time(risk, time, event, float(tau)))
     return eval_times.astype(np.float32), np.asarray(auc_values, dtype=np.float32)
+
+
+def _survival_brier_score_curve(
+    predictions: torch.Tensor,
+    *,
+    time: np.ndarray,
+    event: np.ndarray,
+    task: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    eval_times = _select_eval_times(time, event)
+    if eval_times.size == 0:
+        return np.asarray([], dtype=np.float32), np.asarray([], dtype=np.float32)
+    if not is_torchsurv_available():
+        return eval_times.astype(np.float32), np.full(
+            eval_times.shape,
+            np.nan,
+            dtype=np.float32,
+        )
+
+    BrierScore = getattr(
+        importlib.import_module("torchsurv.metrics.brier_score"),
+        "BrierScore",
+    )
+
+    event_tensor = torch.as_tensor(event > 0.5, dtype=torch.bool)
+    time_tensor = torch.as_tensor(time, dtype=torch.float32)
+    eval_time_tensor = torch.as_tensor(eval_times, dtype=torch.float32)
+    estimate = _survival_probability_estimates_for_times(
+        predictions,
+        task=task,
+        time=time_tensor,
+        event=event_tensor,
+        eval_times=eval_time_tensor,
+    )
+    scores = BrierScore()(
+        estimate, event_tensor, time_tensor, new_time=eval_time_tensor
+    )
+    return eval_times.astype(np.float32), scores.detach().cpu().float().numpy()
+
+
+def _survival_probability_estimates_for_times(
+    predictions: torch.Tensor,
+    *,
+    task: str,
+    time: torch.Tensor,
+    event: torch.Tensor,
+    eval_times: torch.Tensor,
+) -> torch.Tensor:
+    pred = predictions.detach().cpu().float()
+    if task == "survival":
+        cox_module = importlib.import_module("torchsurv.loss.cox")
+        baseline_survival_function = getattr(
+            cox_module, "baseline_survival_function"
+        )
+        survival_function_cox = getattr(cox_module, "survival_function_cox")
+
+        risk = pred.reshape(-1)
+        baseline = baseline_survival_function(
+            risk,
+            event,
+            time,
+            checks=False,
+        )
+        return survival_function_cox(
+            baseline,
+            risk,
+            eval_times,
+        ).float()
+
+    if pred.ndim != 2:
+        raise ValueError(
+            "Discrete survival predictions must have shape [B, T] when computing Brier score."
+        )
+    hazard = torch.sigmoid(pred).clamp_(1.0e-6, 1.0 - 1.0e-6)
+    survival = torch.cumprod(1.0 - hazard, dim=1)
+    indices = eval_times.round().long().clamp_(0, pred.shape[1] - 1)
+    return survival[:, indices].float()
 
 
 def _select_eval_times(

@@ -71,9 +71,11 @@ def test_pathbench_collate_rejects_partial_optional_keys():
     with pytest.raises(AssertionError, match="coords"):
         pathbench_collate(batch)
 
-
-def test_torchmil_or_pathbench_collate_accepts_legacy_tuples_without_torchmil():
-    batch = [(torch.ones(1, 2), 0), (torch.ones(2, 2), 1)]
+def test_torchmil_or_pathbench_collate_accepts_canonical_single_bag_dicts():
+    batch = [
+        {"X": torch.ones(1, 2), "Y": torch.tensor(0)},
+        {"X": torch.ones(2, 2), "Y": torch.tensor(1)},
+    ]
 
     out = torchmil_or_pathbench_collate(batch, use_torchmil=False)
 

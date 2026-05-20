@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from pathbench.cli.tiles_report import _unique_bag_ids_from_config
@@ -131,3 +132,31 @@ def test_unique_bag_ids_from_config_deduplicates_combinations() -> None:
     bag_ids = _unique_bag_ids_from_config(cfg)
 
     assert bag_ids == ["256px_0.5mpp", "256px_1mpp"]
+
+
+def test_collect_tiles_overview_entries_counts_corrupt_overviews(tmp_path: Path) -> None:
+    dataset = _make_dataset(tmp_path)
+    bag_id = "256px_0.5mpp"
+    _write_reportable_artifact(
+        dataset.samples[0].artifact_path,
+        bag_id=bag_id,
+        image_bytes=b"not-a-real-image",
+    )
+
+    collection = collect_tiles_overview_entries(dataset=dataset, bag_id=bag_id)
+
+    assert collection.stats.total_slides_expected == 2
+    assert collection.stats.included_slides == 0
+    assert collection.stats.corrupt_overview == 1
+    assert collection.stats.missing_overview == 1
+
+
+def test_create_tiles_report_pdf_raises_when_no_valid_overviews(tmp_path: Path) -> None:
+    dataset = _make_dataset(tmp_path)
+
+    with pytest.raises(RuntimeError, match="No tiles_overview entries found"):
+        create_tiles_report_pdf(
+            dataset=dataset,
+            bag_id="256px_0.5mpp",
+            output_path=tmp_path / "tiles_report.pdf",
+        )
