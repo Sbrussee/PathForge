@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import torch
 
+from pathbench.core.datasets.bag_schema import assert_bag_schema
 from pathbench.core.datasets.bag_dataset import BagDataset
 
 
@@ -29,9 +30,10 @@ def test_bag_dataset_infers_feature_and_output_dimensions(tmp_path: Path) -> Non
         "category",
     )
 
-    bag, target = dataset[0]
-    assert bag.shape == (4, 8)
-    assert target.dtype == torch.long
+    sample = dataset[0]
+    assert_bag_schema(sample, batched=False)
+    assert sample["X"].shape == (4, 8)
+    assert sample["Y"].dtype == torch.long
     assert dataset.feature_dim == 8
     assert dataset.output_dim() == 3
 
@@ -53,9 +55,9 @@ def test_bag_dataset_uses_variable_bag_size_by_default(tmp_path: Path) -> None:
         "category",
     )
 
-    bag, _ = dataset[0]
-    assert bag.shape == (5, 3)
-    assert torch.equal(bag, original_bag)
+    sample = dataset[0]
+    assert sample["X"].shape == (5, 3)
+    assert torch.equal(sample["X"], original_bag)
 
 
 def test_bag_dataset_builds_survival_targets(tmp_path: Path) -> None:
@@ -80,7 +82,7 @@ def test_bag_dataset_builds_survival_targets(tmp_path: Path) -> None:
         task="survival",
     )
 
-    _, target = dataset[0]
+    target = dataset[0]["Y"]
     assert set(target) == {"time", "event"}
     assert target["time"].dtype == torch.float32
     assert target["event"].dtype == torch.float32
@@ -112,7 +114,7 @@ def test_bag_dataset_infers_discrete_survival_output_dim_from_annotation_bins(
         task="survival_discrete",
     )
 
-    _, target = dataset[1]
+    target = dataset[1]["Y"]
     assert target["time"].dtype == torch.long
     assert target["event"].dtype == torch.float32
     assert dataset.feature_dim == 5
@@ -140,10 +142,10 @@ def test_bag_dataset_builds_continuous_regression_targets(tmp_path: Path) -> Non
         task="regression",
     )
 
-    bag, target = dataset[1]
-    assert bag.shape == (3, 7)
-    assert target.dtype == torch.float32
-    assert float(target) == 3.75
+    sample = dataset[1]
+    assert sample["X"].shape == (3, 7)
+    assert sample["Y"].dtype == torch.float32
+    assert float(sample["Y"]) == 3.75
     assert dataset.feature_dim == 7
     assert dataset.output_dim() == 1
 
@@ -166,8 +168,8 @@ def test_bag_dataset_materializes_fixed_bag_size_deterministically(tmp_path: Pat
         bag_size=4,
     )
 
-    larger_bag, _ = dataset[0]
-    smaller_bag, _ = dataset[1]
+    larger_bag = dataset[0]["X"]
+    smaller_bag = dataset[1]["X"]
 
     assert larger_bag.shape == (4, 3)
     assert smaller_bag.shape == (4, 3)

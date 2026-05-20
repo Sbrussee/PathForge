@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Any, Dict, List
 import itertools
-import pandas as pd
 import copy
 import logging
 
@@ -14,8 +13,13 @@ from pathbench.policy.utils import (
     benchmark_search_space,
     build_bag_dataset_for_task,
     build_mil_model_for_config,
+    collect_run_summary_row,
+    experiment_output_root,
     infer_model_dimensions,
+    metric_should_minimize,
     resolve_dataset_feature_dir,
+    save_benchmark_visualizations,
+    write_experiment_summary_csv,
 )
 
 
@@ -89,19 +93,48 @@ class BenchmarkingPolicy(PolicyBase):
                 trainer: TrainerBase = TrainerClass(run_cfg)
 
                 # 4. Fit
-                trainer.fit(model, ds_train, ds_val, loss_fn)
+                best_path, best_score = trainer.fit(model, ds_train, ds_val, loss_fn)
 
                 # 5. Log
                 self.results.append(
-                    {"model": model_name, "loss": loss_name, "status": "success"}
+                    collect_run_summary_row(
+                        run_cfg,
+                        run_index=i,
+                        status="success",
+                        objective_metric=run_cfg.mil.best_epoch_based_on,
+                        objective_value=float(best_score),
+                        checkpoint_path=str(best_path) if best_path else None,
+                    )
                 )
 
             except Exception as e:
                 self.logger.error(f"Run failed: {e}")
-                self.results.append({"model": model_name, "error": str(e)})
+                self.results.append(
+                    collect_run_summary_row(
+                        run_cfg,
+                        run_index=i,
+                        status="failed",
+                        objective_metric=run_cfg.mil.best_epoch_based_on,
+                        error=str(e),
+                    )
+                )
 
         self._save_report()
 
-    def _save_report(self):
-        df = pd.DataFrame(self.results)
-        df.to_csv("benchmark_results.csv", index=False)
+    def _save_report(self) -> None:
+        output_root = experiment_output_root(self.config)
+        summary_path = output_root / "benchmark_results.csv"
+        minimize = metric_should_minimize(self.config.mil.best_epoch_based_on)
+        write_experiment_summary_csv(
+            self.results,
+            output_path=summary_path,
+            objective_metric=self.config.mil.best_epoch_based_on,
+            minimize=minimize,
+        )
+        save_benchmark_visualizations(
+            summary_path,
+            output_dir=output_root / "benchmark_visualizations",
+            objective_metric=self.config.mil.best_epoch_based_on,
+            minimize=minimize,
+            logger=self.logger,
+        )

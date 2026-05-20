@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ from pathbench.core.io.h5 import tiles as tiles_io
 from pathbench.core.io.h5.layout import DEFAULT_LAYOUT
 from pathbench.utils.optional.torchmil import require_torchmil
 from pathbench.utils.registries import EXPLAINERS, populate_dynamic_registries
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -49,15 +52,21 @@ class _ArtifactRenderContext:
 
     Attributes:
         source_coords_xy: Level-0 top-left coordinates shaped ``(N, 2)``.
-        source_tile_sizes: Level-0 tile width/height shaped ``(N, 2)``.
+        source_tile_sizes: Read-window width/height shaped ``(N, 2)``.
+        source_read_levels: Pyramid level shaped ``(N,)`` aligned with
+            ``source_coords_xy``.
         tiling_spec: Persisted bag tiling specification.
         slide_overview_jpeg: Optional JPEG overview bytes for the bag.
+        source_slide_path: Optional source WSI path used for full-resolution
+            tile previews.
     """
 
     source_coords_xy: np.ndarray
     source_tile_sizes: np.ndarray
+    source_read_levels: np.ndarray
     tiling_spec: dict[str, Any]
     slide_overview_jpeg: bytes | None = None
+    source_slide_path: Path | None = None
 
 
 def create_inference_heatmap(
@@ -72,6 +81,7 @@ def create_inference_heatmap(
     coords_path: str | Path | None = None,
     mask_path: str | Path | None = None,
     model_path: str | Path | None = None,
+    slide_path: str | Path | None = None,
     colormap: str = "inferno",
     tile_alpha: float = 0.65,
     smoothed_alpha: float = 0.8,
@@ -100,6 +110,9 @@ def create_inference_heatmap(
         mask_path: Optional `.npy`, `.npz`, or JSON boolean/binary mask shaped
             `[N]`.
         model_path: Optional model checkpoint path recorded in heatmap metadata.
+        slide_path: Optional source WSI path used to render full-resolution
+            top-tile previews. When omitted, the renderer falls back to
+            artifact metadata when available.
         colormap: Matplotlib colormap name for exact and smoothed heatmaps.
         tile_alpha: Alpha applied to exact square-tile overlays in ``[0, 1]``.
         smoothed_alpha: Maximum alpha applied to the smoothed cloud overlay in
@@ -225,13 +238,24 @@ def create_inference_heatmap(
             source_coords=artifact_render_context.source_coords_xy,
             source_tile_sizes=artifact_render_context.source_tile_sizes,
         )
+        read_levels = _match_tile_read_levels_to_heatmap_coords(
+            coords=heatmap_coords,
+            source_coords=artifact_render_context.source_coords_xy,
+            source_read_levels=artifact_render_context.source_read_levels,
+        )
         _write_heatmap_png(
             output_path=image_out_path,
             coords=heatmap_coords,
             scores=heatmap_scores,
             tile_sizes=tile_sizes,
+            read_levels=read_levels,
             slide_overview_jpeg=artifact_render_context.slide_overview_jpeg,
             tiling_spec=artifact_render_context.tiling_spec,
+            slide_path=(
+                Path(slide_path)
+                if slide_path is not None
+                else artifact_render_context.source_slide_path
+            ),
             smoothed_output_path=smoothed_image_out_path,
             top_tiles_output_path=top_tiles_out_path,
             colormap=colormap,
@@ -289,17 +313,34 @@ def _read_artifact_render_context(
         return _ArtifactRenderContext(
             source_coords_xy=coords[:, :2].astype(np.float32, copy=False),
             source_tile_sizes=coords[:, 2:4].astype(np.float32, copy=False),
+            source_read_levels=coords[:, 4].astype(np.int32, copy=False),
             tiling_spec=tiling_spec,
             slide_overview_jpeg=overview,
+            source_slide_path=_resolve_source_slide_path(tiling_spec),
         )
     except Exception:
         empty = np.zeros((0, 2), dtype=np.float32)
         return _ArtifactRenderContext(
             source_coords_xy=empty,
             source_tile_sizes=empty.copy(),
+            source_read_levels=np.zeros((0,), dtype=np.int32),
             tiling_spec={},
             slide_overview_jpeg=None,
+            source_slide_path=None,
         )
+
+
+def _resolve_source_slide_path(tiling_spec: dict[str, Any]) -> Path | None:
+    """Resolve an optional persisted source WSI path from tiling metadata."""
+
+    raw_path = tiling_spec.get("source_slide_path")
+    if raw_path is None:
+        return None
+    try:
+        path = Path(str(raw_path)).expanduser().resolve()
+    except Exception:
+        return None
+    return path if path.exists() else None
 
 
 def _load_array(
@@ -361,8 +402,10 @@ def _write_heatmap_png(
     coords: np.ndarray,
     scores: np.ndarray,
     tile_sizes: np.ndarray,
+    read_levels: np.ndarray,
     slide_overview_jpeg: bytes | None = None,
     tiling_spec: dict[str, Any] | None = None,
+    slide_path: Path | None = None,
     smoothed_output_path: Path | None = None,
     top_tiles_output_path: Path | None = None,
     colormap: str = "inferno",
@@ -378,12 +421,15 @@ def _write_heatmap_png(
         coords: Level-0 top-left coordinates shaped ``(N, 2)``.
         scores: Normalized heatmap scores shaped ``(N,)`` with values in
             ``[0, 1]``.
-        tile_sizes: Level-0 tile width/height shaped ``(N, 2)``.
+        tile_sizes: Read-window width/height shaped ``(N, 2)``.
+        read_levels: Pyramid levels shaped ``(N,)`` aligned with ``coords``.
         slide_overview_jpeg: Optional overview JPEG bytes previously rendered in
             thumbnail pixel space.
         tiling_spec: Optional bag tiling metadata. When overview scaling
             metadata is present, it is used to align the heatmap exactly to the
             overview image.
+        slide_path: Optional source WSI path used to render full-resolution
+            tile previews for the ranked gallery.
         smoothed_output_path: Optional PNG path for a blurred cloud rendering.
         top_tiles_output_path: Optional PNG path for a ranked top-K tiles table.
         colormap: Matplotlib colormap name.
@@ -413,6 +459,11 @@ def _write_heatmap_png(
         raise ValueError(
             "scores must have shape (N,) aligned with coords. "
             f"Got scores {scores.shape} and coords {coords.shape}."
+        )
+    if read_levels.ndim != 1 or read_levels.shape[0] != coords.shape[0]:
+        raise ValueError(
+            "read_levels must have shape (N,) aligned with coords. "
+            f"Got read_levels {read_levels.shape} and coords {coords.shape}."
         )
 
     overview_arr = _decode_overview_image(slide_overview_jpeg)
@@ -455,12 +506,21 @@ def _write_heatmap_png(
         smoothed_fig.savefig(smoothed_output_path, dpi=150)
         plt.close(smoothed_fig)
     if top_tiles_output_path is not None:
+        top_tile_images = _read_top_tile_images(
+            slide_path=slide_path,
+            coords=coords,
+            tile_sizes=tile_sizes,
+            read_levels=read_levels,
+            tiling_spec=tiling_spec,
+            scores=scores,
+        )
         top_tiles_fig = _plot_top_k_tiles_table(
             plt=plt,
             background=overview_arr,
             tile_rectangles=tile_rectangles,
             scores=scores,
             coords=coords,
+            tile_images=top_tile_images,
             top_k_tiles=top_k_tiles,
             title="Top Tiles",
         )
@@ -589,6 +649,38 @@ def _match_tile_sizes_to_heatmap_coords(
             np.asarray(queue.pop(0) if queue else fallback_size, dtype=np.float32)
         )
     return np.vstack(matched_sizes).astype(np.float32, copy=False)
+
+
+def _match_tile_read_levels_to_heatmap_coords(
+    *,
+    coords: np.ndarray,
+    source_coords: np.ndarray,
+    source_read_levels: np.ndarray,
+) -> np.ndarray:
+    """Map persisted heatmap coordinates back to their source read levels."""
+
+    if source_coords.ndim != 2 or source_coords.shape[1] != 2:
+        raise ValueError(
+            "source_coords must have shape (M,2). "
+            f"Got {source_coords.shape}."
+        )
+    if source_read_levels.ndim != 1 or source_read_levels.shape[0] != source_coords.shape[0]:
+        raise ValueError(
+            "source_read_levels must have shape (M,) aligned with source_coords. "
+            f"Got {source_read_levels.shape} and {source_coords.shape}."
+        )
+
+    coord_to_levels: dict[tuple[float, float], list[int]] = {}
+    for idx in range(source_coords.shape[0]):
+        key = (float(source_coords[idx, 0]), float(source_coords[idx, 1]))
+        coord_to_levels.setdefault(key, []).append(int(source_read_levels[idx]))
+
+    matched_levels: list[int] = []
+    for idx in range(coords.shape[0]):
+        key = (float(coords[idx, 0]), float(coords[idx, 1]))
+        queue = coord_to_levels.get(key)
+        matched_levels.append(int(queue.pop(0)) if queue else 0)
+    return np.asarray(matched_levels, dtype=np.int32)
 
 
 def _infer_default_tile_size(source_tile_sizes: np.ndarray) -> np.ndarray:
@@ -746,55 +838,172 @@ def _plot_top_k_tiles_table(
     tile_rectangles: np.ndarray,
     scores: np.ndarray,
     coords: np.ndarray,
+    tile_images: list[np.ndarray] | None,
     top_k_tiles: int,
     title: str,
 ):
-    """Render a top-K tiles table with crops and per-tile scores."""
+    """Render a top-K tiles gallery with full-resolution previews when available."""
 
-    num_rows = max(1, min(int(top_k_tiles), int(scores.shape[0])))
-    ranking = np.argsort(scores)[::-1][:num_rows]
-    fig, axes = plt.subplots(num_rows, 2, figsize=(8, max(2.4 * num_rows, 3.0)))
-    if num_rows == 1:
-        axes = np.asarray([axes], dtype=object)
-    for row_index, item_index in enumerate(ranking):
-        tile_ax = axes[row_index, 0]
-        text_ax = axes[row_index, 1]
+    num_tiles = max(1, min(int(top_k_tiles), int(scores.shape[0])))
+    ranking = np.argsort(scores)[::-1][:num_tiles]
+    num_rows, num_cols = _top_tiles_grid_shape(num_tiles)
+    fig, axes = plt.subplots(
+        num_rows,
+        num_cols,
+        figsize=(max(2.8 * num_cols, 3.2), max(3.4 * num_rows, 3.6)),
+    )
+    axes_flat = np.atleast_1d(axes).ravel()
+
+    for gallery_index, item_index in enumerate(ranking):
+        tile_ax = axes_flat[gallery_index]
         tile_ax.axis("off")
-        text_ax.axis("off")
-
-        crop = _crop_tile_preview(
-            background=background,
-            rectangle=tile_rectangles[item_index],
-        )
-        tile_ax.imshow(crop, origin="upper")
-        tile_ax.set_title(f"Rank {row_index + 1}", fontsize=10)
-        text_ax.text(
-            0.0,
-            0.80,
-            f"score: {float(scores[item_index]):.4f}",
-            fontsize=10,
-            va="top",
-        )
-        text_ax.text(
-            0.0,
-            0.50,
-            f"x={int(coords[item_index, 0])}, y={int(coords[item_index, 1])}",
-            fontsize=10,
-            va="top",
-        )
-        text_ax.text(
-            0.0,
-            0.20,
+        tile_ax.imshow(
             (
-                f"thumb box: {int(tile_rectangles[item_index, 2])}"
-                f"x{int(tile_rectangles[item_index, 3])}"
+                tile_images[gallery_index]
+                if tile_images is not None
+                else _crop_tile_preview(
+                    background=background,
+                    rectangle=tile_rectangles[item_index],
+                )
             ),
-            fontsize=10,
-            va="top",
+            origin="upper",
         )
+        tile_ax.set_title(
+            f"#{gallery_index + 1} score={float(scores[item_index]):.4f}",
+            fontsize=9,
+        )
+        tile_ax.text(
+            0.5,
+            -0.08,
+            f"x={int(coords[item_index, 0])}, y={int(coords[item_index, 1])}",
+            fontsize=8,
+            ha="center",
+            va="top",
+            transform=tile_ax.transAxes,
+        )
+    for empty_ax in axes_flat[num_tiles:]:
+        empty_ax.axis("off")
     fig.suptitle(title)
     fig.tight_layout()
     return fig
+
+
+def _top_tiles_grid_shape(num_tiles: int) -> tuple[int, int]:
+    """Return a compact gallery shape for the ranked top-tile montage."""
+
+    if num_tiles <= 0:
+        raise ValueError(f"num_tiles must be positive. Got {num_tiles}.")
+    num_cols = max(1, int(np.ceil(np.sqrt(float(num_tiles)))))
+    num_rows = int(np.ceil(float(num_tiles) / float(num_cols)))
+    return num_rows, num_cols
+
+
+def _read_top_tile_images(
+    *,
+    slide_path: Path | None,
+    coords: np.ndarray,
+    tile_sizes: np.ndarray,
+    read_levels: np.ndarray,
+    tiling_spec: dict[str, Any] | None,
+    scores: np.ndarray,
+) -> list[np.ndarray] | None:
+    """Read top-tile previews from the source WSI when slide context exists."""
+
+    if slide_path is None or not slide_path.exists():
+        return None
+
+    ranking = np.argsort(scores)[::-1]
+    target_tile_size = _extract_display_tile_size(tiling_spec)
+
+    try:
+        from wsidata import open_wsi
+    except Exception:
+        logger.warning(
+            "Skipping full-resolution top-tile previews because wsidata is unavailable."
+        )
+        return None
+
+    try:
+        wsi = open_wsi(slide_path)
+    except Exception:
+        logger.warning("Failed to open source slide for top-tile previews: %s", slide_path)
+        return None
+
+    previews: list[np.ndarray] = []
+    try:
+        for item_index in ranking:
+            patch = wsi.read_region(
+                int(round(float(coords[item_index, 0]))),
+                int(round(float(coords[item_index, 1]))),
+                max(int(round(float(tile_sizes[item_index, 0]))), 1),
+                max(int(round(float(tile_sizes[item_index, 1]))), 1),
+                level=max(int(read_levels[item_index]), 0),
+            )
+            previews.append(
+                _resize_tile_preview(
+                    _coerce_rgb_uint8_array(patch),
+                    target_size_px=target_tile_size,
+                )
+            )
+    except Exception:
+        logger.warning(
+            "Falling back to thumbnail crops because source tile reads failed for %s.",
+            slide_path,
+            exc_info=True,
+        )
+        return None
+    finally:
+        wsi.close()
+
+    return previews
+
+
+def _extract_display_tile_size(tiling_spec: dict[str, Any] | None) -> int:
+    """Return the rendered tile size used in the top-tile gallery."""
+
+    if tiling_spec is None:
+        return 256
+    try:
+        tile_px = int(tiling_spec.get("tile_px", 256))
+    except Exception:
+        return 256
+    return max(tile_px, 1)
+
+
+def _coerce_rgb_uint8_array(image: Any) -> np.ndarray:
+    """Convert region-read output into an RGB ``uint8`` image array."""
+
+    from PIL import Image
+
+    if isinstance(image, Image.Image):
+        return np.asarray(image.convert("RGB"), dtype=np.uint8)
+
+    arr = np.asarray(image)
+    if arr.ndim == 2:
+        arr = np.stack([arr, arr, arr], axis=-1)
+    elif arr.ndim == 3 and arr.shape[-1] == 4:
+        arr = arr[..., :3]
+    if arr.ndim != 3 or arr.shape[-1] != 3:
+        raise ValueError(f"Unsupported tile preview shape: {arr.shape}")
+    if arr.dtype != np.uint8:
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+    return arr
+
+
+def _resize_tile_preview(image: np.ndarray, *, target_size_px: int) -> np.ndarray:
+    """Resize a tile preview to a consistent square display size."""
+
+    from PIL import Image
+
+    pil_image = Image.fromarray(image, mode="RGB")
+    try:
+        resample = Image.Resampling.BILINEAR
+    except AttributeError:
+        resample = Image.BILINEAR  # type: ignore[attr-defined]
+    return np.asarray(
+        pil_image.resize((int(target_size_px), int(target_size_px)), resample=resample),
+        dtype=np.uint8,
+    )
 
 
 def _crop_tile_preview(

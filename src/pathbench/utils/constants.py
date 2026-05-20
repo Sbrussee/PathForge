@@ -1,5 +1,4 @@
-# pathbench/utils/constants.py
-# This file contains constant values used throughout the PathBench project.
+"""Shared constants used across PathBench."""
 
 DEFAULT_WEIGHTS_DIR = "./pretrained_weights"
 
@@ -18,4 +17,7 @@ REGISTRY_AUGMENTATION_METHODS = "augmentation_methods"
 EXPERIMENTS_DIR = "experiments"
 LOGS_DIR = "logs"
 
-SLIDE_FILE_FORMATS = [".svs", ".ndpi", ".tiff", ".tif", ".mrxs"] #TODO: Base on backends? 
+# ``WSIDataset`` discovers slide files before a concrete slide backend is
+# instantiated, so it accepts the union of suffixes currently supported by the
+# Lazyslide/WSIData ingestion stack used by PathBench.
+SLIDE_FILE_FORMATS = (".svs", ".ndpi", ".tiff", ".tif", ".mrxs")

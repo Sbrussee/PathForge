@@ -6,11 +6,13 @@ import numpy as np
 import torch
 from PIL import Image
 
+import pathbench.inference.heatmaps as heatmaps_mod
 from pathbench.core.io.h5.base import FileHandleH5
 from pathbench.core.io.h5 import heatmaps as heatmap_io
 from pathbench.core.io.h5 import tiles as tiles_io
 from pathbench.inference.heatmaps import (
     _coords_to_pixel_rectangles,
+    _top_tiles_grid_shape,
     create_inference_heatmap,
 )
 from pathbench.utils.registries import EXPLAINERS
@@ -45,13 +47,28 @@ def _register_fake_explainer_once(name: str) -> None:
     EXPLAINERS.register(name)(_FakeHeatmapExplainer)
 
 
-def test_create_inference_heatmap_persists_h5_and_json_sidecar(tmp_path):
+def test_create_inference_heatmap_persists_h5_and_json_sidecar(tmp_path, monkeypatch):
     _register_fake_explainer_once("fake_inference_heatmap")
     artifact_path = tmp_path / "slide.h5"
+    slide_path = tmp_path / "slide.svs"
     scores_path = tmp_path / "scores.npy"
     output_path = tmp_path / "heatmap.json"
     image_output_path = tmp_path / "heatmap.png"
+    slide_path.write_bytes(b"fake slide placeholder")
     np.save(scores_path, np.asarray([0.2, 0.5, 1.0], dtype=np.float32))
+
+    captured_slide_paths: list[object] = []
+
+    def _fake_read_top_tile_images(**kwargs):
+        captured_slide_paths.append(kwargs["slide_path"])
+        return [
+            np.full((32, 32, 3), fill_value=50 * (idx + 1), dtype=np.uint8)
+            for idx in range(kwargs["scores"].shape[0])
+        ]
+
+    monkeypatch.setattr(
+        heatmaps_mod, "_read_top_tile_images", _fake_read_top_tile_images
+    )
 
     with FileHandleH5(artifact_path, mode="a") as slide_artifact:
         tiles_io.write_coords(
@@ -92,6 +109,7 @@ def test_create_inference_heatmap_persists_h5_and_json_sidecar(tmp_path):
         output_path=output_path,
         image_output_path=image_output_path,
         model_path="model.ckpt",
+        slide_path=slide_path,
     )
 
     assert result.num_points == 3
@@ -102,6 +120,7 @@ def test_create_inference_heatmap_persists_h5_and_json_sidecar(tmp_path):
     assert result.top_tiles_output_path is not None
     assert result.top_tiles_output_path.exists()
     assert result.image_output_path == image_output_path
+    assert captured_slide_paths == [slide_path]
     with FileHandleH5(artifact_path, mode="r") as slide_artifact:
         heatmap = heatmap_io.read_prediction_heatmap(
             slide_artifact, "256px_0.5mpp", "attention"
@@ -121,6 +140,13 @@ def test_coords_to_pixel_rectangles_preserves_tile_square_alignment() -> None:
     )
 
     assert rectangles.tolist() == [[0, 0, 100, 100], [100, 0, 100, 100]]
+
+
+def test_top_tiles_grid_shape_prefers_compact_matrix() -> None:
+    assert _top_tiles_grid_shape(1) == (1, 1)
+    assert _top_tiles_grid_shape(4) == (2, 2)
+    assert _top_tiles_grid_shape(5) == (2, 3)
+    assert _top_tiles_grid_shape(10) == (3, 4)
 
 
 def test_create_inference_heatmap_applies_mask(tmp_path):

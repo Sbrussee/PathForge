@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import torch
 
-import pathbench.core.losses.classification  # noqa: F401
 from pathbench.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
 from pathbench.adapters.torchmil.backend import (
     TorchMILBackendModel,
@@ -21,6 +21,7 @@ from ._smoke_dataset import PreparedBagWorkspace, attach_smoke_outputs, capture_
 from ._smoke_training import (
     DEFAULT_SMOKE_EPOCHS,
     SmokeTrainingResult,
+    fit_smoke_model,
     make_training_config,
     training_artifact_outputs,
 )
@@ -139,6 +140,58 @@ def test_torchmil_backend_classification_visualizations_smoke(
 
     assert Path(best_model_path).exists()
     assert (artifacts_dir / "val_confusion_matrix.png").exists()
+    assert (artifacts_dir / "val_roc_auc_curve.png").exists()
+    assert (artifacts_dir / "val_pr_auc_curve.png").exists()
+    assert (artifacts_dir / "val_calibration_curve.png").exists()
+
+
+@pytest.mark.smoke
+def test_multiclass_classification_heatmap_smoke(
+    extracted_bag_workspace: PreparedBagWorkspace,
+    tmp_path: Path,
+) -> None:
+    """Verify confusion-matrix heatmap and curves are generated for 3+ classes."""
+    metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
+    num_classes = int(metadata_df["multiclass_label"].nunique())
+    if num_classes < 3:
+        pytest.skip("Fewer than 3 multiclass labels; skipping multiclass smoke test.")
+
+    dataset = BagDataset(
+        "multiclass_heatmap_smoke",
+        str(extracted_bag_workspace.feature_dir),
+        str(extracted_bag_workspace.metadata_csv),
+        "multiclass_label",
+    )
+
+    with capture_smoke_metrics(
+        tmp_path / "metrics",
+        step_name="hf_multiclass_heatmap_smoke",
+        metadata={"num_classes": num_classes, "num_bags": len(dataset)},
+    ) as metadata:
+        _, result = fit_smoke_model(
+            tmp_path / "multiclass_heatmap",
+            dataset_train=dataset,
+            dataset_val=dataset,
+            input_dim=extracted_bag_workspace.input_dim,
+            output_dim=num_classes,
+            task="classification",
+            loss_name="CrossEntropyLoss",
+            epochs=DEFAULT_SMOKE_EPOCHS,
+            lr=1e-3,
+            dropout=0.0,
+        )
+        artifacts_dir = Path(result.artifacts_dir)
+        attach_smoke_outputs(
+            metadata,
+            step_name="hf_multiclass_heatmap_smoke",
+            final={
+                **training_artifact_outputs(result),
+            },
+        )
+
+    assert (artifacts_dir / "val_confusion_matrix.png").exists(), (
+        "Confusion matrix heatmap not generated for multiclass task."
+    )
     assert (artifacts_dir / "val_roc_auc_curve.png").exists()
     assert (artifacts_dir / "val_pr_auc_curve.png").exists()
     assert (artifacts_dir / "val_calibration_curve.png").exists()

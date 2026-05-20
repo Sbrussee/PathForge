@@ -5,10 +5,13 @@ import sys
 import types
 
 import optuna
+import pandas as pd
 
 import pathbench.policy.optimization as opt_mod
+import pathbench.policy.utils as policy_utils
 from pathbench.config.config import Config
 from pathbench.policy.optimization import OptimizationPolicy
+from pathbench.policy.utils import optimization_search_space
 from tests.conftest import DUMMY_FE
 
 
@@ -149,3 +152,162 @@ def test_optimization_objective_uses_mil_lab_user_config_and_inferred_dims(
         "output_dim": 5,
         "extra_kwargs": {"dropout": cfg.mil.dropout_p},
     }
+
+
+def test_optimization_search_space_merges_benchmark_component_choices(
+    tmp_path: Path,
+) -> None:
+    cfg = _make_cfg(tmp_path)
+    cfg.benchmark_parameters.tile_px = [256, 512]
+    cfg.benchmark_parameters.mil = ["DummyMIL", "DummyMIL2"]
+    cfg.benchmark_parameters.loss = ["CrossEntropyLoss", "MSELoss"]
+    cfg.optimization.search_space = {
+        "epochs": {"type": "int", "low": 5, "high": 15, "step": 5},
+        "lr": {"type": "float", "low": 1e-5, "high": 1e-3, "log": True},
+    }
+
+    merged = optimization_search_space(cfg)
+
+    assert merged["epochs"].kind == "int"
+    assert merged["tile_px"].kind == "categorical"
+    assert merged["tile_px"].choices == [256, 512]
+    assert merged["mil"].choices == ["DummyMIL", "DummyMIL2"]
+    assert merged["loss"].choices == ["CrossEntropyLoss", "MSELoss"]
+
+
+def test_optimization_execute_writes_summary_csv_and_visualizations(
+    monkeypatch, tmp_path: Path
+) -> None:
+    class _FakeStudy:
+        best_params = {"lr": 1e-4}
+        best_value = 0.82
+
+        def __init__(self) -> None:
+            self.optimize_calls: list[int] = []
+
+        def optimize(self, objective, n_trials: int) -> None:
+            _ = objective
+            self.optimize_calls.append(n_trials)
+
+        def trials_dataframe(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                [
+                    {
+                        "number": 0,
+                        "value": 0.82,
+                        "state": "COMPLETE",
+                        "params_lr": 1e-4,
+                    },
+                    {
+                        "number": 1,
+                        "value": 0.61,
+                        "state": "COMPLETE",
+                        "params_lr": 5e-4,
+                    },
+                ]
+            )
+
+    exported_dirs: list[Path] = []
+    fake_study = _FakeStudy()
+    monkeypatch.setattr(opt_mod.optuna, "create_study", lambda **kwargs: fake_study)
+
+    def _fake_save_optuna_visualizations(study, output_dir):
+        _ = study
+        exported_dirs.append(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "plot_optimization_history.html").write_text(
+            "<html></html>", encoding="utf-8"
+        )
+        return [output_dir / "plot_optimization_history.html"]
+
+    monkeypatch.setattr(
+        opt_mod,
+        "save_optuna_visualizations",
+        _fake_save_optuna_visualizations,
+    )
+
+    cfg = _make_cfg(tmp_path)
+    policy = OptimizationPolicy(cfg)
+    monkeypatch.setattr(policy, "objective", lambda trial: 0.5)
+
+    policy.execute()
+
+    raw_results = tmp_path / "project" / "study_results.csv"
+    summary_results = tmp_path / "project" / "optimization_results.csv"
+    vis_dir = tmp_path / "project" / "optimization_visualizations"
+    assert raw_results.exists()
+    assert summary_results.exists()
+    summary_df = pd.read_csv(summary_results)
+    assert summary_df["objective_value"].tolist()[:2] == [0.82, 0.61]
+    assert summary_df["rank"].tolist()[:2] == [1, 2]
+    assert exported_dirs == [vis_dir]
+    assert (vis_dir / "plot_optimization_history.html").exists()
+
+
+def test_save_optuna_visualizations_exports_requested_figures(
+    monkeypatch, tmp_path: Path
+) -> None:
+    written_paths: list[str] = []
+
+    class _FakeFigure:
+        def write_html(self, path: str) -> None:
+            written_paths.append(path)
+            Path(path).write_text("<html></html>", encoding="utf-8")
+
+    class _FakeDirection:
+        def __init__(self, label: str) -> None:
+            self.label = label
+
+        def __str__(self) -> str:
+            return self.label
+
+    class _FakeTrial:
+        def __init__(self, values: list[float]) -> None:
+            self.values = values
+
+    class _FakeVisualization:
+        def plot_optimization_history(self, study, **kwargs):
+            _ = (study, kwargs)
+            return _FakeFigure()
+
+        def plot_param_importances(self, study, **kwargs):
+            _ = (study, kwargs)
+            return _FakeFigure()
+
+        def plot_rank(self, study, **kwargs):
+            _ = (study, kwargs)
+            return _FakeFigure()
+
+        def plot_timeline(self, study, **kwargs):
+            _ = (study, kwargs)
+            return _FakeFigure()
+
+        def plot_hypervolume_history(self, study, reference_point):
+            _ = study
+            assert len(reference_point) == 2
+            return _FakeFigure()
+
+    def _fake_import_module(name: str):
+        if name == "optuna.visualization":
+            return _FakeVisualization()
+        raise ImportError(name)
+
+    monkeypatch.setattr(policy_utils.importlib, "import_module", _fake_import_module)
+    fake_study = types.SimpleNamespace(
+        directions=[_FakeDirection("minimize"), _FakeDirection("maximize")],
+        trials=[_FakeTrial([0.5, 0.7]), _FakeTrial([0.4, 0.8])],
+    )
+
+    exported = policy_utils.save_optuna_visualizations(
+        fake_study,
+        output_dir=tmp_path / "optuna_visualizations",
+    )
+
+    assert sorted(path.name for path in exported) == [
+        "plot_hypervolume_history.html",
+        "plot_optimization_history.html",
+        "plot_param_importances.html",
+        "plot_rank.html",
+        "plot_timeline.html",
+    ]
+    assert len(written_paths) == 5

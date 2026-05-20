@@ -7,7 +7,7 @@ import torch
 import inspect
 
 # Pydantic Imports
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 # Internal Imports
 from pathbench.utils.constants import TASK_TYPES, MODE_TYPES
@@ -39,6 +39,7 @@ CLASSIFICATION_METRIC_NAMES = {
     "brier_score",
 }
 SURVIVAL_METRIC_NAMES = {
+    "brier_score",
     "c_index",
     "td_auc",
     "num_eval_times",
@@ -63,7 +64,7 @@ class ExperimentConfig(BaseModel):
     annotation_file: str
     project_root: str | None = None
 
-    # Execution #TODO: Is this part of the experiment config, we do not use it in the experiment class
+    # Execution settings consumed directly by trainers and pipeline policies.
     num_workers: int = Field(0, ge=0)
     split_technique: Literal["k-fold", "k-fold-stratified", "fixed"] = "k-fold"
     val_fraction: float = Field(0.1, gt=0, lt=1)
@@ -71,6 +72,7 @@ class ExperimentConfig(BaseModel):
     # Task + Mode
     task: Optional[TaskType] = None
     mode: ModeType = "benchmark"
+    prediction_level: Literal["mil", "slide"] = "mil"
     aggregation_level: Literal["slide", "patient"] = "slide"
     label_column: str = "category"
     slide_column: str = "slide"
@@ -81,7 +83,7 @@ class ExperimentConfig(BaseModel):
     report: bool = False
     mixed_precision: bool = False
 
-    # TODO: Does this make sense to be here?
+    # Optional reporting/evaluation selectors preserved for config compatibility.
     visualization: List[str] = Field(default_factory=list)
     evaluation: List[str] = Field(default_factory=list)
     custom_metrics: List[str] = Field(default_factory=list)
@@ -130,7 +132,7 @@ class MILConfig(BaseModel):
     class_weighting: bool = False
 
     # Architecture (General)
-    bag_size: int | None = Field(default=None, gt=0)
+    bag_size: int = 512
     encoder_layers: int = 1
     z_dim: int = 256
     dropout_p: float = Field(0.1, ge=0.0, le=1.0)
@@ -175,7 +177,7 @@ class MetricsConfig(BaseModel):
         ]
     )
     survival_metrics: list[str] = Field(
-        default_factory=lambda: ["c_index", "td_auc", "num_eval_times"]
+        default_factory=lambda: ["c_index", "td_auc", "brier_score", "num_eval_times"]
     )
     regression_metrics: list[str] = Field(default_factory=lambda: ["mae", "mse"])
 
@@ -227,7 +229,9 @@ class MetricsConfig(BaseModel):
 class SearchSpaceParameter(BaseModel):
     """One optimization search-space parameter specification."""
 
-    kind: Literal["categorical", "float", "int"]
+    kind: Literal["categorical", "float", "int"] = Field(
+        validation_alias=AliasChoices("kind", "type")
+    )
     choices: list[Any] = Field(default_factory=list)
     low: float | int | None = None
     high: float | int | None = None
@@ -258,7 +262,7 @@ class SlideProcessingConfig(BaseModel):
     save_tiles: bool = False
     segmentation_method: Optional[str] = None
 
-    # TODO: Do we need this option below?
+    # Optional backend-specific slide quality-control filter payloads.
     qc_filters: List[Dict[str, Any]] = Field(default_factory=list)
 
 
@@ -277,10 +281,17 @@ class OptimizationConfig(BaseModel):
     search_space: dict[str, SearchSpaceParameter] = Field(
         default_factory=lambda: {
             "lr": SearchSpaceParameter(kind="float", low=1e-5, high=1e-3, log=True),
-            "dropout_p": SearchSpaceParameter(kind="float", low=0.1, high=0.5),
-            "mil": SearchSpaceParameter(
+            "epochs": SearchSpaceParameter(kind="int", low=10, high=50, step=5),
+            "z_dim": SearchSpaceParameter(
                 kind="categorical",
-                choices=["AttentionMIL", "TransMIL"],
+                choices=[128, 256, 512],
+            ),
+            "dropout_p": SearchSpaceParameter(kind="float", low=0.1, high=0.5),
+            "weight_decay": SearchSpaceParameter(
+                kind="float",
+                low=1e-6,
+                high=1e-3,
+                log=True,
             ),
         }
     )
@@ -303,16 +314,29 @@ class BenchmarkParameters(BaseModel):
     Pydantic validators enforce logic previously implemented manually.
     """
 
-    tile_px: List[int] = Field(default_factory=lambda: [256])
+    tile_px: List[int] = Field(default_factory=lambda: [224])
     tile_mpp: List[float] = Field(default_factory=lambda: [0.5])
     feature_extraction: List[str] = Field(default_factory=list)
     mil: List[str] = Field(default_factory=list)
+    slide_level_models: List[str] = Field(default_factory=list)
+    slide_aggregation: List[Literal["mean", "max", "mean_max"]] = Field(
+        default_factory=lambda: ["mean"]
+    )
     loss: List[str] = Field(default_factory=list)
     activation_function: List[str] = Field(default_factory=list)
     optimizer: List[str] = Field(default_factory=list)
-    batch_size: List[int] = Field(default_factory=lambda: [1])
+    scheduler: List[Literal["none", "reduce_on_plateau", "cosine"]] = Field(
+        default_factory=list
+    )
+    batch_size: List[int] = Field(default_factory=lambda: [16])
+    epochs: List[int] = Field(default_factory=list)
     lr: List[float] = Field(default_factory=list)
+    weight_decay: List[float] = Field(default_factory=list)
     dropout_p: List[float] = Field(default_factory=list)
+    bag_size: List[int] = Field(default_factory=list)
+    z_dim: List[int] = Field(default_factory=list)
+    encoder_layers: List[int] = Field(default_factory=list)
+    k: List[int] = Field(default_factory=list)
     seeds: List[int] = Field(default_factory=lambda: [1, 2, 3])
 
     @field_validator("tile_px")
@@ -361,6 +385,22 @@ class BenchmarkParameters(BaseModel):
                     )
         return v
 
+    @field_validator("slide_level_models")
+    @classmethod
+    def validate_slide_level_models(cls, v: List[str]) -> List[str]:
+        from pathbench.core.models.sklearn_slide import SLIDE_LEVEL_MODEL_NAMES
+
+        populate_dynamic_registries()
+        for model_name in v:
+            in_torch_registry = MODELS.is_available(model_name)
+            in_sklearn_names = model_name in SLIDE_LEVEL_MODEL_NAMES
+            if not in_torch_registry and not in_sklearn_names:
+                raise ValueError(
+                    f"Slide-level model '{model_name}' not found. "
+                    f"Known slide-level models: {sorted(SLIDE_LEVEL_MODEL_NAMES)}."
+                )
+        return v
+
     @field_validator("activation_function")
     @classmethod
     def validate_activations(cls, v: List[str]) -> List[str]:
@@ -396,12 +436,30 @@ class BenchmarkParameters(BaseModel):
                 raise ValueError(f"Invalid batch_size: {batch_size}. Must be > 0.")
         return value
 
+    @field_validator("epochs")
+    @classmethod
+    def validate_epochs(cls, value: list[int]) -> list[int]:
+        for epochs in value:
+            if epochs <= 0:
+                raise ValueError(f"Invalid epochs: {epochs}. Must be > 0.")
+        return value
+
     @field_validator("lr")
     @classmethod
     def validate_learning_rates(cls, value: list[float]) -> list[float]:
         for lr in value:
             if lr <= 0:
                 raise ValueError(f"Invalid lr: {lr}. Must be > 0.")
+        return value
+
+    @field_validator("weight_decay")
+    @classmethod
+    def validate_weight_decay(cls, value: list[float]) -> list[float]:
+        for weight_decay in value:
+            if weight_decay < 0:
+                raise ValueError(
+                    f"Invalid weight_decay: {weight_decay}. Must be >= 0."
+                )
         return value
 
     @field_validator("dropout_p")
@@ -411,6 +469,18 @@ class BenchmarkParameters(BaseModel):
             if dropout < 0.0 or dropout > 1.0:
                 raise ValueError(
                     f"Invalid dropout_p: {dropout}. Must be inside [0, 1]."
+                )
+        return value
+
+    @field_validator("bag_size", "z_dim", "encoder_layers", "k")
+    @classmethod
+    def validate_positive_int_lists(
+        cls, value: list[int], info: Any
+    ) -> list[int]:
+        for item in value:
+            if item <= 0:
+                raise ValueError(
+                    f"Invalid {info.field_name}: {item}. Must be > 0."
                 )
         return value
 
@@ -438,7 +508,7 @@ class Config(BaseModel):
         default_factory=BenchmarkParameters
     )
 
-    # TODO: Do we still need these?
+    # Backward-compatible global paths/tokens used by a few feature backends.
     weights_dir: str = "./pretrained_weights"
     hf_key: Optional[str] = None
 
@@ -516,10 +586,29 @@ class Config(BaseModel):
                     "Install torchsurv or choose another survival backend."
                 )
 
-        if self.experiment.mode == "benchmark" and not self.benchmark_parameters.mil:
-            raise ValueError(
-                "Mode is 'benchmark' but no MIL models specified in benchmark_parameters."
-            )
+        if self.experiment.mode == "benchmark":
+            prediction_level = self.experiment.prediction_level
+            if prediction_level == "mil":
+                if self.benchmark_parameters.slide_level_models:
+                    raise ValueError(
+                        "prediction_level='mil' is incompatible with "
+                        "benchmark_parameters.slide_level_models. "
+                        "Use prediction_level='slide' or remove slide_level_models."
+                    )
+                if not self.benchmark_parameters.mil:
+                    raise ValueError(
+                        "prediction_level='mil' requires at least one model in "
+                        "benchmark_parameters.mil."
+                    )
+            elif prediction_level == "slide":
+                if self.benchmark_parameters.mil:
+                    raise ValueError(
+                        "prediction_level='slide' is incompatible with "
+                        "benchmark_parameters.mil. "
+                        "Use prediction_level='mil' or remove MIL models."
+                    )
+                if not self.benchmark_parameters.slide_level_models:
+                    self.benchmark_parameters.slide_level_models = ["SlideVectorMLP"]
 
         task_metrics = set(self.metrics.metrics_for_task(task))
         allowed_monitor_names = task_metrics | MONITOR_FALLBACK_NAMES

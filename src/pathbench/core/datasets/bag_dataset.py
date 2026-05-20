@@ -1,10 +1,13 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Any, Tuple
-import torch
-import pandas as pd
-from pathlib import Path
 
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import torch
+
+from pathbench.core.datasets.bag_schema import BagBatch, as_bag_batch
 from pathbench.core.datasets.base import BagDatasetBase
 
 
@@ -46,7 +49,7 @@ class BagDataset(BagDatasetBase):
 
         if self.num_bags == 0:
             raise ValueError("Cannot infer feature_dim from an empty bag dataset.")
-        bag, _ = self[0]
+        bag = self[0]["X"]
         if bag.ndim != 2:
             raise ValueError(f"Bag tensors must have shape [N, D]. Got {bag.shape}.")
         return int(bag.shape[1])
@@ -61,11 +64,13 @@ class BagDataset(BagDatasetBase):
             return int(self.annotations[time_column].max()) + 1
         return 1
 
-    def __getitem__(self, index: int) -> Tuple[torch.Tensor, Any]:
+    def __getitem__(self, index: int) -> BagBatch:
         """
+        Return one MIL bag in the canonical PathBench schema.
+
         Returns:
-            bag: (N, D) Tensor
-            label: scalar
+            BagBatch: Dictionary with ``X`` shaped ``[N, D]`` and ``Y`` as the
+            bag-level task target.
         """
         row = self.annotations.iloc[index]
         slide_id = row[self._resolved_slide_column]
@@ -87,7 +92,7 @@ class BagDataset(BagDatasetBase):
             bag = bag.float()
             bag = self._materialize_bag_size(bag)
 
-        return bag, self._target_from_row(row)
+        return as_bag_batch({"X": bag, "Y": self._target_from_row(row)})
 
     def _materialize_bag_size(self, bag: torch.Tensor) -> torch.Tensor:
         """Return a variable-size or fixed-size bag according to ``self.bag_size``.

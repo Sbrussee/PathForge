@@ -5,7 +5,7 @@ from typing import Any
 
 import torch
 
-from pathbench.core.explainability.base import ExplainerBase
+from pathbench.core.explainer_base import ExplainerBase
 from pathbench.utils.optional.torchmil import require_torchmil
 from pathbench.utils.registries import EXPLAINERS
 

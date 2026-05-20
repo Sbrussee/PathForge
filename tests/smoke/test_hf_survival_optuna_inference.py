@@ -70,6 +70,7 @@ def test_continuous_survival_mil_smoke(
     assert Path(result.best_model_path).exists()
     assert Path(result.artifacts_dir, "val_td_auc_curve.png").exists()
     assert Path(result.artifacts_dir, "val_concordance_index.png").exists()
+    assert Path(result.artifacts_dir, "val_kaplan_meier.png").exists()
 
 
 @pytest.mark.smoke
@@ -118,6 +119,7 @@ def test_discrete_survival_mil_smoke(
     assert Path(result.best_model_path).exists()
     assert Path(result.artifacts_dir, "val_td_auc_curve.png").exists()
     assert Path(result.artifacts_dir, "val_concordance_index.png").exists()
+    assert Path(result.artifacts_dir, "val_kaplan_meier.png").exists()
 
 
 @pytest.mark.smoke
@@ -262,7 +264,17 @@ def test_trained_mil_inference_heatmap_cli(
         heatmap_top_tiles_png = tmp_path / f"{slide_id}_heatmap_top_tiles.png"
         checkpoint_path = tmp_path / "smoke_model.ckpt"
         np.save(scores_path, instance_scores)
-        model.save(str(checkpoint_path))
+        from pathbench.inference.model_package import save_packaged_model
+
+        save_packaged_model(
+            path=checkpoint_path,
+            model=model,
+            config=result.config,
+            model_name="VarMIL",
+            input_dim=extracted_bag_workspace.input_dim,
+            output_dim=2,
+            loss_name="CrossEntropyLoss",
+        )
 
         exit_code = inference_main(
             [
@@ -270,6 +282,8 @@ def test_trained_mil_inference_heatmap_cli(
                 str(checkpoint_path),
                 "--input",
                 str(artifact_path),
+                "--slide-path",
+                str(extracted_wsi_workspace.slides_dir / f"{slide_id}.svs"),
                 "--output",
                 str(output_json),
                 "--heatmap-backend",
@@ -387,6 +401,7 @@ def test_gtex_survival_mil_smoke(
     assert Path(result.best_model_path).exists()
     assert Path(result.artifacts_dir, "val_td_auc_curve.png").exists()
     assert Path(result.artifacts_dir, "val_concordance_index.png").exists()
+    assert Path(result.artifacts_dir, "val_kaplan_meier.png").exists()
 
 
 @pytest.mark.smoke
@@ -474,6 +489,7 @@ def test_gtex_survival_heatmap(
             heatmap_backend="torchmil",
             heatmap_name="smoke_gtex_survival_attention",
             image_output_path=heatmap_png,
+            slide_path=extracted_wsi_workspace.slides_dir / f"{slide_id}.svs",
         )
         attach_smoke_outputs(
             sm,

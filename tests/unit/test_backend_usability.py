@@ -253,7 +253,7 @@ def test_list_mil_models_reports_backend_requirements_and_availability(
     monkeypatch.setattr(
         registries_module.MODELS,
         "is_available",
-        lambda name: name in {"GCNConvMIL", "PerceiverMIL", "PrototypeMIL", "VarMIL"},
+        lambda name: name in {"PerceiverMIL", "PrototypeMIL", "VarMIL"},
     )
     monkeypatch.setattr(registries_module, "is_torchmil_available", lambda: False)
     monkeypatch.setattr(registries_module, "is_mil_lab_available", lambda: True)
@@ -261,7 +261,7 @@ def test_list_mil_models_reports_backend_requirements_and_availability(
     entries = list_mil_models()
     lookup = {(entry.name, entry.backend): entry for entry in entries}
 
-    assert lookup[("GCNConvMIL", "native")].available is True
+    assert ("GCNConvMIL", "native") not in lookup
     assert lookup[("MambaMIL", "native")].available is False
     assert lookup[("ABMIL", "torchmil")].config_field == "mil.torchmil_model"
     assert lookup[("ABMIL", "torchmil")].available is False

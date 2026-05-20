@@ -4,7 +4,6 @@ from typing import Any
 
 import torch
 
-from pathbench.adapters.torchmil.bag_adapter import pathbench_item_to_bag_dict
 from pathbench.core.datasets.bag_schema import BagBatch, assert_bag_schema
 from pathbench.utils.optional.torchmil import is_torchmil_available, load_torchmil_modules
 
@@ -13,8 +12,8 @@ def torchmil_or_pathbench_collate(batch: list[Any], *, use_torchmil: bool = True
     """Collate variable-length MIL bags with TorchMIL when available.
 
     Args:
-        batch: List of canonical bag dictionaries or legacy ``(bag, target)``
-            tuples. Each ``X`` is shaped ``[N_i, D]``.
+        batch: List of canonical single-bag dictionaries. Each ``X`` is shaped
+            ``[N_i, D]``.
         use_torchmil: If true and TorchMIL is installed, dispatch to
             ``torchmil.data.collate_fn``. Otherwise use PathBench's fallback
             implementation with the same padded ``X`` and ``mask`` semantics.
@@ -27,14 +26,20 @@ def torchmil_or_pathbench_collate(batch: list[Any], *, use_torchmil: bool = True
     Example:
         ```python
         torch.manual_seed(7)
-        batch = [(torch.ones(2, 4), 0), (torch.ones(3, 4), 1)]
+        batch = [
+            {"X": torch.ones(2, 4), "Y": torch.tensor(0)},
+            {"X": torch.ones(3, 4), "Y": torch.tensor(1)},
+        ]
         out = torchmil_or_pathbench_collate(batch, use_torchmil=False)
         assert out["X"].shape == (2, 3, 4)
         assert out["mask"].tolist() == [[True, True, False], [True, True, True]]
         ```
     """
 
-    bag_dicts = [pathbench_item_to_bag_dict(item) for item in batch]
+    bag_dicts = []
+    for item in batch:
+        assert_bag_schema(item, batched=False)
+        bag_dicts.append(item)
     if use_torchmil and is_torchmil_available():
         collated = load_torchmil_modules().data.collate_fn(bag_dicts)
         result = dict(collated)

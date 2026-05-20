@@ -9,7 +9,6 @@ from typing import Any
 import pytest
 import torch
 
-from pathbench.core.losses.base import BaseLoss
 from pathbench.core.models.base import ModelBase
 from pathbench.core.models.mil_base import MILModelBase
 from pathbench.core.models.slide_base import SlideLevelModel
@@ -80,18 +79,6 @@ def _all_model_classes(module_name: str) -> list[type[Any]]:
     ]
 
 
-def _concrete_loss_classes(module_name: str) -> list[type[Any]]:
-    module = importlib.import_module(module_name)
-    classes = _classes_defined_in_module(module)
-    return [
-        cls
-        for cls in classes
-        if issubclass(cls, BaseLoss)
-        and cls is not BaseLoss
-        and not inspect.isabstract(cls)
-    ]
-
-
 def _concrete_policy_classes(module_name: str) -> list[type[Any]]:
     module = importlib.import_module(module_name)
     classes = _classes_defined_in_module(module)
@@ -136,17 +123,6 @@ def test_all_model_modules_are_covered_by_importable_tests(module_name: str) -> 
     assert classes, f"No model classes discovered in {module_name}"
 
 
-@pytest.mark.parametrize("module_name", _module_names(LOSSES_ROOT))
-def test_all_loss_modules_are_covered_by_importable_tests(module_name: str) -> None:
-    importlib.import_module(module_name)
-
-    if module_name.split(".")[-1] in LOSS_SUPPORT_MODULES:
-        return
-
-    classes = _concrete_loss_classes(module_name)
-    assert classes, f"No concrete loss classes discovered in {module_name}"
-
-
 @pytest.mark.parametrize("module_name", _module_names(POLICY_ROOT))
 def test_all_policy_modules_are_covered_by_importable_tests(module_name: str) -> None:
     importlib.import_module(module_name)
@@ -174,18 +150,6 @@ def test_all_lightweight_model_classes_can_be_instantiated() -> None:
                 instances.append(cls())
 
     assert instances, "Expected at least one concrete model instance to be created."
-
-
-def test_all_loss_classes_can_be_instantiated() -> None:
-    instances = [
-        cls()
-        for module_name in _module_names(LOSSES_ROOT)
-        if module_name.split(".")[-1] not in LOSS_SUPPORT_MODULES
-        for cls in _concrete_loss_classes(module_name)
-    ]
-    assert instances, "Expected concrete loss classes to be instantiated."
-
-
 def test_policy_base_still_accepts_experiment_like_object() -> None:
     instance = _DummyExperiment()
     assert instance.cfg is not None

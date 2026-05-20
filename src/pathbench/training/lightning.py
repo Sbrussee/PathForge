@@ -24,6 +24,10 @@ from pathbench.training.metrics import (
 )
 from pathbench.core.losses.base import BaseLoss
 from pathbench.config.config import Config
+from pathbench.inference.model_package import (
+    package_path_from_checkpoint,
+    save_packaged_model,
+)
 from pathbench.utils.registries import TRAINERS
 
 
@@ -109,11 +113,10 @@ class LightningModuleAdapter(pl.LightningModule):
         self, batch: Any
     ) -> tuple[torch.Tensor, Any, dict[str, torch.Tensor]]:
         """
-        Normalize legacy tuple batches and canonical dict batches.
+        Normalize canonical dict batches for model execution.
 
         Args:
-            batch: Either ``(bag, target)`` with ``bag`` shaped ``[B, N, D]`` or a
-                canonical bag dictionary containing ``X`` shaped ``[B, N, D]``,
+            batch: Canonical bag dictionary containing ``X`` shaped ``[B, N, D]``,
                 ``Y``, optional ``mask`` shaped ``[B, N]``, optional ``coords``
                 shaped ``[B, N, 2]``, and optional ``adj`` shaped ``[B, N, N]``.
 
@@ -129,13 +132,8 @@ class LightningModuleAdapter(pl.LightningModule):
                 if key in batch and batch[key] is not None
             }
             return batch["X"], batch["Y"], kwargs
-        if isinstance(batch, (tuple, list)) and len(batch) == 2:
-            bag, target = batch
-            if bag.ndim == 2:
-                bag = bag.unsqueeze(0)
-            return bag, target, {}
         raise TypeError(
-            "Lightning MIL batches must be (bag, target) tuples or canonical bag dictionaries."
+            "Lightning MIL batches must be canonical bag dictionaries."
         )
 
     def on_validation_epoch_start(self) -> None:
@@ -269,6 +267,7 @@ class LightningTrainer(TrainerBase):
         self.checkpoints_dir.mkdir(parents=True, exist_ok=True)
         self.metrics_artifacts_dir = self.run_root / "training_artifacts"
         self.metrics_artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self.latest_model_package_path: Path | None = None
 
         self.checkpoint_callback = ModelCheckpoint(
             dirpath=str(self.checkpoints_dir),
@@ -358,6 +357,11 @@ class LightningTrainer(TrainerBase):
         if best_path:
             checkpoint = torch.load(best_path, map_location="cpu", weights_only=False)
             best_module.load_state_dict(checkpoint["state_dict"])
+            self.latest_model_package_path = self._save_model_package(
+                module=best_module,
+                dataset=dataset_train,
+                checkpoint_path=best_path,
+            )
         self._save_validation_artifacts(best_module, val_loader)
 
         # Handle case where score might be None (e.g., if training failed immediately)
@@ -371,6 +375,65 @@ class LightningTrainer(TrainerBase):
             best_score = best_score.item()
 
         return best_path, best_score
+
+    def _save_model_package(
+        self,
+        *,
+        module: LightningModuleAdapter,
+        dataset: Dataset,
+        checkpoint_path: str,
+    ) -> Path:
+        """Persist one self-contained model package next to the best checkpoint."""
+
+        bag, _ = self._extract_sample_bag_and_target(dataset[0])
+        batched_bag = bag.unsqueeze(0) if bag.ndim == 2 else bag
+        model_device = next(module.model.parameters()).device
+        batched_bag = batched_bag.to(model_device)
+        normalized_output = module._normalize_predictions(
+            module.model.forward_bag(batched_bag)
+        ).detach().cpu()
+        output_dim = (
+            int(normalized_output.shape[-1])
+            if normalized_output.ndim == 2
+            else 1
+        )
+        model_name = self._resolve_model_name()
+        loss_name = getattr(self.config, "_active_loss_name", None)
+        if loss_name is None and self.config.benchmark_parameters.loss:
+            loss_name = self.config.benchmark_parameters.loss[0]
+        package_path = package_path_from_checkpoint(checkpoint_path)
+        return save_packaged_model(
+            path=package_path,
+            model=module.model,
+            config=self.config,
+            model_name=model_name,
+            input_dim=int(batched_bag.shape[-1]),
+            output_dim=output_dim,
+            checkpoint_path=checkpoint_path,
+            loss_name=str(loss_name) if loss_name is not None else None,
+        )
+
+    def _resolve_model_name(self) -> str:
+        model_name = getattr(self.config, "_active_model_name", None)
+        if model_name is not None:
+            return str(model_name)
+        if self.config.mil.backend == "torchmil" and self.config.mil.torchmil_model:
+            return str(self.config.mil.torchmil_model)
+        if self.config.mil.backend == "mil-lab" and self.config.mil.mil_lab_model:
+            return str(self.config.mil.mil_lab_model)
+        if self.config.benchmark_parameters.mil:
+            return str(self.config.benchmark_parameters.mil[0])
+        raise ValueError("Unable to resolve the trained MIL model name for packaging.")
+
+    def _extract_sample_bag_and_target(self, sample: Any) -> tuple[torch.Tensor, Any]:
+        """Normalize one dataset sample to a bag tensor and target object."""
+
+        if isinstance(sample, dict):
+            assert_bag_schema(sample, batched=False)
+            return sample["X"], sample["Y"]
+        raise TypeError(
+            "Training dataset samples must be canonical bag dictionaries."
+        )
 
     def _save_validation_artifacts(
         self,

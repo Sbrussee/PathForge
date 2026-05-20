@@ -209,6 +209,10 @@ class FeatureExtractionPolicy(PolicyBase):
                     tiling_spec = self._ensure_tiling_spec_dict(
                         tiling_spec, expected_tiling_spec=expected_tiling_spec
                     )
+                    tiling_spec = {
+                        **tiling_spec,
+                        "source_slide_path": str(wsi.path.resolve()),
+                    }
 
                     tiles_io.write_coords(slide_artifact, bag_id, coords_array)
                     tiles_io.write_tiling_spec(slide_artifact, bag_id, tiling_spec)

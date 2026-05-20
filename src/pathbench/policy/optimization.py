@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Optional
 import optuna
+import pandas as pd
 from pathbench.policy.base import PolicyBase
 from pathbench.config.config import Config
 from pathbench.utils.registries import LOSSES, TRAINERS
@@ -9,9 +10,13 @@ from pathbench.policy.utils import (
     apply_search_params,
     build_bag_dataset_for_task,
     build_mil_model_for_config,
+    experiment_output_root,
     infer_model_dimensions,
+    optimization_search_space,
     resolve_dataset_feature_dir,
+    save_optuna_visualizations,
     suggest_parameter,
+    write_experiment_summary_csv,
 )
 
 
@@ -76,7 +81,7 @@ class OptimizationPolicy(PolicyBase):
     def objective(self, trial: optuna.Trial) -> float:
         suggested_params = {
             name: suggest_parameter(trial, name=name, spec=spec)
-            for name, spec in self.config.optimization.search_space.items()
+            for name, spec in optimization_search_space(self.config).items()
         }
         apply_search_params(self.config, suggested_params)
         self.config.mil.best_epoch_based_on = self.config.optimization.objective_metric
@@ -163,6 +168,44 @@ class OptimizationPolicy(PolicyBase):
             f"Best Value ({self.config.optimization.objective_metric}): {study.best_value}"
         )
 
-        # Save results
-        df = study.trials_dataframe()
-        df.to_csv(f"{self.config.optimization.study_name}_results.csv")
+        self._save_study_outputs(study)
+
+    def _save_study_outputs(self, study: optuna.Study) -> None:
+        output_root = experiment_output_root(self.config)
+        raw_results_path = output_root / f"{self.config.optimization.study_name}_results.csv"
+        summary_path = output_root / "optimization_results.csv"
+        raw_df = study.trials_dataframe()
+        raw_df.to_csv(raw_results_path, index=False)
+
+        rows = self._build_summary_rows(raw_df)
+        write_experiment_summary_csv(
+            rows,
+            output_path=summary_path,
+            objective_metric=self.config.optimization.objective_metric,
+            minimize=self._get_direction() == "minimize",
+        )
+        save_optuna_visualizations(
+            study,
+            output_dir=output_root / "optimization_visualizations",
+        )
+
+    def _build_summary_rows(self, trials_df: pd.DataFrame) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        objective_metric = self.config.optimization.objective_metric
+        for _, trial in trials_df.iterrows():
+            row = {
+                "run_index": int(trial["number"]),
+                "project_name": self.config.experiment.project_name,
+                "mode": self.config.experiment.mode,
+                "task": self.config.experiment.task,
+                "status": str(trial.get("state", "")),
+                "objective_metric": objective_metric,
+                "objective_value": trial.get("value"),
+                "trial_number": int(trial["number"]),
+            }
+            for column, value in trial.items():
+                if column in row:
+                    continue
+                row[str(column)] = value
+            rows.append(row)
+        return rows

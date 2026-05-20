@@ -404,14 +404,14 @@ benchmark_parameters:
   loss: [CrossEntropyLoss]
 ```
 
-Native datasets may return legacy tuple batches:
+Native datasets return canonical bag dictionaries:
 
 ```python
-bag, target = dataset[index]
+sample = dataset[index]
 ```
 
-where `bag` is a finite floating tensor shaped `[N, D]` for one slide bag, and
-`target` is the task label.
+where `sample["X"]` is a finite floating tensor shaped `[N, D]` for one slide
+bag, and `sample["Y"]` is the task label.
 
 ### TorchMIL Backend
 
@@ -485,9 +485,7 @@ Shape and value contracts:
   model requires graph structure.
 - Padded instances are zero-filled and marked `false` in `mask`.
 
-Legacy datasets returning `(bag, target)` remain supported. The TorchMIL collate
-adapter converts them into canonical dictionaries only when the TorchMIL backend
-path is selected.
+Datasets and collate adapters use the canonical bag dictionary throughout.
 
 ## Benchmarking
 
@@ -532,7 +530,7 @@ For a TorchMIL benchmark, every run resolves:
 2. `TorchMILBackendModel(...)`
 3. `mil.torchmil_model`, for example `ABMIL`
 4. `mil.torchmil_model_kwargs`, forwarded to the TorchMIL constructor
-5. `LightningTrainer`, which accepts canonical dict batches or legacy tuples
+5. `LightningTrainer`, which accepts canonical dict batches
 
 This keeps TorchMIL as one backend plugin. Benchmarking policies still interact
 with PathBench registries and trainer/model interfaces; they do not import or

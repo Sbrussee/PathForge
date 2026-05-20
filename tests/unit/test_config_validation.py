@@ -69,7 +69,7 @@ assert MODELS.is_available(TORCHMIL_BACKEND_NAME)
 
 
 # Now import config models (after registration)
-from pathbench.config.config import Config, BenchmarkParameters  # noqa: E402
+from pathbench.config.config import Config, BenchmarkParameters, SearchSpaceParameter  # noqa: E402
 
 
 # --- Tests ---
@@ -83,6 +83,8 @@ def test_valid_benchmark_params():
         mil=[MIL_NAME],
         activation_function=["ReLU"],
         optimizer=["Adam"],
+        epochs=[10, 20],
+        z_dim=[128, 256],
     )
     assert bp.tile_px == [256, 512]
 
@@ -97,6 +99,20 @@ def test_invalid_tile_mpp():
     with pytest.raises(ValidationError) as excinfo:
         BenchmarkParameters(tile_mpp=[0.0])
     assert "Must be > 0" in str(excinfo.value)
+
+
+def test_search_space_parameter_accepts_documented_type_alias() -> None:
+    spec = SearchSpaceParameter.model_validate(
+        {"type": "categorical", "choices": ["a", "b"]}
+    )
+
+    assert spec.kind == "categorical"
+    assert spec.choices == ["a", "b"]
+
+
+def test_invalid_epochs_in_benchmark_parameters() -> None:
+    with pytest.raises(ValidationError, match="Invalid epochs"):
+        BenchmarkParameters(epochs=[0])
 
 
 def test_backend_constraint_failure():
@@ -256,6 +272,129 @@ def test_invalid_classification_metric_name_is_rejected() -> None:
 
     with pytest.raises(ValidationError, match="Unsupported classification metrics"):
         Config.model_validate(cfg_data)
+
+
+def test_survival_brier_score_metric_is_accepted() -> None:
+    cfg_data = {
+        "experiment": {
+            "project_name": "test",
+            "annotation_file": "x",
+            "task": "survival",
+            "mode": "benchmark",
+        },
+        "slide_processing": {"backend": "lazyslide"},
+        "mil": {"backend": "native"},
+        "metrics": {
+            "classification_backend": "native",
+            "survival_metrics": ["c_index", "td_auc", "brier_score"],
+        },
+        "benchmark_parameters": {
+            "feature_extraction": [GENERIC_NAME],
+            "mil": [MIL_NAME],
+        },
+    }
+
+    cfg = Config.model_validate(cfg_data)
+
+    assert "brier_score" in cfg.metrics.survival_metrics
+
+
+def _base_benchmark_cfg(
+    extra_experiment: dict | None = None, extra_benchmark: dict | None = None
+) -> dict:
+    cfg: dict = {
+        "experiment": {
+            "project_name": "test",
+            "annotation_file": "x",
+            "task": "classification",
+            "mode": "benchmark",
+        },
+        "slide_processing": {"backend": "lazyslide"},
+        "mil": {"backend": "native"},
+        "metrics": {"classification_backend": "native"},
+        "benchmark_parameters": {
+            "feature_extraction": [GENERIC_NAME],
+        },
+    }
+    if extra_experiment:
+        cfg["experiment"].update(extra_experiment)
+    if extra_benchmark:
+        cfg["benchmark_parameters"].update(extra_benchmark)
+    return cfg
+
+
+# ---------------------------------------------------------------------------
+# prediction_level="mil" constraints
+# ---------------------------------------------------------------------------
+
+
+def test_prediction_level_mil_requires_mil_models():
+    cfg_data = _base_benchmark_cfg(
+        extra_experiment={"prediction_level": "mil"},
+    )
+    # no mil models → should raise
+    with pytest.raises((ValueError, Exception), match="requires at least one model"):
+        Config.model_validate(cfg_data)
+
+
+def test_prediction_level_mil_rejects_slide_level_models():
+    cfg_data = _base_benchmark_cfg(
+        extra_experiment={"prediction_level": "mil"},
+        extra_benchmark={"mil": [MIL_NAME], "slide_level_models": ["SlideVectorMLP"]},
+    )
+    with pytest.raises((ValueError, Exception), match="incompatible with"):
+        Config.model_validate(cfg_data)
+
+
+def test_prediction_level_mil_with_mil_models_passes():
+    cfg_data = _base_benchmark_cfg(
+        extra_experiment={"prediction_level": "mil"},
+        extra_benchmark={"mil": [MIL_NAME]},
+    )
+    cfg = Config.model_validate(cfg_data)
+    assert cfg.experiment.prediction_level == "mil"
+
+
+# ---------------------------------------------------------------------------
+# prediction_level="slide" constraints
+# ---------------------------------------------------------------------------
+
+
+def test_prediction_level_slide_rejects_mil_models():
+    cfg_data = _base_benchmark_cfg(
+        extra_experiment={"prediction_level": "slide"},
+        extra_benchmark={"mil": [MIL_NAME]},
+    )
+    with pytest.raises((ValueError, Exception), match="incompatible with"):
+        Config.model_validate(cfg_data)
+
+
+def test_prediction_level_slide_defaults_to_slide_vector_mlp():
+    cfg_data = _base_benchmark_cfg(
+        extra_experiment={"prediction_level": "slide"},
+    )
+    cfg = Config.model_validate(cfg_data)
+    assert "SlideVectorMLP" in cfg.benchmark_parameters.slide_level_models
+
+
+def test_prediction_level_slide_with_explicit_sklearn_model():
+    cfg_data = _base_benchmark_cfg(
+        extra_experiment={"prediction_level": "slide"},
+        extra_benchmark={"slide_level_models": ["SklearnLogisticRegressionClassifier"]},
+    )
+    cfg = Config.model_validate(cfg_data)
+    assert (
+        "SklearnLogisticRegressionClassifier"
+        in cfg.benchmark_parameters.slide_level_models
+    )
+
+
+def test_slide_level_models_rejects_unknown_model_name():
+    with pytest.raises((ValueError, Exception)):
+        BenchmarkParameters(
+            feature_extraction=[GENERIC_NAME],
+            slide_level_models=["NonExistentSlideModel"],
+        )
 
 
 def test_best_epoch_monitor_must_match_task_metrics() -> None:

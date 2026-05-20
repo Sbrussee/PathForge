@@ -3,9 +3,13 @@ import torch
 from torch import nn
 from .mil_base import MILModel
 
-
 class GraphMILModel(MILModel):
-    """Stub: later, wrap torch_geometric layers (kept optional via extras)."""
+    """Minimal graph-aware MIL placeholder with masked mean pooling.
+
+    This module is intentionally lightweight and import-safe without graph
+    extras. It is not currently registered as a benchmark-selectable model, but
+    it preserves the graph-MIL interface surface for incremental extension.
+    """
 
     def __init__(self, embed_dim: int = 256, lr: float = 1e-3):
         super().__init__()

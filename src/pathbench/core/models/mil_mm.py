@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from .mil_base import MILBase
 
-
+#REmove as not implemented yet.
 class MultimodalMILModel(MILBase):
     def __init__(self, embed_dim: int = 256):
         super().__init__()

@@ -11,8 +11,7 @@ import pytest
 
 from pathbench.core.annotations.base import AnnotationsBase
 from pathbench.core.datasets.base import BagDatasetBase, DatasetBase
-from pathbench.core.losses.base import BaseLoss
-from pathbench.core.models.base import ModelBase
+from pathbench.core.models.base import ModelBase, ScikitBase
 from pathbench.core.models.mil_base import MILModelBase
 from pathbench.core.models.slide_base import SlideLevelModel
 from pathbench.policy.base import PolicyBase
@@ -39,21 +38,17 @@ CONCRETE_CLASS_BASES: dict[str, dict[str, tuple[type[Any], ...]]] = {
 }
 
 DISCOVERED_MODULE_BASES: dict[str, tuple[type[Any], ...]] = {
-    "pathbench.core.losses.classification": (BaseLoss,),
-    "pathbench.core.losses.regression": (BaseLoss,),
-    "pathbench.core.losses.survival_continuous": (BaseLoss,),
-    "pathbench.core.losses.survival_discrete": (BaseLoss,),
     "pathbench.policy.benchmarking": (PolicyBase,),
     "pathbench.policy.feature_extraction": (PolicyBase,),
     "pathbench.policy.optimization": (PolicyBase,),
-    "pathbench.core.models.gcnconv_mil": (MILModelBase, ModelBase),
     "pathbench.core.models.mamba_mil": (MILModelBase, ModelBase),
     "pathbench.core.models.mil_ens": (MILModelBase, ModelBase),
     "pathbench.core.models.mil_graph": (MILModelBase, ModelBase),
     "pathbench.core.models.mil_mm": (MILModelBase, ModelBase),
     "pathbench.core.models.perceiver_mil": (MILModelBase, ModelBase),
     "pathbench.core.models.prototype_mil": (MILModelBase, ModelBase),
-    "pathbench.core.models.slide_mlp": (SlideLevelModel, ModelBase),
+    "pathbench.core.models.slide_mlp": (SlideLevelModel, MILModelBase, ModelBase),
+    "pathbench.core.models.sklearn_slide": (ScikitBase, ModelBase),
     "pathbench.core.models.var_mil": (MILModelBase, ModelBase),
 }
 
