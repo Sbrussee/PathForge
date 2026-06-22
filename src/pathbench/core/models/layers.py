@@ -7,16 +7,47 @@ import torch.nn.functional as F
 # =============================================================================
 
 def create_mlp(
-        in_dim=768, 
-        hid_dims=[512, 512], 
-        out_dim=512, 
-        act=nn.ReLU(),
-        dropout=0.,
-        end_with_fc=True, 
-        end_with_dropout=False,
-        bias=True
-    ):
+    in_dim: int = 768,
+    hid_dims: list[int] | tuple[int, ...] | None = None,
+    out_dim: int = 512,
+    act: nn.Module | None = None,
+    dropout: float = 0.0,
+    end_with_fc: bool = True,
+    end_with_dropout: bool = False,
+    bias: bool = True,
+) -> nn.Module:
+    """Create one configurable MLP block.
 
+    Args:
+        in_dim: Input feature dimension ``D_in``.
+        hid_dims: Hidden layer widths in order. ``None`` defaults to
+            ``[512, 512]``. An empty sequence produces a single
+            ``Linear(in_dim, out_dim)`` layer.
+        out_dim: Output feature dimension ``D_out``.
+        act: Activation module inserted after each hidden linear layer and,
+            optionally, after the final layer when ``end_with_fc`` is false.
+        dropout: Dropout probability applied after hidden activations and,
+            optionally, after the output layer.
+        end_with_fc: When true, end with the final linear layer only. When
+            false, append the activation after the output layer as well.
+        end_with_dropout: Whether to append dropout after the output layer.
+        bias: Whether linear layers use a bias term.
+
+    Returns:
+        nn.Module: ``nn.Sequential`` MLP module or ``nn.Identity`` when the
+        hidden-dimension contract is invalid.
+
+    Example:
+        ```python
+        mlp = create_mlp(in_dim=16, hid_dims=[8], out_dim=4, dropout=0.1)
+        assert isinstance(mlp, nn.Module)
+        ```
+    """
+
+    if hid_dims is None:
+        hid_dims = [512, 512]
+    if act is None:
+        act = nn.ReLU()
     layers = []
     if len(hid_dims) < 0:
         mlp = nn.Identity()

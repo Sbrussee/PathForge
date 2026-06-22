@@ -1,41 +1,39 @@
-# src/pathbench/cli/feature_extract.py
+from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import logging
 
-import dask
-
-from ..config.config import Config
-from ..core.experiments.base import Experiment
 from ..policy.feature_extraction import FeatureExtractionPolicy
+from .base import (
+    add_config_argument,
+    add_log_level_argument,
+    configure_logging,
+    enable_dask_query_planning,
+    load_experiment,
+)
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
+    """Run the batch feature-extraction command-line entrypoint."""
     parser = argparse.ArgumentParser(description="Feature extraction only")
-    parser.add_argument("--config", required=True, help="Path to YAML config")
-    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Logging level (default: INFO)",)
+    add_config_argument(parser)
+    add_log_level_argument(parser)
     args = parser.parse_args(argv)
 
-    # ---- logging config (once) ----
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
+    configure_logging(args.log_level)
 
     logger = logging.getLogger(__name__)
     logger.info("Starting feature extraction CLI")
-    logger.info(f"Using config: {args.config}")
+    logger.info("Using config: %s", args.config)
 
-    dask.config.set({"dataframe.query-planning": True})
-    
-    cfg = Config.from_yaml(Path(args.config))
-    experiment = Experiment(cfg)
+    enable_dask_query_planning()
+    experiment = load_experiment(args.config)
 
     policy = FeatureExtractionPolicy(experiment)
     out = policy.execute()
-    logger.info(f"Experiment finished with status: {out}")
+    logger.info("Experiment finished with status: %s", out)
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

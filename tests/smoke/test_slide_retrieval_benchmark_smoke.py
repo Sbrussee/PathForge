@@ -7,160 +7,134 @@ from types import SimpleNamespace
 
 import pytest
 
-from pathbench.benchmarking.tasks.slide_retrieval import SlideRetrievalTask
+from pathbench.core.tasks.slide_retrieval import SlideRetrievalTask
 from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.slide_retrieval.representation_strategies.types import RetrievalRepresentation
-from pathbench.slide_retrieval.search_strategies.types import SearchHit, SearchResult
-
-
-class _FakeBagDataset:
-    def __init__(self, *, tiling_id: str, aggregation_level: str, sample_id: str) -> None:
-        self.tiling_id = tiling_id
-        self.aggregation_level = aggregation_level
-        self.sample_id = sample_id
-        self.name = f"ds_{sample_id}"
-
-    def get_feature_level(self) -> str:
-        return "patch"
-
-
-class _FakeRepresentationStrategy:
-    name = "fake_representation"
-    supported_feature_levels = frozenset({"patch"})
-    output_representation_kind = "patch_vector"
-
-    def __init__(self, params=None, **kwargs) -> None:
-        self._params = dict(params or {})
-        self._kwargs = dict(kwargs)
-
-    def hyperparam_values(self) -> dict[str, object]:
-        return dict(self._params)
-
-
-class _FakeSearchStrategy:
-    name = "fake_search"
-    supported_representation_kinds = frozenset({"patch_vector"})
-
-    def __init__(self, params=None, **kwargs) -> None:
-        self._params = dict(params or {})
-        self._kwargs = dict(kwargs)
-        self.search_database: list[RetrievalRepresentation] = []
-
-    def hyperparam_values(self) -> dict[str, object]:
-        return dict(self._params)
-
-    def build_database(self, database_representations) -> None:
-        self.search_database = list(database_representations)
-
-    def search(self, query_representation, **kwargs) -> SearchResult:
-        _ = kwargs, query_representation
-        return SearchResult(
-            query_sample_id="query-1",
-            hits=[SearchHit(sample_id="ref-1", score=0.25, rank=1)],
-        )
+from ._smoke_dataset import attach_smoke_outputs, capture_smoke_metrics
+from .conftest import RetrievalDatasets
 
 
 def _make_task(tmp_path: Path) -> SlideRetrievalTask:
     cfg = SimpleNamespace(
-        experiment=SimpleNamespace(aggregation_level="slide"),
+        experiment=SimpleNamespace(aggregation_level="slide", num_workers=0),
         slide_retrieval=SimpleNamespace(exclusion_level="patient"),
     )
-    experiment = SimpleNamespace(cfg=cfg, project_root=str(tmp_path))
-    return SlideRetrievalTask(experiment)
+    return SlideRetrievalTask(SimpleNamespace(cfg=cfg, project_root=str(tmp_path)))
+
+
+def _register_retrieval_strategies() -> None:
+    from pathbench.slide_retrieval.representation_strategies.registry import (
+        import_representation_strategy_modules,
+    )
+    from pathbench.slide_retrieval.search_strategies.registry import (
+        import_search_strategy_modules,
+    )
+
+    import_representation_strategy_modules()
+    import_search_strategy_modules()
 
 
 @pytest.mark.smoke
 def test_smoke_slide_retrieval_benchmark_writes_manifest_and_ranked_csv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    retrieval_wsi_datasets: RetrievalDatasets,
+    slide_level_feature_matrix: tuple,
 ) -> None:
-    import pathbench.benchmarking.tasks.slide_retrieval as slide_retrieval_task_module
+    """Slide retrieval benchmark must write a valid manifest.json and query_results.csv."""
+    _register_retrieval_strategies()
+    slide_ids, feature_matrix = slide_level_feature_matrix
+
+    def _real_feature_cache(
+        self,
+        *,
+        bag_dataset,
+        representation_id,
+        aggregation_level,
+        exclusion_level,
+    ):
+        reps = []
+        for i in range(bag_dataset.num_bags):
+            sample = bag_dataset.get_sample(i)
+            try:
+                idx = slide_ids.index(sample.sample_id)
+                data = [feature_matrix[idx].tolist()]
+            except ValueError:
+                data = [feature_matrix[0].tolist()]
+            reps.append(
+                RetrievalRepresentation(
+                    sample_id=sample.sample_id,
+                    data=data,
+                    exclusion_key=sample.patient_id,
+                )
+            )
+        return reps, None
+
+    monkeypatch.setattr(
+        SlideRetrievalTask, "_collect_existing_representations", _real_feature_cache
+    )
 
     task = _make_task(tmp_path)
-
-    monkeypatch.setattr(
-        slide_retrieval_task_module,
-        "build_representation_strategy",
-        lambda _name, **kwargs: _FakeRepresentationStrategy(**kwargs),
-    )
-    monkeypatch.setattr(
-        slide_retrieval_task_module,
-        "build_search_strategy",
-        lambda _name, **kwargs: _FakeSearchStrategy(**kwargs),
-    )
-    monkeypatch.setattr(slide_retrieval_task_module, "SlideRetrievalBagDataset", _FakeBagDataset)
-    monkeypatch.setattr(
-        SlideRetrievalTask,
-        "_collect_existing_representations",
-        lambda self, **kwargs: (
-            [
-                RetrievalRepresentation(
-                    sample_id=kwargs["bag_dataset"].sample_id,
-                    data=[[1.0, 2.0]],
-                )
-            ],
-            None,
-        ),
-    )
+    ref_dataset = retrieval_wsi_datasets.reference
+    qry_dataset = retrieval_wsi_datasets.query
 
     combo_cfg = ComboConfig(
-        tile_px=256,
+        tile_px=224,
         tile_px_params={},
-        tile_mpp=0.5,
+        tile_mpp=1.0,
         tile_mpp_params={},
-        feature_extraction="uni",
+        feature_extraction="resnet18",
         feature_extraction_params={},
-        retrieval_representation="yottixel_features",
-        retrieval_representation_params={"n_clusters": 2},
+        retrieval_representation="hshr_features",
+        retrieval_representation_params={},
         search_strategy="yottixel",
-        search_strategy_params={"k": 1},
+        search_strategy_params={"k": 5},
     )
     datasets_by_use = {
-        "reference": [
-            _FakeBagDataset(
-                tiling_id="256px_0.5mpp",
-                aggregation_level="slide",
-                sample_id="ref-1",
-            )
-        ],
-        "query": [
-            _FakeBagDataset(
-                tiling_id="256px_0.5mpp",
-                aggregation_level="slide",
-                sample_id="query-1",
-            )
-        ],
+        "reference": [ref_dataset],
+        "query": [qry_dataset],
     }
 
-    result = task.execute(combo_cfg=combo_cfg, datasets_by_use=datasets_by_use)
+    with capture_smoke_metrics(
+        tmp_path / "metrics",
+        step_name="smoke_slide_retrieval_benchmark",
+        metadata={
+            "num_queries": qry_dataset.num_bags,
+            "num_reference": ref_dataset.num_bags,
+            "representation": "hshr_features",
+            "search_strategy": "yottixel",
+        },
+    ) as metadata:
+        result = task.execute(combo_cfg=combo_cfg, datasets_by_use=datasets_by_use)
 
-    output_dir = Path(result["output_dir"])
-    manifest_path = output_dir / "manifest.json"
-    results_path = output_dir / "query_results.csv"
+        output_dir = Path(result["output_dir"])
+        manifest_path = output_dir / "manifest.json"
+        results_path = output_dir / "query_results.csv"
+
+        attach_smoke_outputs(
+            metadata,
+            step_name="smoke_slide_retrieval_benchmark",
+            final={
+                "manifest_json": manifest_path,
+                "query_results_csv": results_path,
+            },
+        )
 
     assert manifest_path.is_file()
     assert results_path.is_file()
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["slide_representation"] == "yottixel_features"
+    assert manifest["slide_representation"] == "hshr_features"
     assert manifest["search_method"] == "yottixel"
-    assert manifest["num_queries"] == 1
-    assert manifest["num_reference_items"] == 1
-    assert manifest["top_k_saved"] == 1
+    assert manifest["num_queries"] == qry_dataset.num_bags
+    assert manifest["num_reference_items"] == ref_dataset.num_bags
 
     with results_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         rows = list(reader)
 
-    assert reader.fieldnames == [
-        "query_sample_id",
-        "rank_1_sample_id",
-        "rank_1_score",
-    ]
-    assert rows == [
-        {
-            "query_sample_id": "query-1",
-            "rank_1_sample_id": "ref-1",
-            "rank_1_score": "0.25",
-        }
-    ]
+    assert reader.fieldnames is not None
+    assert "query_sample_id" in reader.fieldnames
+    assert len(rows) == qry_dataset.num_bags
+    qry_ids = {qry_dataset.get_sample(i).sample_id for i in range(qry_dataset.num_bags)}
+    assert all(row["query_sample_id"] in qry_ids for row in rows)

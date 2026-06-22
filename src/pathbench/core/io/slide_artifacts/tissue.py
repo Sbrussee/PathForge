@@ -113,6 +113,7 @@ def _ensure_tissue_polygons(obj: Any) -> TissuePolygons:
 # -----------------------------------------------------------------------------
 
 def tissue_exists(slide_artifact: FileHandleH5, *, layout: H5Layout = DEFAULT_LAYOUT) -> bool:
+    """Return whether a complete tissue-annotation payload exists in the slide artifact."""
     dset = get_dataset(slide_artifact.h5, layout.tissue_dataset)
     if dset is None or not is_complete(dset):
         return False
@@ -175,7 +176,9 @@ ExternalTissueLoader = Callable[[Path], TissuePolygons]
 EXTERNAL_TISSUE_LOADERS: Dict[str, ExternalTissueLoader] = {}
 
 
-def register_external_tissue_loader(*suffixes: str):
+def register_external_tissue_loader(
+    *suffixes: str,
+) -> Callable[[ExternalTissueLoader], ExternalTissueLoader]:
     """
     Decorator to register an external tissue loader for one or more suffixes.
     """

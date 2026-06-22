@@ -9,10 +9,15 @@ from pathlib import Path
 
 import pandas as pd
 
-from ..config.config import Config
 from ..core.datasets.wsi_dataset import WSI
-from ..core.experiments.base import Experiment
 from ..policy.feature_extraction import FeatureExtractionPolicy
+from .base import (
+    add_config_argument,
+    add_log_level_argument,
+    configure_logging,
+    load_config,
+)
+from ..core.experiments.base import Experiment
 
 
 def _make_single_slide_project_name(base_name: str) -> str:
@@ -32,11 +37,12 @@ def _make_single_slide_project_name(base_name: str) -> str:
     return f"{base_name}__single_slide"
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
+    """Run feature extraction for one slide described by a temporary annotation row."""
     parser = argparse.ArgumentParser(
         description="Feature extraction (single slide, all combos from config)"
     )
-    parser.add_argument("--config", required=True, type=Path, help="Path to YAML config")
+    add_config_argument(parser)
     parser.add_argument(
         "--dataset",
         required=True,
@@ -44,19 +50,10 @@ def main(argv=None) -> int:
         help="Dataset name (must exist in config.datasets)",
     )
     parser.add_argument("--input", required=True, type=Path, help="Path to a single WSI file")
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Logging level (default: INFO)",
-    )
+    add_log_level_argument(parser)
     args = parser.parse_args(argv)
 
-    # ---- logging config (once) ----
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
+    configure_logging(args.log_level)
     logger = logging.getLogger(__name__)
 
     logger.info("Starting feature extraction CLI (single slide)")
@@ -64,11 +61,7 @@ def main(argv=None) -> int:
     logger.info("Using dataset: %s", args.dataset)
     logger.info("Using input slide: %s", args.input)
 
-    config_path = Path(args.config)
     input_slide_path = Path(args.input)
-
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
 
     if not input_slide_path.exists():
         raise FileNotFoundError(f"Input slide not found: {input_slide_path}")
@@ -76,7 +69,7 @@ def main(argv=None) -> int:
     slide_id = input_slide_path.stem
 
     # ---- load config ----
-    cfg = Config.from_yaml(config_path)
+    cfg = load_config(args.config)
 
     # ---- keep only the selected dataset in cfg.datasets ----
     selected_ds_cfg = None

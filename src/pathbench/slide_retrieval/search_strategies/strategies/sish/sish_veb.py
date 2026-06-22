@@ -6,6 +6,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 class VEB:
+    """van Emde Boas tree used by the SISH retrieval backend."""
+
     def high(self, x):
         return int(math.floor(x / math.sqrt(self.u)))
 

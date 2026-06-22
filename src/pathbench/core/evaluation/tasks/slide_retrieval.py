@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from pathbench.benchmarking.registry import get_task, import_task_modules
+from pathbench.core.tasks.registry import get_task, import_task_modules
 from pathbench.core.evaluation.base import TaskEvaluationAdapterBase
 from pathbench.core.evaluation.registry import evaluation_task_adapter
 from pathbench.core.evaluation.types import EvaluationRunContext

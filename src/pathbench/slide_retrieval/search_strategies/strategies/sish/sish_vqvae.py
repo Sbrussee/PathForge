@@ -9,6 +9,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 class ResidualBlock(nn.Module):
+    """Residual convolution block used by the SISH VQ-VAE encoder/decoder."""
+
     def __init__(self, dim):
         super().__init__()
         self.net = nn.Sequential(
@@ -25,6 +27,8 @@ class ResidualBlock(nn.Module):
 
 
 class Quantize(nn.Module):
+    """Vector-quantization codebook lookup module for SISH latent maps."""
+
     def __init__(self, size, code_dim):
         super().__init__()
         self.embedding = nn.Embedding(size, code_dim)
@@ -49,6 +53,8 @@ class Quantize(nn.Module):
 
 
 class LargeVectorQuantizedVAE(nn.Module):
+    """Full VQ-VAE used to train the SISH latent vocabulary."""
+
     def __init__(self, code_dim=256, code_size=128):
         super().__init__()
         self.code_size = code_size
@@ -113,6 +119,8 @@ class LargeVectorQuantizedVAE(nn.Module):
 
 
 class VectorQuantizedVAE_Encode(nn.Module):
+    """Encoder-only lightweight VQ-VAE that returns latent code indices."""
+
     def __init__(self, code_dim, code_size):
         super().__init__()
         self.code_size = code_size
@@ -136,6 +144,8 @@ class VectorQuantizedVAE_Encode(nn.Module):
 
 
 class LargeVectorQuantizedVAE_Encode(nn.Module):
+    """Large encoder-only VQ-VAE variant that returns latent code indices."""
+
     def __init__(self, code_dim, code_size):
         super().__init__()
         self.code_size = code_size

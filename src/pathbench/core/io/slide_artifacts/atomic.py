@@ -21,6 +21,7 @@ ArtifactValidator = Callable[[FileHandleH5], None]
 
 
 def validate_h5_artifact(path: str | Path) -> None:
+    """Open and traverse one HDF5 artifact to ensure it is structurally readable."""
     artifact_path = Path(path)
     with h5py.File(artifact_path, "r") as h5_file:
         _ = list(h5_file.keys())
@@ -28,6 +29,7 @@ def validate_h5_artifact(path: str | Path) -> None:
 
 
 def quarantine_corrupt_artifact(artifact_path: str | Path, *, reason: Exception | None = None) -> Path:
+    """Move a corrupt artifact aside into ``_corrupt`` and return the new path."""
     path = Path(artifact_path)
     corrupt_dir = path.parent / "_corrupt"
     corrupt_dir.mkdir(parents=True, exist_ok=True)
@@ -51,6 +53,7 @@ def quarantine_corrupt_artifact(artifact_path: str | Path, *, reason: Exception 
 
 
 def ensure_artifact_readable_or_quarantine(artifact_path: str | Path) -> bool:
+    """Validate one artifact in-place, quarantining it when it is unreadable."""
     path = Path(artifact_path)
     if not path.is_file():
         return False
@@ -70,6 +73,7 @@ def atomic_slide_artifact_write(
     *,
     validate: ArtifactValidator | None = None,
 ) -> Iterator[FileHandleH5]:
+    """Write one slide artifact atomically via a temporary HDF5 file."""
     path = Path(artifact_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 

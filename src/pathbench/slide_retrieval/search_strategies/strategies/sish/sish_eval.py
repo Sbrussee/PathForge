@@ -5,7 +5,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def Uncertainty_Cal(bag, weight, is_organ=False):
+def Uncertainty_Cal(
+    bag: list[dict[str, object]],
+    weight: dict[str, float],
+    is_organ: bool = False,
+) -> tuple[float | None, dict[str, float] | None, list[object] | None]:
     """
     Implementation of Weighted-Uncertainty-Cal in the paper.
     Input:
@@ -47,7 +51,10 @@ def Uncertainty_Cal(bag, weight, is_organ=False):
         return None, None, None
 
 
-def Clean(len_info, bag_summary):
+def Clean(
+    len_info: list[int],
+    bag_summary: list[tuple[object, float, list[float], int]],
+) -> tuple[list[tuple[object, float, list[float], int]], float]:
     """
     Implementation of Clean in the paper
     Input:
@@ -79,7 +86,10 @@ def Clean(len_info, bag_summary):
     return bag_summary, top5_hamming_dist
 
 
-def Filtered_BY_Prediction(bag_summary, label_count_summary):
+def Filtered_BY_Prediction(
+    bag_summary: list[tuple[object, float, list[float], int]],
+    label_count_summary: dict[object, dict[object, float]],
+) -> dict[object, int]:
     """
     Implementation of Filtered_By_Prediction in the paper
     Input:

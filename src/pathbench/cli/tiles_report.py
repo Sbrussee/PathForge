@@ -7,8 +7,13 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from pathbench.cli.base import (
+    add_config_argument,
+    add_log_level_argument,
+    configure_logging,
+    load_experiment,
+)
 from pathbench.config.config import Config
-from pathbench.core.experiments.base import Experiment
 from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.reports.tiles_report_pdf import create_tiles_report_pdf
@@ -95,40 +100,27 @@ def _unique_tiling_ids_from_config(cfg: Config) -> list[str]:
     return tiling_ids
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
+    """Build a PDF tiles-overview report from existing slide artifact files."""
     parser = argparse.ArgumentParser(
         description="Generate tile extraction PDF reports (from H5 tiles_overview) for all datasets/bags in config."
     )
-    parser.add_argument("--config", required=True, type=Path, help="Path to YAML config")
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Logging level (default: INFO)",
-    )
+    add_config_argument(parser)
+    add_log_level_argument(parser)
     args = parser.parse_args(argv)
 
-    # ---- logging config ----
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
-
-    config_path = Path(args.config)
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
+    configure_logging(args.log_level)
 
     logger.info("Starting tiles report CLI")
-    logger.info("Using config: %s", config_path)
+    logger.info("Using config: %s", args.config)
 
-    cfg = Config.from_yaml(config_path)
-    experiment = Experiment(cfg)
+    experiment = load_experiment(args.config)
     annotations_df = experiment.load_annotations()
     datasets = _build_artifact_only_datasets(
         cfg=experiment.cfg,
         annotations_df=annotations_df,
     )
-    tiling_ids = _unique_tiling_ids_from_config(cfg)
+    tiling_ids = _unique_tiling_ids_from_config(experiment.cfg)
 
     logger.info("Found %d dataset(s) in config", len(datasets))
     logger.info("Found %d unique tiling_id(s): %s", len(tiling_ids), tiling_ids)

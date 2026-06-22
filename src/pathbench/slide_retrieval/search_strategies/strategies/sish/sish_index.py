@@ -11,6 +11,8 @@ from ...utils import load_patch_dicts_pickle
 logger = logging.getLogger(__name__)
 
 class PatchTFRecordDataset(torch.utils.data.Dataset):
+    """Dataset adapter that decodes selected TFRecord patches into ``[-1, 1]`` tensors."""
+
     def __init__(self, mosaic_pkl_path: str, transform):
         # load the mosaic “properties” + “patches”
         data = load_patch_dicts_pickle(mosaic_pkl_path, reconstruct_features=False)
@@ -37,12 +39,13 @@ class PatchTFRecordDataset(torch.utils.data.Dataset):
     
 def compute_latent_features(
     mosaic_pkl: str,
-    transform,
+    transform: object,
     vqvae: nn.Module,
     device: torch.device,
     batch_size: int = 16,
     num_workers: int = 4
 ) -> np.ndarray:
+    """Encode all mosaic patches into VQ-VAE latent index maps."""
     ds = PatchTFRecordDataset(mosaic_pkl, transform)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
                         num_workers=num_workers, pin_memory=False, persistent_workers=False)
@@ -56,7 +59,10 @@ def compute_latent_features(
             
     return np.concatenate(all_latents, 0)
 
-def to_latent_semantic(latent, codebook_semantic):
+def to_latent_semantic(
+    latent: np.ndarray,
+    codebook_semantic: dict[int, int],
+) -> np.ndarray:
     """
     Convert the original VQ-VAE latent code by using re-ordered codebook
     Input:
@@ -73,7 +79,12 @@ def to_latent_semantic(latent, codebook_semantic):
     return latent_semantic
 
 
-def slide_to_index(latent, codebook_semantic, pool_layers, pool=None):
+def slide_to_index(
+    latent: np.ndarray,
+    codebook_semantic: dict[int, int],
+    pool_layers: object,
+    pool: object | None = None,
+) -> np.ndarray:
     """
     Convert VQ-VAE latent code into an integer
     Input:
@@ -120,7 +131,7 @@ def slide_to_index(latent, codebook_semantic, pool_layers, pool=None):
             
     return index
 
-def min_max_binarized(feat):
+def min_max_binarized(feat: np.ndarray) -> str:
     """
     Min-max algorithm proposed in paper: Yottixel-An Image Search Engine for Large Archives of
     Histopathology Whole Slide Images.

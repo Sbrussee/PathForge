@@ -41,6 +41,7 @@ def _make_dataset(
     dataset = object.__new__(SlideRetrievalBagDataset)
     dataset.samples = list(base_dataset._samples)
     dataset.sample_loader = sample_loader
+    dataset._mode = "artifact"  # required by get_sample()
     return dataset
 
 

@@ -19,6 +19,7 @@ from pathbench.core.io.slide_artifacts.layout import DEFAULT_LAYOUT, H5Layout
 
 # ---- coords -----------------------------------------------------------------
 def coords_exist(slide_artifact: FileHandleH5, bag_id: str, *, layout: H5Layout = DEFAULT_LAYOUT) -> bool:
+    """Return whether a complete coordinate matrix exists for ``bag_id``."""
     path = layout.coords_dataset(bag_id)
     try:
         dset = get_dataset(slide_artifact.h5, path)
@@ -31,6 +32,7 @@ def coords_exist(slide_artifact: FileHandleH5, bag_id: str, *, layout: H5Layout 
 
 
 def read_coords(slide_artifact: FileHandleH5, bag_id: str, *, layout: H5Layout = DEFAULT_LAYOUT) -> np.ndarray:
+    """Read bag tile coordinates as an ``int32`` matrix shaped ``[N, 5]``."""
     path = layout.coords_dataset(bag_id)
     dset = get_dataset(slide_artifact.h5, path)
     if dset is None:
@@ -46,6 +48,7 @@ def read_coords(slide_artifact: FileHandleH5, bag_id: str, *, layout: H5Layout =
 
 
 def write_coords(slide_artifact: FileHandleH5, bag_id: str, coords: np.ndarray, *, layout: H5Layout = DEFAULT_LAYOUT) -> None:
+    """Write bag tile coordinates shaped ``[N, 5]`` as ``int32``."""
     coords_array = np.asarray(coords)
     if coords_array.ndim != 2 or coords_array.shape[1] != 5:
         raise ValueError(f"coords must have shape (N,5). Got {coords_array.shape}.")
@@ -69,6 +72,7 @@ def coords_num_rows(slide_artifact: FileHandleH5, bag_id: str, *, layout: H5Layo
 
 
 def tiling_spec_exists(slide_artifact: FileHandleH5, bag_id: str, *, layout: H5Layout = DEFAULT_LAYOUT) -> bool:
+    """Return whether a complete tiling-spec JSON object exists for ``bag_id``."""
     path = layout.tiling_spec_dataset(bag_id)
     try:
         dset = get_dataset(slide_artifact.h5, path)
@@ -88,6 +92,7 @@ def read_tiling_spec(
     *,
     layout: H5Layout = DEFAULT_LAYOUT,
 ) -> dict[str, Any]:
+    """Read the stored tiling-spec JSON object for one bag."""
     path = layout.tiling_spec_dataset(bag_id)
     dset = get_dataset(slide_artifact.h5, path)
     if dset is None:
@@ -107,6 +112,7 @@ def write_tiling_spec(
     *,
     layout: H5Layout = DEFAULT_LAYOUT,
 ) -> None:
+    """Write the tiling-spec JSON object for one bag."""
     if not isinstance(tiling_spec, dict):
         raise TypeError("tiling_spec must be a dict.")
     write_json_dataset(slide_artifact.h5, layout.tiling_spec_dataset(bag_id), tiling_spec)
@@ -169,6 +175,7 @@ def tiles_overview_exists(
     *,
     layout: H5Layout = DEFAULT_LAYOUT,
 ) -> bool:
+    """Return whether a complete serialized tiles-overview image exists for one bag."""
     path = layout.tiles_overview_dataset(bag_id)
     dset = get_dataset(slide_artifact.h5, path)
     if dset is None or not is_complete(dset):
@@ -213,6 +220,7 @@ def read_tiles_overview(
     *,
     layout: H5Layout = DEFAULT_LAYOUT,
 ) -> bytes:
+    """Read the serialized tiles-overview image bytes for one bag."""
     path = layout.tiles_overview_dataset(bag_id)
     dset = get_dataset(slide_artifact.h5, path)
     if dset is None:

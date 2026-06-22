@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pathbench.benchmarking.registry import get_task, import_task_modules
+from pathbench.core.tasks.registry import get_task, import_task_modules
 from pathbench.core.experiments.combo_ids import build_feature_name, build_tiling_id
 from pathbench.core.experiments.combinations import build_combinations
 from pathbench.core.visualization.base import TaskVisualizationAdapterBase

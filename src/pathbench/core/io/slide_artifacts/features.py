@@ -21,6 +21,7 @@ def features_exist(
     expected_rows: int | None = None,
     layout: H5Layout = DEFAULT_LAYOUT,
 ) -> bool:
+    """Return whether a complete feature matrix exists for one bag/extractor pair."""
     path = layout.features_dataset(bag_id, extractor_name)
     try:
         dset = get_dataset(slide_artifact.h5, path)
@@ -43,6 +44,7 @@ def read_features(
     *,
     layout: H5Layout = DEFAULT_LAYOUT,
 ) -> np.ndarray:
+    """Read a feature matrix shaped ``[N, D]`` as ``float32``."""
     path = layout.features_dataset(bag_id, extractor_name)
     dset = get_dataset(slide_artifact.h5, path)
     if dset is None:
@@ -114,6 +116,7 @@ def write_features(
     *,
     layout: H5Layout = DEFAULT_LAYOUT,
 ) -> None:
+    """Write a feature matrix shaped ``[N, D]`` as ``float32``."""
     feature_array = np.asarray(feature_matrix)
     if feature_array.ndim != 2:
         raise ValueError(f"feature_matrix must have shape (N,D). Got {feature_array.shape}.")
@@ -130,6 +133,7 @@ def delete_all_features_for_bag(
     *,
     layout: H5Layout = DEFAULT_LAYOUT,
 ) -> None:
+    """Delete the full features group for one bag when it exists."""
     features_group_path = layout.features_group(bag_id)
     if features_group_path in slide_artifact.h5:
         del slide_artifact.h5[features_group_path]

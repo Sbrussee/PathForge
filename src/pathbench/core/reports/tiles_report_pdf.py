@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class TilesOverviewEntry:
+    """One slide-level tiles overview image and its derived metadata."""
+
     slide_id: str
     artifact_path: Path
     image_bytes: bytes
@@ -33,6 +35,8 @@ class TilesOverviewEntry:
 
 @dataclass(slots=True)
 class TilesReportStats:
+    """Aggregate counters describing coverage and failures in a tiles report run."""
+
     total_slides_expected: int
     included_slides: int
     missing_overview: int
@@ -43,6 +47,8 @@ class TilesReportStats:
 
 @dataclass(slots=True)
 class TilesReportCollection:
+    """Collected tiles-report entries plus their dataset-level summary statistics."""
+
     entries: list[TilesOverviewEntry]
     stats: TilesReportStats
     bag_id: str

@@ -9,6 +9,7 @@ import json
 from functools import lru_cache
 import re
 import unicodedata
+from typing import Any
 
 from ...image_retrieval.visualization.utils import crop_roi, get_dataset_name_for_slide, get_path_from_dataset, load_qupath_rois, find_best_level
 
@@ -68,11 +69,17 @@ def _to_ascii(s: str) -> str:
     return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
 
 @lru_cache(maxsize=64)
-def _load_metadata_file(metadata_path: str):
+def _load_metadata_file(metadata_path: str) -> dict[str, Any]:
     with open(metadata_path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-def get_metadata_lines(config, slide_id, slide_path, slide_label):
+def get_metadata_lines(
+    config: dict[str, Any],
+    slide_id: str,
+    slide_path: str,
+    slide_label: str,
+) -> list[str]:
+    """Build the metadata lines rendered next to one query or hit thumbnail."""
 
     ds_name = get_dataset_name_for_slide(config, slide_path)
     metadata_path = get_path_from_dataset(config, ds_name, "metadata_path")
@@ -165,7 +172,7 @@ def _wrap_lines(lines, max_w: int, font, scale: float, thickness: int):
 def visualize_retrieval_result(
     result: dict,
     config: dict,
-    all_data,
+    all_data: Any,
 ) -> Image.Image:
     """
     Build a PAGE_W×dynamic_H composite: centered query (512×512) + 512px wrapped text panel,
@@ -344,11 +351,11 @@ def visualize_retrieval_result(
 def generate_image_retrieval_report_pdf(
     config: dict,
     results: list,
-    all_data,
+    all_data: Any,
     output_dir: str,
     base_name: str = "retrieval_report",
     per_file_limit: int = 200
-):
+) -> None:
     """
     Group by true class, generate ROI-cropped PIL pages & save as multi-page PDFs.
     """

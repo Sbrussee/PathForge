@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import pathbench.benchmarking.tasks.slide_retrieval as slide_retrieval_task_module
-from pathbench.benchmarking.tasks.slide_retrieval import SlideRetrievalTask
+import pathbench.core.tasks.slide_retrieval as slide_retrieval_task_module
+from pathbench.core.tasks.slide_retrieval import SlideRetrievalTask
 from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,

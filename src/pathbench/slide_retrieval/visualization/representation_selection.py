@@ -39,9 +39,11 @@ BORDER_WIDTH = 3
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 PATCH_VIS_METHODS = ["extensive", "simple"]
 
-def merge_patch_polygons_by_bin(coords: np.ndarray,
-                                bin_ids: np.ndarray,
-                                patch_size: int):
+def merge_patch_polygons_by_bin(
+    coords: np.ndarray,
+    bin_ids: np.ndarray,
+    patch_size: int,
+) -> dict[int, object]:
     """
     Args:
         coords:      (N,2) array of (x, y) origins for each patch
@@ -70,10 +72,8 @@ def merge_patch_polygons_by_bin(coords: np.ndarray,
 
     return merged
 
-def generate_distinct_bgr_colors(n):
-    """
-    Generate n visually distinct colors in BGR by sampling the HSV hue channel.
-    """
+def generate_distinct_bgr_colors(n: int) -> list[tuple[int, int, int]]:
+    """Generate ``n`` visually distinct OpenCV BGR colors by stepping through hue."""
     hues = np.linspace(0, 179, n, endpoint=False, dtype=int)
     colors = []
     for h in hues:
@@ -693,14 +693,14 @@ def add_title(img: Image.Image, title: str, bar_height: int = 150,
     return Image.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
 
 def generate_mosaic_selection_report_pdf(
-    config,
-    all_data,
-    slide_mosaic_paths,
-    mosaic_selector,
-    pdf_base,
-    patch_px,
-    patch_um
-):
+    config: dict,
+    all_data: object,
+    slide_mosaic_paths: dict[str, str],
+    mosaic_selector: str,
+    pdf_base: str,
+    patch_px: int,
+    patch_um: float
+) -> None:
     """
     Generate patch selection visualizations (simple or extensive) 
     and export them to multi-page PDFs.

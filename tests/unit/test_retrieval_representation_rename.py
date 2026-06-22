@@ -47,7 +47,7 @@ def test_retrieval_representation_id_uses_new_name() -> None:
         params=params,
     )
 
-    assert representation_id == f"uni_mean_pool_{expected_hash}"
+    assert representation_id == f"uni__mean_pool__{expected_hash}"
 
 
 def test_retrieval_representation_id_rejects_empty_representation_name() -> None:
@@ -77,7 +77,7 @@ def test_retrieval_representation_id_lowercases_non_hash_parts() -> None:
         params=params,
     )
 
-    assert representation_id == f"uni2_yottixel_features_{expected_hash}"
+    assert representation_id == f"uni2__yottixel_features__{expected_hash}"
 
 
 def test_retrieval_representation_entry_id_is_none_for_slide_aggregation() -> None:

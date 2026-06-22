@@ -5,6 +5,12 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 
+from pathbench.cli.base import (
+    add_config_argument,
+    add_log_level_argument,
+    configure_logging,
+    load_config,
+)
 from pathbench.config.config import Config, DatasetEntry
 from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.experiments.combinations import ComboConfig
@@ -54,13 +60,14 @@ def _resolve_bag_ids(cfg: Config, explicit_bag_ids: list[str] | None) -> list[st
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the CLI that caches mean RGB values for retrieval sample patches."""
     parser = argparse.ArgumentParser(
         description=(
             "Compute and persist slide retrieval mean_rgb descriptors for one slide "
             "and one or more bag IDs."
         )
     )
-    parser.add_argument("--config", required=True, type=Path, help="Path to YAML config")
+    add_config_argument(parser)
     parser.add_argument(
         "--dataset",
         required=True,
@@ -100,24 +107,13 @@ def main(argv: list[str] | None = None) -> int:
             "datasets[].artifacts_dir/{slide_id}.h5."
         ),
     )
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Logging level (default: INFO)",
-    )
+    add_log_level_argument(parser)
     args = parser.parse_args(argv)
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
+    configure_logging(args.log_level)
 
     config_path = Path(args.config)
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    cfg = Config.from_yaml(config_path)
+    cfg = load_config(config_path)
     dataset_cfg = _find_dataset_config(cfg, dataset_name=str(args.dataset))
     slide_id = str(args.slide_id).strip()
     if not slide_id:

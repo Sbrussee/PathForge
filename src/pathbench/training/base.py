@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from typing import Any
 
 
-from pathbench.core.datasets.base import DatasetBase
-from pathbench.core.losses.base import LossBase
-from pathbench.core.models.base import MILBase
-from pathbench.core.tasks.base import TaskBase
+from pathbench.core.datasets.base import BagDatasetBase, DatasetBase
+from pathbench.core.losses.base import BaseLoss
+from pathbench.core.models.mil_base import MILModelBase
 
 
 class TrainerBase(ABC):
@@ -18,22 +17,22 @@ class TrainerBase(ABC):
     @abstractmethod
     def fit(
         self,
-        model: MILBase,
-        dataset: DatasetBase,
-        task: TaskBase,
+        model: MILModelBase,
+        dataset_train: DatasetBase,
+        dataset_val: DatasetBase,
+        loss_func: BaseLoss,
     ) -> Any:
-        """Train the model on the given dataset using the specified loss function and task."""
-        pass
+        """Train a model on train/validation datasets and return trainer-specific results."""
+        ...
     
     @abstractmethod
     def predict(
         self,
-        model: MILBase,
+        model: MILModelBase,
         dataset: DatasetBase,
-        task: TaskBase,
     ) -> Any:
-        """Make predictions using the trained model on the given dataset."""
-        pass
+        """Run inference on a dataset using a trained model."""
+        ...
     
 @dataclass
 class MILTrainer:
@@ -45,14 +44,15 @@ class MILTrainer:
     """
 
     trainer: TrainerBase
-    model: MILBase
-    dataset: DatasetBase
-    task: TaskBase
-    loss: LossBase
+    model: MILModelBase
+    dataset_train: BagDatasetBase
+    dataset_val: BagDatasetBase
+    loss: BaseLoss
 
-    def run(self) -> None:
-        self.trainer.fit(
+    def run(self) -> Any:
+        return self.trainer.fit(
             model=self.model,
-            dataset=self.dataset,
-            task=self.task,
+            dataset_train=self.dataset_train,
+            dataset_val=self.dataset_val,
+            loss_func=self.loss,
         )

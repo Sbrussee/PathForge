@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import argparse
 import logging
-from pathlib import Path
 from typing import Any
 
-import dask
 import numpy as np
 from torch.utils.data import DataLoader
 
-from ..benchmarking.tasks.slide_retrieval import (
+from .base import (
+    add_config_argument,
+    add_log_level_argument,
+    configure_logging,
+    enable_dask_query_planning,
+    load_experiment,
+)
+from ..core.tasks.slide_retrieval import (
     SlideRetrievalTask,
     _retrieval_batch_collate,
 )
-from ..config.config import Config
-from ..core.experiments.base import Experiment
 from ..core.experiments.combo_ids import build_feature_name, build_tiling_id
 from ..core.experiments.combinations import ComboConfig, build_combinations
 from ..core.features.utils import find_slides_with_missing_features
@@ -331,13 +334,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Slide retrieval representation precompute workflow",
     )
-    parser.add_argument("--config", required=True, type=Path, help="Path to YAML config")
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Logging level (default: INFO)",
-    )
+    add_config_argument(parser)
+    add_log_level_argument(parser)
     parser.add_argument(
         "--skip-missing-features",
         action="store_true",
@@ -348,16 +346,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
+    configure_logging(args.log_level)
     logger.info("Starting slide-retrieval representation precompute CLI")
     logger.info("Using config: %s", args.config)
 
-    dask.config.set({"dataframe.query-planning": True})
+    enable_dask_query_planning()
 
-    cfg = Config.from_yaml(args.config)
+    experiment = load_experiment(args.config)
+    cfg = experiment.cfg
     if cfg.experiment.mode != "benchmark":
         raise ValueError(
             "Representation precompute CLI requires experiment.mode='benchmark'. "
@@ -369,7 +365,6 @@ def main(argv: list[str] | None = None) -> int:
             f"Got {cfg.experiment.task!r}."
         )
 
-    experiment = Experiment(cfg)
     policy = BenchmarkingPolicy(experiment)
 
     output = _run_representation_precompute(

@@ -23,14 +23,15 @@ The filename must follow this rule:
 Examples:
 - `slides_dir/T12-00123.svs`
 - `slides_dir/T12-00124.ndpi`
-- `slides_dir/T12-00125.dcm`
+- `slides_dir/T12-00125.tiff`
 
 Valid examples for `slide_id = T12-00123`:
 - `T12-00123.svs`
 - `T12-00123.ndpi`
-- `T12-00123.dcm`
+- `T12-00123.mrxs`
 
 The file stem must be exactly equal to `slide_id`.
+The supported direct-file suffixes are `.svs`, `.ndpi`, `.tiff`, `.tif`, and `.mrxs`.
 
 ### 2. Multi-file DICOM slide in its own folder
 
@@ -93,7 +94,8 @@ Example:
 - `slides_dir/T12-00123/000001.dcm`
 - `slides_dir/T12-00123/000002.dcm`
 
-This is ambiguous and should not be allowed.
+This is deterministic in the current implementation: PathBench prefers the direct
+file match and only falls back to the DICOM folder when no direct file exists.
 
 ### 2. Multiple exact direct-file matches exist for the same `slide_id`
 
@@ -134,3 +136,8 @@ The dataset supports exactly two slide layouts:
 Anything else is considered unsupported.
 
 This keeps slide resolution explicit, predictable, and easy to validate.
+
+## Explicit path override
+
+If the annotation CSV includes a `wsi_path` column, PathBench first tries that
+path for the row before resolving the slide through `slides_dir`.

@@ -1,5 +1,4 @@
-# pathbench/utils/constants.py
-# This file contains constant values used throughout the PathBench project.
+"""Shared constants used across PathBench."""
 
 TASK_TYPES = [
     "classification",
@@ -31,7 +30,9 @@ PATIENT_ID_COL = "patient"
 DATASET_COL = "dataset"
 CENTER_COL = "center"
 
-SLIDE_FILE_FORMATS = [".svs", ".ndpi", ".tiff", ".tif", ".mrxs"] #TODO: Base on backends? 
-
 LZS_ABS_MPP_TOL = 1e-3  # absolute tolerance in um/px
 LZS_REL_MPP_TOL = 1e-2  # relative tolerance as sanity check (1%)
+# ``WSIDataset`` discovers slide files before a concrete slide backend is
+# instantiated, so it accepts the union of suffixes currently supported by the
+# Lazyslide/WSIData ingestion stack used by PathBench.
+SLIDE_FILE_FORMATS = (".svs", ".ndpi", ".tiff", ".tif", ".mrxs")

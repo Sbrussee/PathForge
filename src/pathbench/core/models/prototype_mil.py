@@ -9,7 +9,7 @@ from pathbench.core.registry import MODELS
 
 @MODELS.register("PrototypeMIL")
 class PrototypeMIL(MILModelBase):
-    """
+    r"""
     Prototype-based MIL.
     
     Learns a set of global prototypes. The bag representation is the similarity vector 

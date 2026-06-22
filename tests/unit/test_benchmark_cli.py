@@ -11,11 +11,9 @@ import pathbench.cli.benchmark as benchmark_cli
 def test_main_executes_benchmarking_policy_with_config_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config_calls: list[Path] = []
     experiment_calls: list[object] = []
     executed_outputs: list[dict[str, object]] = []
 
-    fake_cfg = SimpleNamespace(name="cfg")
     fake_experiment = SimpleNamespace(name="experiment")
 
     class _FakePolicy:
@@ -27,22 +25,16 @@ def test_main_executes_benchmarking_policy_with_config_path(
             executed_outputs.append(output)
             return output
 
-    def fake_from_yaml(path: Path) -> object:
-        config_calls.append(path)
-        return fake_cfg
-
-    def fake_experiment_ctor(cfg: object) -> object:
-        assert cfg is fake_cfg
+    def fake_load_experiment(path: Path) -> object:
+        assert path == Path("configs/benchmark.yaml")
         return fake_experiment
 
-    monkeypatch.setattr(benchmark_cli.Config, "from_yaml", fake_from_yaml)
-    monkeypatch.setattr(benchmark_cli, "Experiment", fake_experiment_ctor)
+    monkeypatch.setattr(benchmark_cli, "load_experiment", fake_load_experiment)
     monkeypatch.setattr(benchmark_cli, "BenchmarkingPolicy", _FakePolicy)
 
     exit_code = benchmark_cli.main(["--config", "configs/benchmark.yaml"])
 
     assert exit_code == 0
-    assert config_calls == [Path("configs/benchmark.yaml")]
     assert experiment_calls == [fake_experiment]
     assert executed_outputs == [{"status": "benchmark_done", "num_runs": 3}]
 

@@ -35,7 +35,11 @@ def build_retrieval_representation_id(
     retrieval_representation: str,
     params: dict[str, Any] | None = None,
 ) -> str:
-    """Build a stable retrieval representation ID."""
+    """Build a stable retrieval representation ID.
+
+    The identifier shape matches the repository canonical helper contract:
+    `{feature_extraction}__{retrieval_representation}__{params_hash16}`.
+    """
     feature_extraction = _normalize_name(
         feature_extraction, "feature_extraction"
     ).lower()
@@ -53,7 +57,7 @@ def build_retrieval_representation_id(
     )
     params_hash = hashlib.sha1(params_payload.encode("utf-8")).hexdigest()[:16]
 
-    return f"{feature_extraction}_{retrieval_representation}_{params_hash}"
+    return f"{feature_extraction}__{retrieval_representation}__{params_hash}"
 
 
 def build_retrieval_representation_entry_id(

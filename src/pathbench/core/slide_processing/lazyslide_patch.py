@@ -58,7 +58,8 @@ def feature_extraction_patched(
     pbar: bool = None,
     return_features: bool = False,
     **kwargs,
-):
+) -> np.ndarray | None:
+    """Patch LazySlide feature extraction so color normalization remains compatible."""
     device = _api.default_value("device", device)
     amp = _api.default_value("amp", amp)
     autocast_dtype = _api.default_value("autocast_dtype", autocast_dtype)
@@ -170,6 +171,7 @@ def feature_extraction_patched(
     return None
 
 
-def apply_lazyslide_feature_extraction_patch():
+def apply_lazyslide_feature_extraction_patch() -> None:
+    """Install the PathBench-compatible LazySlide feature-extraction monkey patch."""
     zs.tl.feature_extraction = feature_extraction_patched
     _features.feature_extraction = feature_extraction_patched

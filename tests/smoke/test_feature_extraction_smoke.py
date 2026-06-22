@@ -1,140 +1,90 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-from pathbench.config.config import Config
-from pathbench.core.experiments.base import Experiment
-from pathbench.core.experiments.combo_ids import build_feature_name, build_tiling_id
 from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.core.io.slide_artifacts.layout import DEFAULT_LAYOUT
-from pathbench.policy.feature_extraction import FeatureExtractionPolicy
-from pathbench.utils.registries import FEATURE_EXTRACTORS
 
-
-class _FakeSlideProcessor:
-    def load_wsi(self, wsi) -> None:
-        _ = wsi
-
-    def close_wsi(self, wsi) -> None:
-        _ = wsi
-
-    def get_base_mpp(self, wsi) -> float:
-        _ = wsi
-        return 0.5
-
-    def segment_tissue(self, wsi, config=None):
-        _ = wsi, config
-        return []
-
-    def extract_patches(self, wsi, tissues, config=None):
-        _ = wsi, tissues, config
-        coords = np.array(
-            [
-                [0, 0, 256, 256, 0],
-                [256, 0, 256, 256, 0],
-            ],
-            dtype=np.int32,
-        )
-        tiling_spec = {
-            "tile_px": 256,
-            "tile_mpp": 0.5,
-            "stride_px": 256,
-            "coord_space": "level0",
-            "backend": "smoke",
-        }
-        return coords, tiling_spec
-
-    def extract_features(self, wsi, coords, tiling_spec, config=None):
-        _ = wsi, tiling_spec, config
-        return np.ones((coords.shape[0], 8), dtype=np.float32)
-
-    def get_thumbnail(self, wsi, level=-1):
-        _ = wsi, level
-        image = np.full((32, 64, 3), 120, dtype=np.uint8)
-        return image, 8.0, 8.0
-
-
-def _ensure_feature_extractor_registered(name: str) -> None:
-    if FEATURE_EXTRACTORS.is_available(name):
-        return
-
-    @FEATURE_EXTRACTORS.register(name)
-    def _dummy():
-        return name
+from ._smoke_dataset import ExtractedWsiWorkspace, attach_smoke_outputs, capture_smoke_metrics
 
 
 @pytest.mark.smoke
 def test_smoke_feature_extraction_writes_expected_artifacts(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    extracted_wsi_workspace: ExtractedWsiWorkspace,
+    tmp_path,
 ) -> None:
-    extractor = "resnet18"
-    _ensure_feature_extractor_registered(extractor)
+    """Validate that real tile feature extraction produced correct H5 artifacts.
 
-    slides_dir = tmp_path / "slides"
-    artifacts_dir = tmp_path / "artifacts"
-    project_root = tmp_path / "project"
-    slides_dir.mkdir(parents=True, exist_ok=True)
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    This test exercises the H5 artifact structure produced by the session-scoped
+    ``extracted_wsi_workspace`` fixture, which runs full PathBench feature
+    extraction on real GTEx WSIs using resnet18.
+    """
+    bag_id = extracted_wsi_workspace.bag_id          # e.g. "224px_1mpp"
+    extractor_name = extracted_wsi_workspace.extractor_name  # "resnet18"
 
-    (slides_dir / "S1.svs").write_bytes(b"dummy")
-    ann_path = tmp_path / "annotations.csv"
-    ann_path.write_text(
-        "dataset,slide,patient,category\n"
-        "smoke,S1,P0,cat0\n",
-        encoding="utf-8",
-    )
+    coords_path = DEFAULT_LAYOUT.coords_dataset(bag_id)
+    tiling_path = DEFAULT_LAYOUT.tiling_spec_dataset(bag_id)
+    overview_path = DEFAULT_LAYOUT.tiles_overview_dataset(bag_id)
+    feats_path = DEFAULT_LAYOUT.features_dataset(bag_id, extractor_name)
 
-    cfg = Config.model_validate(
-        {
-            "experiment": {
-                "project_name": "smoke_project",
-                "annotation_file": str(ann_path),
-                "project_root": str(project_root),
-                "mode": "feature_extraction",
-                "report": True,
-                "thumbnail": True,
-            },
-            "slide_processing": {"backend": "lazyslide"},
-            "datasets": [
-                {
-                    "name": "smoke",
-                    "slides_dir": str(slides_dir),
-                    "artifacts_dir": str(artifacts_dir),
-                    "used_for": "all",
-                }
-            ],
-            "benchmark_parameters": {
-                "tile_px": [256],
-                "tile_mpp": [0.5],
-                "feature_extraction": [extractor],
-                "mil": [],
-            },
-        }
-    )
+    assert extracted_wsi_workspace.artifact_paths, "No artifact paths in workspace"
 
-    policy = FeatureExtractionPolicy(Experiment(cfg))
-    monkeypatch.setattr(policy, "_build_processor", lambda: _FakeSlideProcessor())
-    monkeypatch.setattr(policy, "_build_seg_config", lambda: {"method": "otsu", "params": {}})
+    with capture_smoke_metrics(
+        tmp_path / "metrics",
+        step_name="hf_feature_extraction_artifact_validation",
+        metadata={
+            "num_slides": len(extracted_wsi_workspace.artifact_paths),
+            "bag_id": bag_id,
+            "extractor_name": extractor_name,
+        },
+    ) as metadata:
+        per_slide_tile_counts: dict[str, int] = {}
+        per_slide_feature_dims: dict[str, int] = {}
 
-    dataset = policy.datasets[0]
-    combo = policy.combos[0]
-    wsi = dataset.samples[0]
-    policy.process_slide(dataset=dataset, wsi=wsi, combo_cfg=combo)
+        for slide_id, artifact_path in sorted(extracted_wsi_workspace.artifact_paths.items()):
+            assert artifact_path.exists(), f"H5 artifact missing for {slide_id}: {artifact_path}"
 
-    tiling_id = build_tiling_id(combo)
-    feature_name = build_feature_name(combo)
-    coords_path = DEFAULT_LAYOUT.coords_dataset(tiling_id)
-    tiling_path = DEFAULT_LAYOUT.tiling_spec_dataset(tiling_id)
-    overview_path = DEFAULT_LAYOUT.tiles_overview_dataset(tiling_id)
-    feats_path = DEFAULT_LAYOUT.features_dataset(tiling_id, feature_name)
+            with FileHandleH5(artifact_path, mode="r") as fh:
+                assert DEFAULT_LAYOUT.tissue_dataset in fh.h5, (
+                    f"tissue dataset missing in {artifact_path}"
+                )
+                assert coords_path in fh.h5, f"coords dataset missing in {artifact_path}"
+                assert tiling_path in fh.h5, f"tiling_spec dataset missing in {artifact_path}"
+                assert overview_path in fh.h5, f"tiles_overview dataset missing in {artifact_path}"
+                assert feats_path in fh.h5, f"features dataset missing in {artifact_path}"
 
-    with FileHandleH5(wsi.artifact_path, mode="r") as fh:
-        assert DEFAULT_LAYOUT.tissue_dataset in fh.h5
-        assert coords_path in fh.h5
-        assert tiling_path in fh.h5
-        assert overview_path in fh.h5
-        assert feats_path in fh.h5
+                coords = fh.h5[coords_path][()]
+                overview = fh.h5[overview_path][()]
+                feats = fh.h5[feats_path][()]
+
+                assert coords.ndim == 2 and coords.shape[1] == 5, (
+                    f"coords shape {coords.shape} unexpected in {artifact_path}"
+                )
+                assert overview.ndim == 1 and overview.dtype == np.uint8, (
+                    f"overview dtype/shape unexpected in {artifact_path}"
+                )
+                assert overview.size > 0, f"overview empty in {artifact_path}"
+                assert bytes(overview[:2].tolist()) == b"\xff\xd8", (
+                    f"overview not JPEG in {artifact_path}"
+                )
+                assert feats.ndim == 2, f"features not 2D in {artifact_path}"
+                assert feats.shape[0] == coords.shape[0], (
+                    f"feature/coord count mismatch in {artifact_path}"
+                )
+                assert feats.shape[0] > 0, f"no tiles extracted in {artifact_path}"
+                assert np.isfinite(feats).all(), f"non-finite features in {artifact_path}"
+
+                per_slide_tile_counts[slide_id] = int(feats.shape[0])
+                per_slide_feature_dims[slide_id] = int(feats.shape[1])
+
+        attach_smoke_outputs(
+            metadata,
+            step_name="hf_feature_extraction_artifact_validation",
+            intermediate={"artifacts_dir": extracted_wsi_workspace.artifacts_dir},
+            final={},
+        )
+
+    assert len(per_slide_tile_counts) == len(extracted_wsi_workspace.artifact_paths)
+    feature_dims = set(per_slide_feature_dims.values())
+    assert len(feature_dims) == 1, f"Inconsistent feature dims across slides: {feature_dims}"

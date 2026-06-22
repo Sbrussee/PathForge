@@ -87,6 +87,7 @@ def load_sample_patch_coords(
     tile_id: str,
     dtype: np.dtype | type[np.integer[Any]] = np.int32,
 ) -> np.ndarray:
+    """Load concatenated ``[N, 2]`` patch coordinates for one retrieval sample."""
     if sample is None:
         raise ValueError("sample is required to load patch coordinates.")
 
@@ -113,6 +114,7 @@ def load_slide_retrieval_representation(
     representation_id: str,
     entry_id: str | None,
 ) -> RetrievalRepresentation | None:
+    """Read one stored retrieval representation entry from the retrieval H5 file."""
     if not retrieval_representations_io.retrieval_representation_entry_exists(
         retrieval_artifact=retrieval_artifact,
         tile_id=tile_id,
@@ -148,6 +150,7 @@ def save_slide_retrieval_representation(
     representation: RetrievalRepresentation,
     params: dict[str, Any] | None = None,
 ) -> None:
+    """Persist one retrieval representation entry to the retrieval H5 file."""
     retrieval_representations_io.write_retrieval_representation_entry(
         retrieval_artifact=retrieval_artifact,
         tile_id=tile_id,
@@ -166,6 +169,7 @@ def write_slide_retrieval_manifest(
     path: str | Path,
     manifest: SlideRetrievalManifest | Mapping[str, Any],
 ) -> None:
+    """Write one retrieval manifest JSON file using stable key ordering."""
     path = Path(path)
     payload = manifest.to_dict() if hasattr(manifest, "to_dict") else dict(manifest)
     path.write_text(
@@ -178,6 +182,7 @@ def write_slide_retrieval_results_csv(
     path: str | Path,
     results: list[SearchResult],
 ) -> None:
+    """Write ranked retrieval hits to the legacy flat CSV interchange format."""
     path = Path(path)
     max_hits = max((len(result.hits) for result in results), default=0)
 

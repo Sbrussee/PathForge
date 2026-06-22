@@ -13,6 +13,16 @@ from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.utils.constants import DATASET_COL, SLIDE_ID_COL
 
 
+def _resolve_slide_column(annotations_df: pd.DataFrame) -> str:
+    """Return the canonical slide identifier column from an annotation frame."""
+    for candidate in (SLIDE_ID_COL, "slide_id"):
+        if candidate in annotations_df.columns:
+            return candidate
+    raise ValueError(
+        "Annotations must contain either 'slide' or 'slide_id' to build datasets."
+    )
+
+
 def build_wsi_dataset(
     ds_cfg: DatasetEntry,
     annotations_df: pd.DataFrame,
@@ -24,10 +34,11 @@ def build_wsi_dataset(
     ].copy()
 
     if slide_ids is not None:
+        slide_column = _resolve_slide_column(dataset_annotations)
         slide_id_set = {str(slide_id) for slide_id in slide_ids}
 
         dataset_annotations = dataset_annotations[
-            dataset_annotations[SLIDE_ID_COL].astype(str).isin(slide_id_set)
+            dataset_annotations[slide_column].astype(str).isin(slide_id_set)
         ].copy()
 
         if dataset_annotations.empty:
@@ -81,9 +92,10 @@ def build_bag_dataset(
     ].copy()
 
     if slide_ids is not None:
+        slide_column = _resolve_slide_column(dataset_annotations)
         slide_id_set = {str(slide_id) for slide_id in slide_ids}
         dataset_annotations = dataset_annotations[
-            dataset_annotations[SLIDE_ID_COL].astype(str).isin(slide_id_set)
+            dataset_annotations[slide_column].astype(str).isin(slide_id_set)
         ].copy()
 
         if dataset_annotations.empty:
@@ -96,6 +108,7 @@ def build_bag_dataset(
         "annotations_df": dataset_annotations,
         "combo_cfg": combo_cfg,
         "aggregation_level": aggregation_level,
+        "task": str(task),
     }
 
     if target_column is not None:

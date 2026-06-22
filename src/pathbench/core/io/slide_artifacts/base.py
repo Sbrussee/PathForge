@@ -17,6 +17,8 @@ STATUS_COMPLETE = "complete"
 
 @dataclass(slots=True)
 class FileHandleH5:
+    """Context-managed HDF5 file wrapper used by PathBench artifact helpers."""
+
     path: Path
     mode: str = "a"
     _h5: h5py.File | None = None
@@ -45,10 +47,12 @@ _UTF8 = h5py.string_dtype(encoding="utf-8")
 
 
 def exists(h5_file: h5py.File, h5_path: str) -> bool:
+    """Return whether one HDF5 object path exists in the open file."""
     return h5_path in h5_file
 
 
 def get_dataset(h5_file: h5py.File, h5_path: str) -> h5py.Dataset | None:
+    """Return the dataset at ``h5_path`` or ``None`` when missing or not a dataset."""
     obj = h5_file.get(h5_path)
     if obj is None or not isinstance(obj, h5py.Dataset):
         return None
@@ -56,6 +60,7 @@ def get_dataset(h5_file: h5py.File, h5_path: str) -> h5py.Dataset | None:
 
 
 def get_status(h5_obj: h5py.Dataset | h5py.Group) -> str | None:
+    """Return the PathBench completion status attribute for one HDF5 object."""
     value = h5_obj.attrs.get(STATUS_ATTR)
     if value is None:
         return None
@@ -65,15 +70,18 @@ def get_status(h5_obj: h5py.Dataset | h5py.Group) -> str | None:
 
 
 def is_complete(h5_obj: h5py.Dataset | h5py.Group) -> bool:
+    """Return whether one HDF5 object is marked as completely written."""
     return get_status(h5_obj) == STATUS_COMPLETE
 
 
 def delete_if_exists(h5_file: h5py.File, h5_path: str) -> None:
+    """Delete one HDF5 object path when it already exists."""
     if h5_path in h5_file:
         del h5_file[h5_path]
 
 
 def ensure_group(h5_file: h5py.File, group_path: str) -> h5py.Group:
+    """Create or return one HDF5 group path."""
     return h5_file.require_group(group_path)
 
 
@@ -153,4 +161,5 @@ def write_array_dataset(
 
 
 def read_array_dataset(h5_file: h5py.File, dataset_path: str) -> np.ndarray:
+    """Read one HDF5 array dataset into a NumPy array."""
     return np.asarray(h5_file[dataset_path][()])

@@ -1,34 +1,25 @@
 from __future__ import annotations
 
 import argparse
-import logging
-from pathlib import Path
 
-from pathbench.config.config import Config
-from pathbench.core.experiments.base import Experiment
+from pathbench.cli.base import (
+    add_config_argument,
+    add_log_level_argument,
+    configure_logging,
+    load_experiment,
+)
 from pathbench.core.visualization import VisualizationOrchestrator
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the visualization CLI entrypoint."""
-
     parser = argparse.ArgumentParser(description="Visualization workflow")
-    parser.add_argument("--config", required=True, type=Path, help="Path to YAML config")
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Logging level (default: INFO)",
-    )
+    add_config_argument(parser)
+    add_log_level_argument(parser)
     args = parser.parse_args(argv)
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
-
-    cfg = Config.from_yaml(args.config)
-    experiment = Experiment(cfg)
+    configure_logging(args.log_level)
+    experiment = load_experiment(args.config)
     orchestrator = VisualizationOrchestrator(experiment)
     orchestrator.visualize()
     return 0

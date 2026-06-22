@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import pathbench.benchmarking.tasks.slide_retrieval as slide_retrieval_task_module
-from pathbench.benchmarking.tasks.slide_retrieval import SlideRetrievalTask
+import pathbench.core.tasks.slide_retrieval as slide_retrieval_task_module
+from pathbench.core.tasks.slide_retrieval import SlideRetrievalTask
 from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
@@ -185,7 +185,7 @@ def test_execute_requires_retrieval_dataset_type(
         search_strategy_params={},
     )
     monkeypatch.setattr(
-        "pathbench.benchmarking.tasks.slide_retrieval.build_representation_strategy",
+        "pathbench.core.tasks.slide_retrieval.build_representation_strategy",
         lambda *_, **__: SimpleNamespace(
             hyperparam_values=lambda: {},
             output_representation_kind="patch_vector",
@@ -229,7 +229,7 @@ def test_execute_raises_when_representation_creation_failed(
         search_strategy_params={},
     )
     monkeypatch.setattr(
-        "pathbench.benchmarking.tasks.slide_retrieval.build_representation_strategy",
+        "pathbench.core.tasks.slide_retrieval.build_representation_strategy",
         lambda *_, **__: SimpleNamespace(
             hyperparam_values=lambda: {},
             output_representation_kind="patch_vector",
@@ -242,7 +242,7 @@ def test_execute_raises_when_representation_creation_failed(
     task._validate_dataset_context = lambda **_: None  # type: ignore[method-assign]
     task._validate_combination_compatibility = lambda **_: (True, "")  # type: ignore[method-assign]
     monkeypatch.setattr(
-        "pathbench.benchmarking.tasks.slide_retrieval.SlideRetrievalBagDataset",
+        "pathbench.core.tasks.slide_retrieval.SlideRetrievalBagDataset",
         _FakeSlideRetrievalBagDataset,
     )
     task._collect_existing_representations = lambda **_: (  # type: ignore[method-assign]

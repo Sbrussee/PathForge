@@ -4,8 +4,8 @@ import anndata as ad
 import pandas as pd
 
 
-def download_gtex_slides():
-    """Download a GTEx slide from the HuggingFace hub."""
+def download_gtex_slides() -> pd.DataFrame:
+    """Download the GTEx annotation table used by smoke and example tests."""
     slide_annotation_path = hf_hub_download(
         "rendeirolab/lazyslide-data",
         "GTEx_artery_dataset.csv.gz",
@@ -16,6 +16,7 @@ def download_gtex_slides():
 
 
 def download_tcga_read_titan_features() -> ad.AnnData:
+    """Download the TCGA READ TITAN feature subset used by retrieval examples."""
     titan_features = hf_hub_download(
         "rendeirolab/lazyslide-data",
         "TCGA_READ_subset_TITAN.h5ad",

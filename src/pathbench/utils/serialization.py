@@ -7,6 +7,7 @@ except Exception:  # no HF installed
 
 
 def push_to_hub(local_dir: str, repo_id: str, private: bool = True) -> None:
+    """Create a Hub repository when needed and upload one local artifact folder."""
     if HfApi is None:
         raise RuntimeError("Install optional extra: pip install 'pathbench[hf]'")
     create_repo(repo_id, exist_ok=True, private=private)

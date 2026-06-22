@@ -33,7 +33,7 @@ from pathbench.core.io.slide_artifacts import thumbnail as thumbnail_io
 from pathbench.core.io.slide_artifacts import tissue as tissue_io
 
 from pathbench.core.visualization.thumbnail import render_thumbnail_image
-from pathbench.core.visualization.tiles_overview import render_tiles_overview_image
+from pathbench.core.visualization.tiles_overview import render_tiles_overview
 from pathbench.core.reports.tiles_report_pdf import collect_tiles_overview_entries, create_tiles_report_pdf
 
 logger = logging.getLogger(__name__)
@@ -521,7 +521,7 @@ class FeatureExtractionPolicy(PolicyBase):
             )
         base_mpp = slide_processor.get_base_mpp(wsi)
 
-        pending_writes.tiles_overview_bytes = render_tiles_overview_image(
+        overview_result = render_tiles_overview(
             thumbnail_image=thumbnail_image,
             coords_array=coords_array,
             downscale_x=downscale_x,
@@ -530,6 +530,10 @@ class FeatureExtractionPolicy(PolicyBase):
             tiling_spec=tiling_spec,
             base_mpp=base_mpp,
         )
+        pending_writes.tiles_overview_bytes = overview_result.image_bytes
+        if pending_writes.tiling_spec is not None:
+            pending_writes.tiling_spec["tiles_overview_downscale_x"] = overview_result.downscale_x
+            pending_writes.tiling_spec["tiles_overview_downscale_y"] = overview_result.downscale_y
 
     def _write_pending_artifact_updates(
         self,
