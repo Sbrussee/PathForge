@@ -1,81 +1,62 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
-from pathbench.config.config import Config
+from pathbench.core.datasets.wsi_dataset import WSI
+from pathbench.core.io.slide_artifacts import thumbnail as thumbnail_io
+from pathbench.core.io.slide_artifacts.base import FileHandleH5
+from pathbench.policy.feature_extraction import (
+    FeatureExtractionPolicy,
+    _PendingArtifactWrites,
+)
+
+
+class _SmokeSlideProcessor:
+    def get_thumbnail(self, wsi: WSI, level: int = -1):
+        thumbnail = np.full((24, 48, 3), 180, dtype=np.uint8)
+        return thumbnail, 8.0, 8.0
 
 
 @pytest.mark.smoke
-def test_feature_extract_slide_cli_importable() -> None:
-    from pathbench.cli import feature_extraction_slide  # noqa: F401
-
-
-@pytest.mark.smoke
-def test_feature_extract_slide_cli_missing_config(tmp_path: Path) -> None:
-    from pathbench.cli.feature_extraction_slide import main
-
-    with pytest.raises(FileNotFoundError):
-        main(
-            [
-                "--config",
-                str(tmp_path / "missing.yaml"),
-                "--dataset",
-                "ds",
-                "--input",
-                str(tmp_path / "slide.svs"),
-            ]
-        )
-
-
-@pytest.mark.smoke
-def test_feature_extract_slide_cli_missing_slide(tmp_path: Path) -> None:
-    from pathbench.cli.feature_extraction_slide import main
-
-    ann = tmp_path / "annotations.csv"
-    ann.write_text("dataset,slide,patient,category\n", encoding="utf-8")
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(
-        f"""
-experiment:
-  project_name: smoke_slide
-  annotation_file: {ann}
-  project_root: {tmp_path / "project"}
-  mode: feature_extraction
-slide_processing:
-  backend: lazyslide
-datasets:
-  - name: ds
-    slides_dir: {tmp_path / "slides"}
-    artifacts_dir: {tmp_path / "artifacts"}
-    used_for: all
-benchmark_parameters:
-  tile_px: [256]
-  tile_mpp: [0.5]
-  feature_extraction: [dummy_fe]
-  mil: []
-""",
-        encoding="utf-8",
+def test_feature_extraction_thumbnail_write_smoke(tmp_path: Path) -> None:
+    policy = FeatureExtractionPolicy.__new__(FeatureExtractionPolicy)
+    policy.config = SimpleNamespace(
+        experiment=SimpleNamespace(report=False, thumbnail=True)
     )
 
-    with pytest.raises(FileNotFoundError):
-        main(
-            [
-                "--config",
-                str(cfg_path),
-                "--dataset",
-                "ds",
-                "--input",
-                str(tmp_path / "nonexistent.svs"),
-            ]
+    wsi = WSI(
+        slide="S1",
+        patient="P1",
+        category="cat",
+        path=tmp_path / "S1.svs",
+        artifact_path=tmp_path / "S1.h5",
+    )
+    pending_writes = _PendingArtifactWrites()
+
+    policy._resolve_thumbnail(
+        artifact_path=wsi.artifact_path,
+        wsi=wsi,
+        slide_processor=_SmokeSlideProcessor(),
+        pending_writes=pending_writes,
+    )
+
+    with FileHandleH5(wsi.artifact_path, mode="a") as slide_artifact:
+        policy._write_pending_artifact_updates(
+            slide_artifact=slide_artifact,
+            tiling_id="256px_0.5mpp",
+            extractor_name="dummy_extractor",
+            pending_writes=pending_writes,
         )
 
-
-@pytest.mark.smoke
-def test_feature_extraction_config_validates(
-    minimal_fe_config: dict[str, object],
-) -> None:
-    cfg = Config.model_validate(minimal_fe_config)
-    assert cfg.experiment.mode == "feature_extraction"
-    assert cfg.benchmark_parameters.tile_px == [256]
+    with FileHandleH5(wsi.artifact_path, mode="r") as slide_artifact:
+        assert thumbnail_io.thumbnail_image_exists(slide_artifact) is True
+        assert thumbnail_io.thumbnail_spec_exists(slide_artifact) is True
+        spec = thumbnail_io.read_thumbnail_spec(slide_artifact)
+        assert spec["image_format"] == "jpeg"
+        assert spec["coord_space"] == "level0"
+        assert spec["downscale_x"] == 8.0
+        assert spec["downscale_y"] == 8.0

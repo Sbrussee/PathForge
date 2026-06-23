@@ -71,9 +71,9 @@ class EvaluationOrchestrator:
     def _write_summary(self, summary: EvaluationSummary) -> None:
         """Write one run-level evaluation summary to disk."""
 
-        evaluation_dir = Path(summary.run_context.run_dir) / "evaluation"
-        evaluation_dir.mkdir(parents=True, exist_ok=True)
-        metrics_path = evaluation_dir / "metrics.json"
+        run_dir = Path(summary.run_context.run_dir)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = run_dir / "evaluation_metrics.json"
         metrics_path.write_text(
             json.dumps(summary.to_dict(), indent=2, sort_keys=True),
             encoding="utf-8",

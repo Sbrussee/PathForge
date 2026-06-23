@@ -59,7 +59,7 @@ class BenchmarkingPolicy(PolicyBase):
 
         self._uses_experiment_context = hasattr(experiment, "load_annotations")
         self.task: Any | None = None
-        self.feature_policy: FeatureExtractionPolicy | None = None
+        self._feature_policy: FeatureExtractionPolicy | None = None
         self._summary_rows: list[dict[str, Any]] = []
         self._summary_output_path: Path | None = None
         self._summary_objective_metric = ""
@@ -68,7 +68,17 @@ class BenchmarkingPolicy(PolicyBase):
         if self._uses_experiment_context:
             import_task_modules()
             self.task = build_task(self.task_name, self.experiment)
-            self.feature_policy = FeatureExtractionPolicy(self.experiment)
+
+    @property
+    def feature_policy(self) -> FeatureExtractionPolicy | None:
+        """Lazily build the feature-extraction policy on first access.
+
+        The policy is only available in experiment-context mode; in legacy
+        config mode this returns ``None``.
+        """
+        if self._feature_policy is None and self._uses_experiment_context:
+            self._feature_policy = FeatureExtractionPolicy(self.experiment)
+        return self._feature_policy
 
     def execute(self) -> dict[str, Any]:
         """Run the configured benchmark workflow.

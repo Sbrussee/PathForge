@@ -3,14 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
+import pandas as pd
 
-import pathbench.cli.slide_retrieval_representations as retrieval_repr_cli
+import pathbench.cli.retrieval_representations as retrieval_repr_cli
 
 
 def test_main_executes_representation_precompute_runner(
     monkeypatch,
 ) -> None:
+    config_calls: list[Path] = []
     experiment_calls: list[object] = []
     runner_calls: list[tuple[object, bool]] = []
     executed_outputs: list[dict[str, object]] = []
@@ -24,12 +25,16 @@ def test_main_executes_representation_precompute_runner(
         def __init__(self, experiment: object) -> None:
             experiment_calls.append(experiment)
 
-    def fake_load_experiment(path: Path) -> object:
-        assert path == Path("configs/benchmark.yaml")
+    def fake_from_yaml(path: Path) -> object:
+        config_calls.append(path)
+        return fake_cfg
+
+    def fake_experiment_ctor(cfg: object) -> object:
+        assert cfg is fake_cfg
         return fake_experiment
 
-    fake_experiment.cfg = fake_cfg
-    monkeypatch.setattr(retrieval_repr_cli, "load_experiment", fake_load_experiment)
+    monkeypatch.setattr(retrieval_repr_cli.Config, "from_yaml", fake_from_yaml)
+    monkeypatch.setattr(retrieval_repr_cli, "Experiment", fake_experiment_ctor)
     monkeypatch.setattr(retrieval_repr_cli, "BenchmarkingPolicy", _FakePolicy)
     monkeypatch.setattr(
         retrieval_repr_cli,
@@ -44,63 +49,78 @@ def test_main_executes_representation_precompute_runner(
     exit_code = retrieval_repr_cli.main(["--config", "configs/benchmark.yaml"])
 
     assert exit_code == 0
+    assert config_calls == [Path("configs/benchmark.yaml")]
     assert experiment_calls == [fake_experiment]
     assert len(runner_calls) == 1
     assert runner_calls[0][1] is False
     assert executed_outputs == [{"status": "representations_done", "num_runs": 2}]
 
 
-def test_main_forwards_skip_missing_features_flag(
-    monkeypatch: pytest.MonkeyPatch,
+def test_run_representation_precompute_never_triggers_feature_extraction(
+    monkeypatch,
 ) -> None:
-    fake_cfg = SimpleNamespace(
-        experiment=SimpleNamespace(mode="benchmark", task="slide_retrieval"),
+    combo_cfg = SimpleNamespace(name="combo")
+    task = SimpleNamespace(get_grid_keys=lambda: ["feature_extraction", "tile_px", "tile_mpp"])
+    annotations_df = pd.DataFrame(
+        {
+            "dataset": ["train_ds"],
+            "slide_id": ["S1"],
+        }
     )
-    fake_experiment = SimpleNamespace(name="experiment")
-    runner_calls: list[tuple[object, bool]] = []
+    filtered_annotations_df = annotations_df.iloc[0:0]
+    bag_dataset = SimpleNamespace(name="bag_ds")
+    build_calls: list[tuple[object, object]] = []
+    group_calls: list[list[object]] = []
+    validation_calls: list[dict[str, list[object]]] = []
+    materialize_calls: list[tuple[object, dict[str, list[object]]]] = []
 
     class _FakePolicy:
-        def __init__(self, experiment: object) -> None:
-            self.experiment = experiment
+        def __init__(self) -> None:
+            self.task = task
+            self.experiment = SimpleNamespace(
+                load_annotations=lambda: annotations_df,
+                cfg=SimpleNamespace(),
+            )
 
-    fake_experiment.cfg = fake_cfg
-    monkeypatch.setattr(retrieval_repr_cli, "load_experiment", lambda path: fake_experiment)
-    monkeypatch.setattr(retrieval_repr_cli, "BenchmarkingPolicy", _FakePolicy)
+        def _group_combos_by_bag_source(self, combinations: list[object]) -> dict[str, list[object]]:
+            assert combinations == [combo_cfg]
+            return {"bag_source": [combo_cfg]}
+
+        def ensure_bag_features_exist(self, **kwargs) -> None:
+            raise AssertionError("representation precompute must not trigger feature extraction")
+
+        def build_bag_datasets_for_combo(self, *, combo_cfg: object, annotations_df: object) -> list[object]:
+            build_calls.append((combo_cfg, annotations_df))
+            return [bag_dataset]
+
+        def group_bag_datasets_by_use(self, bag_datasets: list[object]) -> dict[str, list[object]]:
+            group_calls.append(bag_datasets)
+            return {"reference": bag_datasets}
+
+        def _validate_dataset_uses(self, *, datasets_by_use: dict[str, list[object]]) -> None:
+            validation_calls.append(datasets_by_use)
+
+    policy = _FakePolicy()
+
+    monkeypatch.setattr(retrieval_repr_cli, "SlideRetrievalTask", type(task))
+    monkeypatch.setattr(retrieval_repr_cli, "build_combinations", lambda **kwargs: [combo_cfg])
     monkeypatch.setattr(
         retrieval_repr_cli,
-        "_run_representation_precompute",
-        lambda policy, skip_missing_features=False: (
-            runner_calls.append((policy, bool(skip_missing_features)))
-            or {"status": "representations_done", "num_runs": 1}
+        "_filter_annotations_with_existing_features",
+        lambda **kwargs: filtered_annotations_df,
+    )
+    monkeypatch.setattr(
+        retrieval_repr_cli,
+        "_materialize_representations_for_combo",
+        lambda *, task, combo_cfg, datasets_by_use: materialize_calls.append(
+            (combo_cfg, datasets_by_use)
         ),
     )
 
-    exit_code = retrieval_repr_cli.main(
-        ["--config", "configs/benchmark.yaml", "--skip-missing-features"]
-    )
+    output = retrieval_repr_cli._run_representation_precompute(policy)
 
-    assert exit_code == 0
-    assert len(runner_calls) == 1
-    assert runner_calls[0][1] is True
-
-
-def test_main_rejects_non_benchmark_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_cfg = SimpleNamespace(
-        experiment=SimpleNamespace(mode="feature_extraction", task="slide_retrieval"),
-    )
-    fake_experiment = SimpleNamespace(cfg=fake_cfg)
-    monkeypatch.setattr(retrieval_repr_cli, "load_experiment", lambda path: fake_experiment)
-
-    with pytest.raises(ValueError, match="experiment.mode='benchmark'"):
-        retrieval_repr_cli.main(["--config", "configs/benchmark.yaml"])
-
-
-def test_main_rejects_non_retrieval_task(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_cfg = SimpleNamespace(
-        experiment=SimpleNamespace(mode="benchmark", task="classification"),
-    )
-    fake_experiment = SimpleNamespace(cfg=fake_cfg)
-    monkeypatch.setattr(retrieval_repr_cli, "load_experiment", lambda path: fake_experiment)
-
-    with pytest.raises(ValueError, match="experiment.task='slide_retrieval'"):
-        retrieval_repr_cli.main(["--config", "configs/benchmark.yaml"])
+    assert output == {"status": "representations_done", "num_runs": 1}
+    assert build_calls == [(combo_cfg, filtered_annotations_df)]
+    assert group_calls == [[bag_dataset]]
+    assert validation_calls == [{"reference": [bag_dataset]}]
+    assert materialize_calls == [(combo_cfg, {"reference": [bag_dataset]})]

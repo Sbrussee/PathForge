@@ -137,7 +137,7 @@ def test_execute_passes_only_generic_context_to_strategy_builders(
         tile_mpp_params={},
         feature_extraction="uni",
         feature_extraction_params={},
-        retrieval_representation="splice_features",
+        retrieval_representation="splice-features",
         retrieval_representation_params={"percentile_threshold": 25},
         search_strategy="sish",
         search_strategy_params={"k": 5},
@@ -162,7 +162,7 @@ def test_execute_passes_only_generic_context_to_strategy_builders(
     result = task.execute(combo_cfg=combo_cfg, datasets_by_use=datasets_by_use)
 
     assert result["num_queries"] == 1
-    assert captured["representation"]["name"] == "splice_features"
+    assert captured["representation"]["name"] == "splice-features"
     assert captured["search"]["name"] == "sish"
     assert captured["search"]["kwargs"]["config"] is task.cfg
     assert "project_root" not in captured["representation"]["kwargs"]

@@ -97,7 +97,7 @@ meta/
 
 ### 1.3 Tiles overview (optional visualization)
 
-**Purpose:** compact visualization of the tiling result for reporting/inspection (thumbnail with tile grid overlay and tile count).
+**Purpose:** compact visualization of the tiling result for reporting/inspection (thumbnail with tile grid overlay).
 
 **Path (per bag):**  
 `bags/{bag_id}/tiles_overview`
@@ -108,14 +108,14 @@ meta/
 **Dtype:** `uint8`
 
 **Content**
-- Grayscale thumbnail of the slide
-- Tile grid overlay derived from `coords`
-- Simple title text: `"{slide_id}: {num_tiles} tiles"`
+- RGB thumbnail of the slide, encoded as JPEG
+- Tile grid overlay derived from `coords`, `tiling_spec`, and the slide base MPP
+- No embedded title text; PDF/report renderers add any surrounding text consistently
 
 **Rules**
 - Optional: only written when `experiment.report = true`
-- If tiles are **newly created**, `tiles_overview` is **always (re)written**
-- If tiles are **reused**, `tiles_overview` is written **only if missing**
+- Stored under the same `bag_id` as `coords` and `tiling_spec`
+- Written when missing; existing `tiles_overview` datasets are reused
 - `tiles_overview` is tied to the bag (`bag_id`) and therefore corresponds to the same tiling setup as `coords` and `tiling_spec`
 
 ---
@@ -142,6 +142,7 @@ meta/
 - Optional: only written when `experiment.thumbnail = true`
 - Represents the **full slide**, not a tissue crop
 - Intended as a slide-level cache reusable across tasks and visualizations
+- Current writer stores JPEG bytes with a maximum long side of 1200 pixels by default
 
 ### 2.2 Thumbnail Spec
 

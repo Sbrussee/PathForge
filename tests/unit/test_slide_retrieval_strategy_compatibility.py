@@ -12,7 +12,7 @@ from pathbench.slide_retrieval.search_strategies.registry import (
 
 
 def test_get_representation_strategy_output_kind_returns_class_metadata() -> None:
-    output_kind = get_representation_strategy_output_kind("splice_features")
+    output_kind = get_representation_strategy_output_kind("splice-features")
 
     assert output_kind == "patch_vector"
 
@@ -35,7 +35,7 @@ def test_get_search_strategy_supported_kinds_rejects_unknown_name() -> None:
 
 def test_get_representation_strategy_supported_feature_levels_returns_metadata() -> None:
     feature_levels = get_representation_strategy_supported_feature_levels(
-        "splice_features"
+        "splice-features"
     )
 
     assert "patch" in feature_levels

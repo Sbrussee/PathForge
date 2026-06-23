@@ -32,7 +32,7 @@ from pathbench.core.io.slide_artifacts import features as features_io
 from pathbench.core.io.slide_artifacts import tiles as tiles_io
 from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.slide_retrieval.hyperparams import HyperParam
-from pathbench.slide_retrieval.mean_rgb import (
+from pathbench.slide_retrieval.representation_strategies.mean_rgb import (
     _build_slide_processor,
     _resolve_sample_slide_paths,
     _slide_retrieval_artifact_path,
@@ -198,7 +198,7 @@ class _BaseYottixelRepresentationStrategy(BaseRetrievalRepresentationStrategy):
         )
 
 
-@register_representation_strategy("yottixel_rgb")
+@register_representation_strategy("yottixel-rgb")
 class YottixelRGB(_BaseYottixelRepresentationStrategy):
     """
     Yottixel RGB mosaic selection.
@@ -219,7 +219,7 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
 
     """
 
-    name = "yottixel_rgb"
+    name = "yottixel-rgb"
 
     def run(
         self,
@@ -363,7 +363,7 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
         }
 
 
-@register_representation_strategy("yottixel_features")
+@register_representation_strategy("yottixel-features")
 class YottixelFeatures(_BaseYottixelRepresentationStrategy):
     """
     Yottixel-Features mosaic selection (RetCCL-inspired).
@@ -387,7 +387,7 @@ class YottixelFeatures(_BaseYottixelRepresentationStrategy):
         'patch_vector'
     """
 
-    name = "Yottixel_features"
+    name = "yottixel-features"
 
     def run(
         self,

@@ -287,13 +287,13 @@ def test_splice_features_requires_percentile_threshold(tmp_path: Path) -> None:
 def test_splice_strategy_registration_round_trip() -> None:
     import_representation_strategy_modules()
 
-    assert is_representation_strategy_available("splice_features")
-    assert is_representation_strategy_available("splice_rgb")
+    assert is_representation_strategy_available("splice-features")
+    assert is_representation_strategy_available("splice-rgb")
     assert isinstance(
-        build_representation_strategy("splice_features"),
+        build_representation_strategy("splice-features"),
         SPLICEFeatures,
     )
     assert isinstance(
-        build_representation_strategy("splice_rgb"),
+        build_representation_strategy("splice-rgb"),
         SPLICERGB,
     )

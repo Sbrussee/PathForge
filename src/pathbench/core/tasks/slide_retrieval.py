@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
+from pathlib import Path
 import traceback
 from typing import Any
 
 from torch.utils.data import DataLoader, Subset
+from tqdm import tqdm
 
 from pathbench.core.tasks.registry import register_task
 from pathbench.core.tasks.base import TaskBase
@@ -20,11 +22,12 @@ from pathbench.core.experiments.combo_ids import build_feature_name, build_tilin
 from pathbench.core.io.slide_artifacts.atomic import atomic_slide_artifact_write
 from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.slide_retrieval.io import (
+    build_slide_retrieval_inference_output_root,
     build_slide_retrieval_output_root,
     load_slide_retrieval_representation,
     save_slide_retrieval_representation,
     write_slide_retrieval_manifest,
-    write_slide_retrieval_results_csv,
+    write_slide_retrieval_results_xlsx,
 )
 from pathbench.slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
@@ -49,6 +52,8 @@ from pathbench.slide_retrieval.types import ExclusionLevel, SlideRetrievalManife
 logger = logging.getLogger(__name__)
 
 _VALID_RETRIEVAL_USES = {"reference", "query", "query_reference"}
+_PROGRESS_MIN_INTERVAL_SECONDS = 30.0
+_PROGRESS_NCOLS = 100
 
 
 def _retrieval_batch_collate(
@@ -72,11 +77,43 @@ class SlideRetrievalTask(TaskBase):
     ]
 
     allowed_dataset_uses = frozenset(_VALID_RETRIEVAL_USES)
+    inference_dataset_uses = frozenset({"reference", "query_reference"})
+    inference_input_use = "query"
 
     def execute(
         self,
         combo_cfg: ComboConfig,
         datasets_by_use: dict[str, list[BagDataset]],
+    ) -> dict[str, Any]:
+        return self._run_retrieval(
+            combo_cfg=combo_cfg,
+            datasets_by_use=datasets_by_use,
+            output_mode="benchmark",
+            inference_run_root=None,
+            include_query_reference_as_queries=True,
+        )
+
+    def inference(
+        self,
+        combo_cfg: ComboConfig,
+        datasets_by_use: dict[str, list[BagDataset]],
+        inference_run_root: Path,
+    ) -> dict[str, Any]:
+        return self._run_retrieval(
+            combo_cfg=combo_cfg,
+            datasets_by_use=datasets_by_use,
+            output_mode="inference",
+            inference_run_root=inference_run_root,
+            include_query_reference_as_queries=False,
+        )
+
+    def _run_retrieval(
+        self,
+        combo_cfg: ComboConfig,
+        datasets_by_use: dict[str, list[BagDataset]],
+        output_mode: str,
+        inference_run_root: Path | None,
+        include_query_reference_as_queries: bool,
     ) -> dict[str, Any]:
         # ------------------------------------------------------------------
         # Resolve run identity
@@ -93,16 +130,13 @@ class SlideRetrievalTask(TaskBase):
         representation_name = str(combo_cfg.get("retrieval_representation"))
         search_strategy_name = str(combo_cfg.get("search_strategy"))
         num_workers = int(getattr(self.cfg.experiment, "num_workers", 0) or 0)
-        retrieval_batch_size = max(1, num_workers)
         logger.info(
             "[SlideRetrieval] Starting execute | tiling_id=%s, aggregation=%s, "
-            "representation=%s, search=%s, loader_workers=%d, batch_threads=%d",
+            "representation=%s, search=%s",
             tiling_id,
             aggregation_level,
             representation_name,
             search_strategy_name,
-            num_workers,
-            retrieval_batch_size,
         )
 
         # Fail fast when the selected strategies and dataset feature levels cannot match.
@@ -130,14 +164,33 @@ class SlideRetrievalTask(TaskBase):
             bag_id=tiling_id,
             config=getattr(self.experiment, "cfg", None),
         )
+        prepare_for_combo = getattr(representation_strategy, "prepare_for_combo", None)
+        if callable(prepare_for_combo):
+            prepare_for_combo(
+                combo_cfg=combo_cfg,
+                feature_name=feature_name,
+                tiling_id=tiling_id,
+            )
+        loader_workers = self._resolve_representation_loader_workers(
+            representation_strategy=representation_strategy,
+            default_workers=num_workers,
+        )
+        materialization_workers = self._resolve_representation_workers(
+            representation_strategy=representation_strategy,
+            default_workers=max(1, num_workers),
+        )
+        retrieval_batch_size = max(1, materialization_workers)
         representation_id = build_retrieval_representation_id(
             feature_extraction=feature_name,
             retrieval_representation=representation_name,
             params=representation_strategy.hyperparam_values(),
         )
         logger.info(
-            "[SlideRetrieval] Representation strategy ready | representation_id=%s",
+            "[SlideRetrieval] Representation strategy ready | representation_id=%s, "
+            "loader_workers=%d, materialization_workers=%d",
             representation_id,
+            loader_workers,
+            materialization_workers,
         )
 
         # Collect representations per configured retrieval use (reference/query/shared).
@@ -208,14 +261,14 @@ class SlideRetrievalTask(TaskBase):
                         missing_subset,
                         batch_size=retrieval_batch_size,
                         shuffle=False,
-                        num_workers=num_workers,
+                        num_workers=loader_workers,
                         collate_fn=_retrieval_batch_collate,
                     )
                     created_retrieval_representations, creation_errors_by_sample = (
                         self.compute_retrieval_representations(
                             bag_dataset=bag_dataset,
                             retrieval_loader=retrieval_loader,
-                            batch_thread_workers=retrieval_batch_size,
+                            batch_thread_workers=materialization_workers,
                             combo_cfg=combo_cfg,
                             representation_strategy=representation_strategy,
                             representation_id=representation_id,
@@ -262,7 +315,8 @@ class SlideRetrievalTask(TaskBase):
         logger.info("[SlideRetrieval] Stage 3/3: running search strategy")
         reference_representations, query_representations = (
             self._split_representations_by_use(
-                representations_by_use=representations_by_use
+                representations_by_use=representations_by_use,
+                include_query_reference_as_queries=include_query_reference_as_queries,
             )
         )
 
@@ -281,13 +335,33 @@ class SlideRetrievalTask(TaskBase):
         )
 
         search_strategy.build_database(reference_representations)
-        results: list[SearchResult] = []
-        # Query the built search database one item at a time.
-        for query_representation in query_representations:
-            results.append(
-                search_strategy.search(
-                    query_representation=query_representation,
-                )
+        search_workers = self._resolve_search_workers(
+            num_queries=len(query_representations)
+        )
+        logger.info(
+            "[SlideRetrieval] Search stage ready | queries=%d, references=%d, workers=%d",
+            len(query_representations),
+            len(reference_representations),
+            search_workers,
+        )
+        prepare_queries = getattr(search_strategy, "prepare_queries", None)
+        search_prepared = getattr(search_strategy, "search_prepared", None)
+        if callable(prepare_queries) and callable(search_prepared):
+            logger.info(
+                "[SlideRetrieval] Preparing %d search query item(s) before ranking.",
+                len(query_representations),
+            )
+            prepared_query_items = prepare_queries(query_representations)
+            results = self._run_search_items(
+                search_items=prepared_query_items,
+                search_fn=search_prepared,
+                search_workers=search_workers,
+            )
+        else:
+            results = self._run_search_items(
+                search_items=query_representations,
+                search_fn=search_strategy.search,
+                search_workers=search_workers,
             )
 
         # ------------------------------------------------------------------
@@ -304,18 +378,19 @@ class SlideRetrievalTask(TaskBase):
             exclusion_level=exclusion_level,
             results=results,
         )
-        output_root = build_slide_retrieval_output_root(
-            project_root=str(self.experiment.project_root),
+        run_dir = self._build_run_dir(
+            output_mode=output_mode,
+            inference_run_root=inference_run_root,
             tiling_id=tiling_id,
             feature_name=feature_name,
-            slide_representation=representation_name,
-            search_method=search_strategy_name,
+            representation_name=representation_name,
+            search_strategy_name=search_strategy_name,
+            run_hash=manifest.build_run_hash(),
         )
-        run_dir = output_root / f"run_{manifest.build_run_hash()}"
         # Persist both run configuration and ranking outputs under one run directory.
         run_dir.mkdir(parents=True, exist_ok=True)
         write_slide_retrieval_manifest(run_dir / "manifest.json", manifest)
-        write_slide_retrieval_results_csv(run_dir / "query_results.csv", results)
+        write_slide_retrieval_results_xlsx(run_dir / "query_results.xlsx", results)
         logger.info(
             "[SlideRetrieval] Completed execute | output_dir=%s, queries=%d, references=%d",
             run_dir,
@@ -328,6 +403,112 @@ class SlideRetrievalTask(TaskBase):
             "num_queries": len(query_representations),
             "num_reference_items": len(reference_representations),
         }
+
+    def _resolve_search_workers(self, *, num_queries: int) -> int:
+        """Resolve query-level search parallelism from slide_retrieval config."""
+        slide_retrieval_cfg = getattr(self.cfg, "slide_retrieval", None)
+        configured_workers = getattr(slide_retrieval_cfg, "search_workers", 1)
+        try:
+            search_workers = int(configured_workers or 1)
+        except (TypeError, ValueError):
+            search_workers = 1
+        return min(max(1, search_workers), max(1, int(num_queries)))
+
+    def _resolve_representation_loader_workers(
+        self,
+        *,
+        representation_strategy: Any,
+        default_workers: int,
+    ) -> int:
+        """Resolve DataLoader workers for retrieval representation creation."""
+        slide_retrieval_cfg = getattr(self.cfg, "slide_retrieval", None)
+        configured_workers = getattr(
+            slide_retrieval_cfg,
+            "representation_loader_workers",
+            None,
+        )
+        if configured_workers is None:
+            configured_workers = getattr(
+                representation_strategy,
+                "preferred_loader_workers",
+                default_workers,
+            )
+        try:
+            loader_workers = int(configured_workers or 0)
+        except (TypeError, ValueError):
+            loader_workers = int(default_workers or 0)
+        return max(0, loader_workers)
+
+    def _resolve_representation_workers(
+        self,
+        *,
+        representation_strategy: Any,
+        default_workers: int,
+    ) -> int:
+        """Resolve thread workers for retrieval representation materialization."""
+        slide_retrieval_cfg = getattr(self.cfg, "slide_retrieval", None)
+        configured_workers = getattr(
+            slide_retrieval_cfg,
+            "representation_workers",
+            None,
+        )
+        if configured_workers is None:
+            configured_workers = getattr(
+                representation_strategy,
+                "preferred_materialization_workers",
+                default_workers,
+            )
+        try:
+            representation_workers = int(configured_workers or 1)
+        except (TypeError, ValueError):
+            representation_workers = int(default_workers or 1)
+        return max(1, representation_workers)
+
+    def _run_search_items(
+        self,
+        *,
+        search_items: list[Any],
+        search_fn: Any,
+        search_workers: int,
+    ) -> list[SearchResult]:
+        """Run independent search items, preserving input order."""
+        if search_workers <= 1:
+            return [
+                search_fn(search_item)
+                for search_item in tqdm(
+                    search_items,
+                    desc="[SlideRetrieval] Search queries",
+                    unit="query",
+                    mininterval=_PROGRESS_MIN_INTERVAL_SECONDS,
+                    ncols=_PROGRESS_NCOLS,
+                )
+            ]
+
+        results_by_index: list[SearchResult | None] = [None] * len(search_items)
+        with ThreadPoolExecutor(max_workers=search_workers) as executor:
+            future_to_index = {
+                executor.submit(search_fn, search_item): index
+                for index, search_item in enumerate(search_items)
+            }
+            for future in tqdm(
+                as_completed(future_to_index),
+                total=len(future_to_index),
+                desc="[SlideRetrieval] Search queries",
+                unit="query",
+                mininterval=_PROGRESS_MIN_INTERVAL_SECONDS,
+                ncols=_PROGRESS_NCOLS,
+            ):
+                results_by_index[future_to_index[future]] = future.result()
+
+        missing_indices = [
+            index for index, result in enumerate(results_by_index) if result is None
+        ]
+        if missing_indices:
+            raise RuntimeError(
+                "Search completed without results for query indices: "
+                f"{missing_indices}"
+            )
+        return [result for result in results_by_index if result is not None]
 
     def _resolve_exclusion_level(self) -> ExclusionLevel:
         # Read task-specific exclusion policy, defaulting to patient-level filtering.
@@ -429,6 +610,9 @@ class SlideRetrievalTask(TaskBase):
                 continue
 
             # Re-attach runtime metadata that is not persisted in the same shape.
+            cached_representation.metadata.category = sample.category
+            cached_representation.metadata.patient_id = sample.patient_id
+            cached_representation.metadata.case_id = sample.case_id
             cached_representation.exclusion_key = self._build_exclusion_key(
                 sample=sample,
                 aggregation_level=aggregation_level,
@@ -507,6 +691,9 @@ class SlideRetrievalTask(TaskBase):
             )
 
             # Attach retrieval-time filtering and provenance fields.
+            representation.metadata.category = dataset_item.sample.category
+            representation.metadata.patient_id = dataset_item.sample.patient_id
+            representation.metadata.case_id = dataset_item.sample.case_id
             representation.exclusion_key = self._build_exclusion_key(
                 sample=dataset_item.sample,
                 aggregation_level=aggregation_level,
@@ -540,7 +727,14 @@ class SlideRetrievalTask(TaskBase):
                     )
                     for dataset_item in retrieval_batch
                 }
-                for future in as_completed(future_to_sample_id):
+                for future in tqdm(
+                    as_completed(future_to_sample_id),
+                    total=len(future_to_sample_id),
+                    desc=f"[SlideRetrieval] Representations {bag_dataset.name}",
+                    unit="sample",
+                    mininterval=_PROGRESS_MIN_INTERVAL_SECONDS,
+                    ncols=_PROGRESS_NCOLS,
+                ):
                     try:
                         created_retrieval_representations.append(future.result())
                     except Exception as exc:
@@ -587,6 +781,7 @@ class SlideRetrievalTask(TaskBase):
         self,
         *,
         representations_by_use: dict[str, list[RetrievalRepresentation]],
+        include_query_reference_as_queries: bool = True,
     ) -> tuple[list[RetrievalRepresentation], list[RetrievalRepresentation]]:
         # Build search DB from reference + shared items.
         reference_representations: list[RetrievalRepresentation] = []
@@ -598,9 +793,45 @@ class SlideRetrievalTask(TaskBase):
         reference_representations.extend(representations_by_use.get("query_reference", []))
 
         query_representations.extend(representations_by_use.get("query", []))
-        query_representations.extend(representations_by_use.get("query_reference", []))
+        if include_query_reference_as_queries:
+            query_representations.extend(representations_by_use.get("query_reference", []))
 
         return reference_representations, query_representations
+
+    def _build_run_dir(
+        self,
+        *,
+        output_mode: str,
+        inference_run_root: Path | None,
+        tiling_id: str,
+        feature_name: str,
+        representation_name: str,
+        search_strategy_name: str,
+        run_hash: str,
+    ) -> Path:
+        if output_mode == "benchmark":
+            output_root = build_slide_retrieval_output_root(
+                project_root=str(self.experiment.project_root),
+                tiling_id=tiling_id,
+                feature_name=feature_name,
+                slide_representation=representation_name,
+                search_method=search_strategy_name,
+            )
+            return output_root / f"run_{run_hash}"
+
+        if output_mode == "inference":
+            if inference_run_root is None:
+                raise ValueError("inference_run_root is required for inference output.")
+            return build_slide_retrieval_inference_output_root(
+                inference_run_root=inference_run_root,
+                tiling_id=tiling_id,
+                feature_name=feature_name,
+                slide_representation=representation_name,
+                search_method=search_strategy_name,
+                run_hash=run_hash,
+            )
+
+        raise ValueError(f"Unsupported slide retrieval output mode: {output_mode!r}")
 
     def _build_manifest(
         self,

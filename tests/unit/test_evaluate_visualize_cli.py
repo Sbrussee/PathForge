@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import pathbench.cli.evaluate as evaluate_cli
-import pathbench.cli.visualize as visualize_cli
+import pathbench.cli.evaluate_run as evaluate_cli
+import pathbench.cli.visualize_run as visualize_cli
 
 
 def test_evaluate_main_executes_evaluation_orchestrator(
@@ -14,6 +14,7 @@ def test_evaluate_main_executes_evaluation_orchestrator(
 ) -> None:
     evaluate_calls: list[object] = []
 
+    fake_cfg = SimpleNamespace(name="config")
     fake_experiment = SimpleNamespace(name="experiment")
 
     class _FakeOrchestrator:
@@ -23,11 +24,12 @@ def test_evaluate_main_executes_evaluation_orchestrator(
         def evaluate(self) -> None:
             return None
 
-    def fake_load_experiment(path: Path) -> object:
-        assert path == Path("configs/evaluate.yaml")
-        return fake_experiment
+    def fake_from_yaml(path: Path) -> object:
+        assert Path(path) == Path("configs/evaluate.yaml")
+        return fake_cfg
 
-    monkeypatch.setattr(evaluate_cli, "load_experiment", fake_load_experiment)
+    monkeypatch.setattr(evaluate_cli.Config, "from_yaml", staticmethod(fake_from_yaml))
+    monkeypatch.setattr(evaluate_cli, "Experiment", lambda cfg: fake_experiment)
     monkeypatch.setattr(evaluate_cli, "EvaluationOrchestrator", _FakeOrchestrator)
 
     exit_code = evaluate_cli.main(["--config", "configs/evaluate.yaml"])
@@ -41,20 +43,22 @@ def test_visualize_main_executes_visualization_orchestrator(
 ) -> None:
     visualize_calls: list[object] = []
 
+    fake_cfg = SimpleNamespace(name="config")
     fake_experiment = SimpleNamespace(name="experiment")
 
     class _FakeOrchestrator:
         def __init__(self, experiment: object) -> None:
             visualize_calls.append(experiment)
 
-        def visualize(self) -> None:
-            return None
+        def visualize(self) -> dict[str, object]:
+            return {"status": "ok", "num_runs": 0, "created_files": []}
 
-    def fake_load_experiment(path: Path) -> object:
-        assert path == Path("configs/visualize.yaml")
-        return fake_experiment
+    def fake_from_yaml(path: Path) -> object:
+        assert Path(path) == Path("configs/visualize.yaml")
+        return fake_cfg
 
-    monkeypatch.setattr(visualize_cli, "load_experiment", fake_load_experiment)
+    monkeypatch.setattr(visualize_cli.Config, "from_yaml", staticmethod(fake_from_yaml))
+    monkeypatch.setattr(visualize_cli, "Experiment", lambda cfg: fake_experiment)
     monkeypatch.setattr(visualize_cli, "VisualizationOrchestrator", _FakeOrchestrator)
 
     exit_code = visualize_cli.main(["--config", "configs/visualize.yaml"])

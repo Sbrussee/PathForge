@@ -21,7 +21,7 @@ from pathbench.core.io.slide_artifacts import features as features_io
 from pathbench.core.io.slide_artifacts import tiles as tiles_io
 from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.slide_retrieval.hyperparams import HyperParam
-from pathbench.slide_retrieval.mean_rgb import (
+from pathbench.slide_retrieval.representation_strategies.mean_rgb import (
     _build_slide_processor,
     _resolve_sample_slide_paths,
     _slide_retrieval_artifact_path,
@@ -166,7 +166,7 @@ class _BaseSPLICEStrategy(BaseRetrievalRepresentationStrategy):
         )
 
 
-@register_representation_strategy("splice_rgb")
+@register_representation_strategy("splice-rgb")
 class SPLICERGB(_BaseSPLICEStrategy):
     """
     SPLICE RGB Mosaic Selection
@@ -208,7 +208,7 @@ class SPLICERGB(_BaseSPLICEStrategy):
         https://doi.org/10.48550/arXiv.2404.17704.
     """
 
-    name = "splice_rgb"
+    name = "splice-rgb"
 
     def run(
         self,
@@ -353,7 +353,7 @@ class SPLICERGB(_BaseSPLICEStrategy):
         }
 
 
-@register_representation_strategy("splice_features")
+@register_representation_strategy("splice-features")
 class SPLICEFeatures(_BaseSPLICEStrategy):
     """
     SPLICE Features Mosaic Selection
@@ -393,7 +393,7 @@ class SPLICEFeatures(_BaseSPLICEStrategy):
         https://doi.org/10.48550/arXiv.2404.17704.
     """
 
-    name = "splice_features"
+    name = "splice-features"
 
     def run(
         self,

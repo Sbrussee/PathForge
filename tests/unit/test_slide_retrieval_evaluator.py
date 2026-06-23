@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from pathbench.config.config import Config
-from pathbench.core.evaluation.tasks.slide_retrieval import (
+from pathbench.core.evaluation.slide_retrieval.adapter import (
     SlideRetrievalEvaluationAdapter,
 )
 from pathbench.core.experiments.base import Experiment
@@ -59,7 +59,7 @@ def _make_cfg(
                 "tile_px": [256],
                 "tile_mpp": [0.5],
                 "feature_extraction": ["resnet18"],
-                "retrieval_representation": ["sdm_features"],
+                "retrieval_representation": ["sdm-features"],
                 "search_strategy": ["yottixel"],
                 "mil": [],
             },
@@ -90,7 +90,7 @@ def _write_run_files(
                 "tiling_id": "256px_0.5mpp",
                 "aggregation_level": str(experiment.cfg.experiment.aggregation_level),
                 "feature_extraction": "resnet18",
-                "slide_representation": "sdm_features",
+                "slide_representation": "sdm-features",
                 "search_method": "yottixel",
             }
         ),
@@ -132,7 +132,7 @@ def test_slide_retrieval_evaluator_discovers_runs_and_loads_labels(
         tile_mpp_params={},
         feature_extraction="resnet18",
         feature_extraction_params={},
-        retrieval_representation="sdm_features",
+        retrieval_representation="sdm-features",
         retrieval_representation_params={},
         search_strategy="yottixel",
         search_strategy_params={},
@@ -167,7 +167,7 @@ def test_slide_retrieval_evaluator_reports_all_missing_labels(
         tile_mpp_params={},
         feature_extraction="resnet18",
         feature_extraction_params={},
-        retrieval_representation="sdm_features",
+        retrieval_representation="sdm-features",
         retrieval_representation_params={},
         search_strategy="yottixel",
         search_strategy_params={},
@@ -216,7 +216,7 @@ def test_slide_retrieval_evaluator_reports_inconsistent_aggregated_labels(
         tile_mpp_params={},
         feature_extraction="resnet18",
         feature_extraction_params={},
-        retrieval_representation="sdm_features",
+        retrieval_representation="sdm-features",
         retrieval_representation_params={},
         search_strategy="yottixel",
         search_strategy_params={},

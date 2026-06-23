@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import pathbench.cli.mean_rgb as mean_rgb_cli
+import pathbench.cli.retrieval_mean_rgb as mean_rgb_cli
 
 
 def _fake_cfg(*, dataset_name: str, artifacts_dir: Path) -> SimpleNamespace:
@@ -40,7 +40,7 @@ def test_main_uses_explicit_bag_ids_and_artifact_override(
     artifact_path.write_bytes(b"h5-placeholder")
 
     cfg = _fake_cfg(dataset_name="dataset-a", artifacts_dir=tmp_path / "unused")
-    monkeypatch.setattr(mean_rgb_cli, "load_config", lambda _: cfg)
+    monkeypatch.setattr(mean_rgb_cli.Config, "from_yaml", lambda _: cfg)
 
     calls: list[tuple[str, str, Path]] = []
 
@@ -90,7 +90,7 @@ def test_main_infers_bag_ids_from_config_when_not_provided(
     artifact_path.write_bytes(b"h5-placeholder")
 
     cfg = _fake_cfg(dataset_name="dataset-a", artifacts_dir=artifacts_dir)
-    monkeypatch.setattr(mean_rgb_cli, "load_config", lambda _: cfg)
+    monkeypatch.setattr(mean_rgb_cli.Config, "from_yaml", lambda _: cfg)
 
     seen_bag_ids: list[str] = []
 
@@ -122,7 +122,7 @@ def test_main_raises_for_unknown_dataset(tmp_path: Path, monkeypatch: pytest.Mon
     config_path.write_text("fake: config", encoding="utf-8")
 
     cfg = _fake_cfg(dataset_name="dataset-a", artifacts_dir=tmp_path / "artifacts")
-    monkeypatch.setattr(mean_rgb_cli, "load_config", lambda _: cfg)
+    monkeypatch.setattr(mean_rgb_cli.Config, "from_yaml", lambda _: cfg)
 
     with pytest.raises(ValueError, match="Dataset 'dataset-b' not found in config.datasets"):
         mean_rgb_cli.main(

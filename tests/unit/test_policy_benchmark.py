@@ -89,6 +89,28 @@ def benchmark_policy(monkeypatch: pytest.MonkeyPatch) -> BenchmarkingPolicy:
     return policy
 
 
+def test_benchmark_policy_does_not_build_feature_policy_eagerly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_task = _FakeTask()
+    feature_policy_init_calls: list[object] = []
+
+    monkeypatch.setattr(benchmark_mod, "import_task_modules", lambda: None)
+    monkeypatch.setattr(benchmark_mod, "build_task", lambda task_name, experiment: fake_task)
+
+    class _TrackingFeaturePolicy:
+        def __init__(self, experiment: object) -> None:
+            feature_policy_init_calls.append(experiment)
+
+    monkeypatch.setattr(benchmark_mod, "FeatureExtractionPolicy", _TrackingFeaturePolicy)
+
+    policy = BenchmarkingPolicy(_make_experiment())
+
+    assert feature_policy_init_calls == []
+    _ = policy.feature_policy
+    assert len(feature_policy_init_calls) == 1
+
+
 def test_group_combos_by_bag_source_groups_matching_feature_sources(
     benchmark_policy: BenchmarkingPolicy,
 ) -> None:

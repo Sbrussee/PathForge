@@ -16,13 +16,13 @@ from ._smoke_dataset import PreparedBagWorkspace
 @pytest.mark.smoke
 def test_benchmark_cli_importable():
     """The benchmark CLI module must be importable without side-effects."""
-    from pathbench.cli import benchmark  # noqa: F401
+    from pathbench.cli import benchmark_run  # noqa: F401
 
 
 @pytest.mark.smoke
 def test_benchmark_cli_missing_config_exits(monkeypatch, tmp_path):
     """main() with a nonexistent config path must raise FileNotFoundError."""
-    from pathbench.cli.benchmark import main
+    from pathbench.cli.benchmark_run import main
 
     monkeypatch.setattr(
         sys, "argv", ["pathbench-benchmark", "--config", str(tmp_path / "missing.yaml")]
@@ -50,7 +50,7 @@ def test_benchmark_cli_writes_summary_and_visualizations(
 
     Uses real VarMIL training on extracted GTEx bags and real plotly for visualizations.
     """
-    from pathbench.cli.benchmark import main
+    from pathbench.cli.benchmark_run import main
     from pathbench.cli.base import load_config
     from pathbench.core.datasets.bag_dataset import BagDataset
     from types import SimpleNamespace
@@ -99,6 +99,7 @@ def test_benchmark_cli_writes_summary_and_visualizations(
                 "  mil: [VarMIL]",
                 "  loss: [CrossEntropyLoss]",
                 "  batch_size: [1, 2]",
+                "  seeds: [1]",
             ]
         ),
         encoding="utf-8",
@@ -107,8 +108,8 @@ def test_benchmark_cli_writes_summary_and_visualizations(
     # Bypass real experiment loading (no real WSIs / H5 artifacts needed for
     # benchmarking policy test — we provide the dataset via monkeypatch below).
     monkeypatch.setattr(
-        "pathbench.cli.benchmark.load_experiment",
-        lambda path: SimpleNamespace(cfg=load_config(path)),
+        "pathbench.cli.benchmark_run.Experiment",
+        lambda cfg: SimpleNamespace(cfg=cfg),
     )
     monkeypatch.setattr(
         bench_mod,

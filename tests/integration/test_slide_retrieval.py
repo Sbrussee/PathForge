@@ -54,11 +54,13 @@ class _FakeSample:
         slide_ids: frozenset[str] | None = None,
         patient_id: str | None = None,
         case_id: str | None = None,
+        category: str | None = None,
     ) -> None:
         self.sample_id = sample_id
         self.slide_ids = slide_ids or frozenset({sample_id})
         self.patient_id = patient_id
         self.case_id = case_id
+        self.category = category
 
 
 class _FakeSlideRetrievalBagDataset(SlideRetrievalBagDataset):
@@ -145,7 +147,7 @@ class _FakeSearchStrategy:
     def build_database(self, database_representations) -> None:
         self.search_database = list(database_representations)
 
-    def search(self, *, query_representation, **kwargs) -> SearchResult:
+    def search(self, query_representation, **kwargs) -> SearchResult:
         hits = [
             SearchHit(sample_id=rep.sample_id, score=float(i + 1) * 0.1, rank=i + 1)
             for i, rep in enumerate(self.search_database)
@@ -634,10 +636,10 @@ def test_manifest_contains_required_fields(
     )
 
 
-def test_results_csv_has_correct_schema(
+def test_results_xlsx_has_correct_schema(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import csv
+    from openpyxl import load_workbook
     import pathbench.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
@@ -656,15 +658,16 @@ def test_results_csv_has_correct_schema(
         },
     )
 
-    csv_path = Path(result["output_dir"]) / "query_results.csv"
-    with csv_path.open("r", newline="") as fh:
-        reader = csv.DictReader(fh)
-        rows = list(reader)
-        fieldnames = reader.fieldnames
+    xlsx_path = Path(result["output_dir"]) / "query_results.xlsx"
+    workbook = load_workbook(xlsx_path, read_only=True)
+    rows = list(workbook.active.iter_rows(values_only=True))
+    workbook.close()
+    fieldnames = list(rows[0]) if rows else None
+    data_rows = rows[1:]
 
     assert fieldnames is not None
     assert "query_sample_id" in fieldnames
-    assert len(rows) == 1
+    assert len(data_rows) == 1
 
 
 # ---------------------------------------------------------------------------

@@ -1320,7 +1320,7 @@ class SISHSearch(BaseSearchStrategy):
             )
 
         if self._precompute is None:
-            from pathbench.slide_retrieval.sish_precompute import SISHPrecompute
+            from pathbench.slide_retrieval.search_strategies.strategies.sish.sish_precompute import SISHPrecompute
 
             self._precompute = SISHPrecompute(config=self.config)
 

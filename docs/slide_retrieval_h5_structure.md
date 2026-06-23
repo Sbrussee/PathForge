@@ -31,7 +31,15 @@ bags/{tile_id}/
 
   retrieval_representations/
     {representation_id}/
-      {entry_id}/
+      (for case/patient aggregation)
+        {entry_id}/
+          representation_type
+          metadata
+          params
+          embedding
+          additional_data/
+            {name}
+      (for slide aggregation)
         representation_type
         metadata
         params
@@ -43,6 +51,8 @@ bags/{tile_id}/
 Notes:
 - `tile_id` is the retrieval-layout field name and should receive the canonical `tiling_id` value.
 - `descriptors/` and `retrieval_representations/` are independent subtrees under the same tile group.
+- `entry_id` is only present for multi-slide aggregations (`case`/`patient`).
+  For `slide` aggregation, the stored entry root is the `{representation_id}` group itself.
 
 ---
 
@@ -57,14 +67,23 @@ Notes:
 - Built with:
   `build_retrieval_representation_id(feature_extraction, retrieval_representation, params)`
 - Format:
-  `{feature_extraction}__{retrieval_representation}__{params_hash16}`
+  `{feature_extraction}_{retrieval_representation}_{params_hash16}`
 
 ### 3.3 `entry_id`
 - Built with:
-  `build_retrieval_representation_entry_id(slide_ids)`
+  `build_retrieval_representation_entry_id(slide_ids, aggregation_level=...)`
 - Format:
-  `members_{sha1_16}`
+  `members_{sha1_16}` for `case`/`patient`
+- For `slide` aggregation this function returns `None`, so no `{entry_id}` group is used.
 - The hash is computed from sorted member slide IDs.
+- `entry_id` identifies the member set, but does not store the member slide IDs in reversible form.
+
+### 3.4 Aggregation membership source
+- The member slides used to build an aggregated retrieval entry come from `sample.slide_ids`.
+- For `slide` aggregation this is exactly one slide ID.
+- For `case` and `patient` aggregation this is the full grouped slide list for that sample.
+- Grouped samples are built from the bag dataset annotations and the grouped slide list is
+  sorted by `SLIDE_ID_COL` before artifact addressing.
 
 ---
 
@@ -90,7 +109,8 @@ Intended semantics:
 ## 5. Retrieval Representation Entry Section
 
 Entry root:
-- `bags/{tile_id}/retrieval_representations/{representation_id}/{entry_id}`
+- `bags/{tile_id}/retrieval_representations/{representation_id}/{entry_id}` for `case`/`patient`
+- `bags/{tile_id}/retrieval_representations/{representation_id}` for `slide`
 
 ### 5.1 Required-for-existence fields
 `retrieval_representation_entry_exists(...)` currently requires:
@@ -115,6 +135,11 @@ Type:
 Typical content:
 - Identity/provenance fields written via `RetrievalItemIdentity(...).to_dict()`
   in `save_slide_retrieval_representation(...)`.
+
+Current behavior:
+- `metadata` currently stores only the minimal persisted retrieval identity
+  (for example `sample_id`).
+- The explicit member slide list is not stored in `metadata`.
 
 ### 5.4 `params`
 Path:
@@ -149,6 +174,13 @@ Notes:
 - Optional.
 - On full entry rewrite, existing `additional_data/` is removed and re-created from provided values.
 
+Current retrieval-task usage:
+- `additional_data/source_slide_ids` stores the explicit ordered list of slide IDs that
+  were used to build the retrieval representation for this sample.
+- `additional_data/dataset_name` stores the source dataset name.
+- Because `entry_id` is hash-based, `additional_data/source_slide_ids` is the canonical
+  stored place to recover which slide IDs contributed to an aggregated entry.
+
 ---
 
 ## 6. Read/Write Contract (Current)
@@ -181,3 +213,5 @@ Available granular deletion:
 - `bag_id` in feature/benchmark grouping may represent a broader combo identity
   (`tiling_id__feature_name`), which is distinct from retrieval `tile_id`.
 - New readers should treat `representation_type` as optional unless/until promoted to required.
+- For aggregated (`case`/`patient`) entries, consumers should not attempt to infer member
+  slide IDs from `entry_id`; use `additional_data/source_slide_ids` when available.

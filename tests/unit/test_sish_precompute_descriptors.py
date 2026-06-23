@@ -9,7 +9,7 @@ from pathbench.core.io.slide_retrieval import descriptors as descriptors_io
 from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.sish_precompute import SISHPrecompute
+from pathbench.slide_retrieval.search_strategies.strategies.sish.sish_precompute import SISHPrecompute
 
 
 def test_sish_precompute_uses_selected_rows_from_stored_descriptors(tmp_path) -> None:

@@ -102,4 +102,3 @@ class VisualizationOrchestrator:
                 "Visualization subset CSV does not contain any non-empty slide IDs."
             )
         return subset_ids
-

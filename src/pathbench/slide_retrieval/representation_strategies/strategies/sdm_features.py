@@ -31,7 +31,7 @@ from pathbench.slide_retrieval.representation_strategies.types import (
 )
 
 
-@register_representation_strategy("sdm_features")
+@register_representation_strategy("sdm-features")
 class SDMFeatures(BaseRetrievalRepresentationStrategy):
     """
     Selection of Distinct Morphologies (SDM) retrieval representation.
@@ -62,7 +62,7 @@ class SDMFeatures(BaseRetrievalRepresentationStrategy):
         >>> # sample must expose sample_id and artifact_paths in real use.
     """
 
-    name = "sdm_features"
+    name = "sdm-features"
     supported_feature_levels = frozenset({"patch"})
     output_representation_kind = "patch_vector"
 

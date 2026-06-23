@@ -4,6 +4,7 @@ import csv
 from pathlib import Path
 
 from pathbench.slide_retrieval.io import (
+    build_slide_retrieval_representation_root,
     build_slide_retrieval_output_root,
     write_metrics_csv,
 )
@@ -76,7 +77,22 @@ def test_write_metrics_csv_writes_flat_metric_rows(tmp_path: Path) -> None:
     ]
 
 
-def test_build_slide_retrieval_output_root_lowercases_name_components(
+def test_build_slide_retrieval_representation_root_lowercases_name_components(
+    tmp_path: Path,
+) -> None:
+    output_root = build_slide_retrieval_representation_root(
+        project_root=str(tmp_path),
+        tiling_id="256px_0.5mpp",
+        feature_name="UNI2_ColorNorm",
+        slide_representation="Yottixel_features",
+    )
+
+    assert str(output_root).endswith(
+        "eval_slide_retrieval/256px_0.5mpp_uni2_colornorm/yottixel-features"
+    )
+
+
+def test_build_slide_retrieval_output_root_places_search_under_representation(
     tmp_path: Path,
 ) -> None:
     output_root = build_slide_retrieval_output_root(
@@ -88,5 +104,5 @@ def test_build_slide_retrieval_output_root_lowercases_name_components(
     )
 
     assert str(output_root).endswith(
-        "eval/slide_retrieval/256px_0.5mpp_uni2_colornorm/yottixel_features_retccl"
+        "eval_slide_retrieval/256px_0.5mpp_uni2_colornorm/yottixel-features/retccl"
     )

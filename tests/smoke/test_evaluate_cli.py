@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-import pathbench.cli.evaluate as evaluate_cli
+import pathbench.cli.evaluate_run as evaluate_cli
 from pathbench.config.config import Config
 from pathbench.core.experiments.base import Experiment
 from pathbench.slide_retrieval.io import (
@@ -63,7 +63,7 @@ def test_smoke_evaluate_cli_writes_metrics_json(tmp_path: Path) -> None:
                     "tile_px": [256],
                     "tile_mpp": [0.5],
                     "feature_extraction": ["resnet18"],
-                    "retrieval_representation": ["sdm_features"],
+                    "retrieval_representation": ["sdm-features"],
                     "search_strategy": ["yottixel"],
                     "mil": [],
                 },
@@ -79,7 +79,7 @@ def test_smoke_evaluate_cli_writes_metrics_json(tmp_path: Path) -> None:
         project_root=str(experiment.project_root),
         tiling_id="256px_0.5mpp",
         feature_name="resnet18",
-        slide_representation="sdm_features",
+        slide_representation="sdm-features",
         search_method="yottixel",
     )
     run_dir = output_root / "run_001"
@@ -90,7 +90,7 @@ def test_smoke_evaluate_cli_writes_metrics_json(tmp_path: Path) -> None:
                 "tiling_id": "256px_0.5mpp",
                 "aggregation_level": "slide",
                 "feature_extraction": "resnet18",
-                "slide_representation": "sdm_features",
+                "slide_representation": "sdm-features",
                 "search_method": "yottixel",
             }
         ),
@@ -108,7 +108,7 @@ def test_smoke_evaluate_cli_writes_metrics_json(tmp_path: Path) -> None:
 
     exit_code = evaluate_cli.main(["--config", str(config_path)])
 
-    metrics_path = run_dir / "evaluation" / "metrics.json"
+    metrics_path = run_dir / "evaluation_metrics.json"
     assert exit_code == 0
     assert metrics_path.is_file()
 

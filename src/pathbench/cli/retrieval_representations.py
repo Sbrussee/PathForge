@@ -1,30 +1,27 @@
 from __future__ import annotations
 
-import argparse
 import logging
+from pathlib import Path
 from typing import Any
 
+import dask
 import numpy as np
+import typer
 from torch.utils.data import DataLoader
 
-from .base import (
-    add_config_argument,
-    add_log_level_argument,
-    configure_logging,
-    enable_dask_query_planning,
-    load_experiment,
-)
 from ..core.tasks.slide_retrieval import (
     SlideRetrievalTask,
     _retrieval_batch_collate,
 )
+from ..config.config import Config
+from ..core.experiments.base import Experiment
 from ..core.experiments.combo_ids import build_feature_name, build_tiling_id
 from ..core.experiments.combinations import ComboConfig, build_combinations
 from ..core.features.utils import find_slides_with_missing_features
 from ..core.io.slide_artifacts import tiles as tiles_io
 from ..core.io.slide_artifacts.base import FileHandleH5
 from ..policy.benchmarking import BenchmarkingPolicy
-from ..slide_retrieval.mean_rgb import resolve_sample_patch_mean_rgb
+from ..slide_retrieval.representation_strategies.mean_rgb import resolve_sample_patch_mean_rgb
 from ..slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
 )
@@ -32,10 +29,11 @@ from ..slide_retrieval.representation_strategies.storage import (
     build_retrieval_representation_id,
 )
 from ..utils.constants import DATASET_COL, SLIDE_ID_COL
+from .common import LOG_LEVEL_CHOICES, configure_logging
 
 logger = logging.getLogger(__name__)
 _VALID_RETRIEVAL_USES = {"reference", "query", "query_reference"}
-_RGB_MEAN_REPRESENTATIONS = {"yottixel_rgb", "splice_rgb"}
+_RGB_MEAN_REPRESENTATIONS = {"yottixel-rgb", "splice-rgb"}
 _MISSING_MEAN_RGB_SLIDE_ERROR = (
     "Missing stored patch mean RGB descriptors and no source slide is available"
 )
@@ -108,7 +106,6 @@ def _materialize_representations_for_combo(
     representation_name = str(combo_cfg.get("retrieval_representation"))
     search_strategy_name = str(combo_cfg.get("search_strategy"))
     num_workers = int(getattr(task.cfg.experiment, "num_workers", 0) or 0)
-    retrieval_batch_size = max(1, num_workers)
 
     combination_is_valid, reason = task._validate_combination_compatibility(
         datasets_by_use=datasets_by_use,
@@ -127,6 +124,22 @@ def _materialize_representations_for_combo(
         bag_id=tiling_id,
         config=getattr(task.experiment, "cfg", None),
     )
+    prepare_for_combo = getattr(representation_strategy, "prepare_for_combo", None)
+    if callable(prepare_for_combo):
+        prepare_for_combo(
+            combo_cfg=combo_cfg,
+            feature_name=feature_name,
+            tiling_id=tiling_id,
+        )
+    loader_workers = task._resolve_representation_loader_workers(
+        representation_strategy=representation_strategy,
+        default_workers=num_workers,
+    )
+    materialization_workers = task._resolve_representation_workers(
+        representation_strategy=representation_strategy,
+        default_workers=max(1, num_workers),
+    )
+    retrieval_batch_size = max(1, materialization_workers)
     representation_id = build_retrieval_representation_id(
         feature_extraction=feature_name,
         retrieval_representation=representation_name,
@@ -171,14 +184,14 @@ def _materialize_representations_for_combo(
                     missing_subset,
                     batch_size=retrieval_batch_size,
                     shuffle=False,
-                    num_workers=num_workers,
+                    num_workers=loader_workers,
                     collate_fn=_retrieval_batch_collate,
                 )
                 created_retrieval_representations, creation_errors_by_sample = (
                     task.compute_retrieval_representations(
                         bag_dataset=bag_dataset,
                         retrieval_loader=retrieval_loader,
-                        batch_thread_workers=retrieval_batch_size,
+                        batch_thread_workers=materialization_workers,
                         combo_cfg=combo_cfg,
                         representation_strategy=representation_strategy,
                         representation_id=representation_id,
@@ -295,22 +308,21 @@ def _run_representation_precompute(
     combinations_by_bag_id = policy._group_combos_by_bag_source(combinations)
     annotations_df = policy.experiment.load_annotations()
     num_runs = 0
+    if not skip_missing_features:
+        logger.info(
+            "[Benchmark] Representation precompute is artifact-only; missing "
+            "features will be skipped instead of triggering slide-based "
+            "feature extraction."
+        )
     for bag_id, combinations_for_bag_id in combinations_by_bag_id.items():
         bag_source_combo = combinations_for_bag_id[0]
         logger.info("[Benchmark] Representation-only bag group | bag_id=%s", bag_id)
 
-        if skip_missing_features:
-            bag_annotations_df = _filter_annotations_with_existing_features(
-                policy=policy,
-                combo_cfg=bag_source_combo,
-                annotations_df=annotations_df,
-            )
-        else:
-            policy.ensure_bag_features_exist(
-                combo_cfg=bag_source_combo,
-                annotations_df=annotations_df,
-            )
-            bag_annotations_df = annotations_df
+        bag_annotations_df = _filter_annotations_with_existing_features(
+            policy=policy,
+            combo_cfg=bag_source_combo,
+            annotations_df=annotations_df,
+        )
 
         bag_datasets = policy.build_bag_datasets_for_combo(
             combo_cfg=bag_source_combo,
@@ -329,31 +341,21 @@ def _run_representation_precompute(
     return {"status": "representations_done", "num_runs": num_runs}
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run only the slide-retrieval representation materialization stage."""
-    parser = argparse.ArgumentParser(
-        description="Slide retrieval representation precompute workflow",
-    )
-    add_config_argument(parser)
-    add_log_level_argument(parser)
-    parser.add_argument(
-        "--skip-missing-features",
-        action="store_true",
-        help=(
-            "Skip slides with missing features instead of running feature extraction. "
-            "Only representations for slides with existing features will be created."
-        ),
-    )
-    args = parser.parse_args(argv)
-
-    configure_logging(args.log_level)
+def run_slide_retrieval_representations(
+    *,
+    config: Path,
+    log_level: str = "INFO",
+    skip_missing_features: bool = False,
+) -> int:
+    """Precompute slide-retrieval representations for one YAML config."""
+    config_path = Path(config)
+    configure_logging(log_level)
     logger.info("Starting slide-retrieval representation precompute CLI")
-    logger.info("Using config: %s", args.config)
+    logger.info("Using config: %s", config_path)
 
-    enable_dask_query_planning()
+    dask.config.set({"dataframe.query-planning": True})
 
-    experiment = load_experiment(args.config)
-    cfg = experiment.cfg
+    cfg = Config.from_yaml(config_path)
     if cfg.experiment.mode != "benchmark":
         raise ValueError(
             "Representation precompute CLI requires experiment.mode='benchmark'. "
@@ -365,14 +367,72 @@ def main(argv: list[str] | None = None) -> int:
             f"Got {cfg.experiment.task!r}."
         )
 
+    experiment = Experiment(cfg)
     policy = BenchmarkingPolicy(experiment)
 
     output = _run_representation_precompute(
         policy,
-        skip_missing_features=bool(args.skip_missing_features),
+        skip_missing_features=bool(skip_missing_features),
     )
     logger.info("Representation precompute finished with status: %s", output)
     return 0
+
+
+def run_command(
+    config: Path = typer.Option(..., "--config", help="Path to YAML config"),
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        help="Logging level.",
+        show_default=True,
+    ),
+    skip_missing_features: bool = typer.Option(
+        False,
+        "--skip-missing-features",
+        help=(
+            "Deprecated compatibility flag. Representation precompute is now "
+            "always artifact-only and skips slides with missing features."
+        ),
+    ),
+) -> None:
+    """Typer command that precomputes slide-retrieval representations from the provided options."""
+    raise SystemExit(
+        run_slide_retrieval_representations(
+            config=config,
+            log_level=log_level,
+            skip_missing_features=skip_missing_features,
+        )
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run only the slide-retrieval representation materialization stage."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Slide retrieval representation precompute workflow",
+    )
+    parser.add_argument("--config", required=True, type=Path, help="Path to YAML config")
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=LOG_LEVEL_CHOICES,
+        help="Logging level (default: INFO)",
+    )
+    parser.add_argument(
+        "--skip-missing-features",
+        action="store_true",
+        help=(
+            "Deprecated compatibility flag. Representation precompute is now "
+            "always artifact-only and skips slides with missing features."
+        ),
+    )
+    args = parser.parse_args(argv)
+    return run_slide_retrieval_representations(
+        config=args.config,
+        log_level=args.log_level,
+        skip_missing_features=args.skip_missing_features,
+    )
 
 
 if __name__ == "__main__":

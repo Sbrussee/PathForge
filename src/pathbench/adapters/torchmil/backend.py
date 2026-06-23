@@ -204,15 +204,20 @@ class TorchMILBackendModel(MILModelBase):
         return normalized
 
     def _call_backend(self, batch: BagBatch | dict[str, Any]) -> Any:
-        routed = {key: batch[key] for key in ("X", "mask", "coords", "adj", "Y") if key in batch}
+        # Route only model inputs (never the label ``Y``). Modern TorchMIL
+        # models (>=1.0) take the bag features ``X`` as a positional tensor with
+        # optional ``mask``/``coords``/``adj`` keyword arguments.
+        routed = {key: batch[key] for key in ("X", "mask", "coords", "adj") if key in batch}
+        bag = routed["X"]
+        extra = {key: value for key, value in routed.items() if key != "X"}
         try:
-            return self.backend_model(routed)
+            return self.backend_model(bag, **extra)
         except TypeError:
-            kwargs = {key: value for key, value in routed.items() if key != "X"}
+            # Fallbacks for backends that consume the full mapping or only ``X``.
             try:
-                return self.backend_model(routed["X"], **kwargs)
-            except TypeError:
-                return self.backend_model(routed["X"])
+                return self.backend_model(routed)
+            except (TypeError, AttributeError):
+                return self.backend_model(bag)
 
     def get_learnable_parameters(self) -> Iterable[torch.nn.Parameter]:
         return (param for param in self.parameters() if param.requires_grad)

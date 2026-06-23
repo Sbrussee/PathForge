@@ -14,13 +14,18 @@ from pathbench.config.config import DatasetEntry
 from pathbench.core.datasets.wsi_dataset import WSI
 from pathbench.core.experiments.base import Experiment
 from pathbench.core.io.slide_artifacts.base import FileHandleH5
+from pathbench.core.io.slide_artifacts import tissue as tissue_io
 from pathbench.core.io.slide_artifacts import thumbnail as thumbnail_io
 from pathbench.core.io.slide_artifacts import tiles as tiles_io
 from pathbench.core.slide_processing.base import SlideProcessorBase
-from pathbench.core.visualization.thumbnail import decode_thumbnail_image
+from pathbench.core.visualization.thumbnail import (
+    crop_thumbnail_to_tissue_bounds,
+    decode_thumbnail_image,
+)
 from pathbench.slide_retrieval.io import (
     load_slide_retrieval_representation,
     read_slide_retrieval_results_csv,
+    resolve_slide_retrieval_results_path,
 )
 from pathbench.slide_retrieval.representation_strategies.storage import (
     build_retrieval_representation_artifact_path,
@@ -98,12 +103,12 @@ class SlideRetrievalVisualizationService:
     Inputs:
     - `experiment`: configured experiment used to load annotations and backends.
     - `run_dir`: one concrete retrieval run directory containing `manifest.json`
-      and `query_results.csv`.
+      and ranked results (`query_results.xlsx` or legacy `query_results.csv`).
     - `manifest`: parsed retrieval manifest for the run.
 
     Returns:
     - Service object that can render configured retrieval visualizations into
-      `run_dir / "evaluation" / "vis" / <visualization_name>`.
+      `run_dir / f"vis_{visualization_name}"`.
 
     Example:
     ```python
@@ -125,12 +130,19 @@ class SlideRetrievalVisualizationService:
         experiment: Experiment,
         run_dir: Path,
         manifest: dict[str, Any],
+        visualization_root: Path | None = None,
     ) -> None:
         self.experiment = experiment
         self.cfg = experiment.cfg
         self.run_dir = Path(run_dir).resolve()
+        self.visualization_root = (
+            Path(visualization_root).resolve()
+            if visualization_root is not None
+            else None
+        )
         self.manifest = dict(manifest)
         self.annotations_df = self.experiment.load_annotations().copy()
+        self.slide_retrieval_cfg = self.cfg.slide_retrieval
         self.dataset_cfg_by_name = {
             str(ds_cfg.name): ds_cfg for ds_cfg in self.cfg.datasets
         }
@@ -167,21 +179,33 @@ class SlideRetrievalVisualizationService:
                 f"{sorted(_SUPPORTED_VISUALIZATIONS)}"
             )
 
-        results = read_slide_retrieval_results_csv(self.run_dir / "query_results.csv")
         created_files: list[Path] = []
 
         if _RESULTS_VIS_NAME in requested_visualizations:
-            created_files.extend(
-                self._render_retrieval_results_visualization(
-                    results=results,
-                    subset_ids=subset_ids,
-                )
+            results_path = resolve_slide_retrieval_results_path(
+                self.run_dir / "query_results.xlsx"
             )
+            if not results_path.is_file():
+                logger.warning(
+                    "Skipping retrieval-results visualization because no ranked-results file was found at '%s'.",
+                    results_path,
+                )
+            else:
+                results = read_slide_retrieval_results_csv(results_path)
+                created_files.extend(
+                    self._render_retrieval_results_visualization(
+                        results=results,
+                        subset_ids=subset_ids,
+                    )
+                )
 
         if _REPRESENTATION_VIS_NAME in requested_visualizations:
+            results_path = resolve_slide_retrieval_results_path(
+                self.run_dir / "query_results.xlsx"
+            )
             created_files.extend(
                 self._render_retrieval_representation_visualization(
-                    results=results,
+                    results=None if not results_path.is_file() else read_slide_retrieval_results_csv(results_path),
                     subset_ids=subset_ids,
                 )
             )
@@ -195,7 +219,7 @@ class SlideRetrievalVisualizationService:
         subset_ids: set[str] | None,
     ) -> list[Path]:
         output_dir = self._ensure_output_dir(_RESULTS_VIS_NAME)
-        top_k = min(10, int(self.cfg.evaluation.visualization_top_k))
+        top_k = min(10, int(self.slide_retrieval_cfg.visualization_top_k))
         selected_results = self._select_query_results(results, subset_ids=subset_ids)
 
         created_files: list[Path] = []
@@ -246,7 +270,7 @@ class SlideRetrievalVisualizationService:
     def _render_retrieval_representation_visualization(
         self,
         *,
-        results: list[SearchResult],
+        results: list[SearchResult] | None,
         subset_ids: set[str] | None,
     ) -> list[Path]:
         output_dir = self._ensure_output_dir(_REPRESENTATION_VIS_NAME)
@@ -291,7 +315,9 @@ class SlideRetrievalVisualizationService:
                 continue
 
             thumbnail_image, thumbnail_spec = thumbnail_and_spec
-            coords_array, _tiling_spec = coords_and_spec
+            coords_array, tiling_spec = coords_and_spec
+            base_mpp = self._load_base_mpp(asset)
+            tissue_polygons = self._load_tissue_polygons(asset)
             group_ids = self._coerce_optional_array(
                 representation_payload.additional_data.get("group_ids")
             )
@@ -303,15 +329,24 @@ class SlideRetrievalVisualizationService:
                 selected_coords=selected_coords,
                 coords_array=coords_array,
             )
+            patch_group_ids = self._resolve_selected_patch_group_ids(
+                selected_coords=selected_coords,
+                coords_array=coords_array,
+                group_ids=group_ids,
+            )
 
             rendered = render_retrieval_representation_image(
                 thumbnail_image=thumbnail_image,
                 downscale_x=float(thumbnail_spec["downscale_x"]),
                 downscale_y=float(thumbnail_spec["downscale_y"]),
                 coords_array=coords_array,
+                tiling_spec=tiling_spec,
+                base_mpp=base_mpp,
                 group_ids=group_ids,
                 selected_coords=selected_coords,
+                tissue_polygons=tissue_polygons,
                 patch_strip_images=patch_strip_images,
+                patch_group_ids=patch_group_ids,
             )
             output_path = output_dir / f"{self._safe_filename(asset.slide_id)}.png"
             rendered.save(output_path, format="PNG")
@@ -336,14 +371,23 @@ class SlideRetrievalVisualizationService:
     def _select_representation_slide_ids(
         self,
         *,
-        results: list[SearchResult],
+        results: list[SearchResult] | None,
         subset_ids: set[str] | None,
     ) -> list[str]:
         if subset_ids is not None:
             return sorted(str(slide_id) for slide_id in subset_ids)
 
-        # Without an explicit subset, default to visualizing the query slides only.
-        return sorted({str(result.query_sample_id) for result in results})
+        if results is not None:
+            # Without an explicit subset, default to visualizing the query slides only.
+            return sorted({str(result.query_sample_id) for result in results})
+
+        return sorted(
+            {
+                str(slide_id).strip()
+                for slide_id in self.annotations_df[SLIDE_ID_COL].tolist()
+                if str(slide_id).strip()
+            }
+        )
 
     def _resolve_slide_asset(self, slide_id: str) -> SlideVisualizationAsset | None:
         normalized_slide_id = str(slide_id).strip()
@@ -381,7 +425,7 @@ class SlideRetrievalVisualizationService:
         )
 
     def _build_metadata_lines(self, asset: SlideVisualizationAsset) -> list[str]:
-        configured_columns = list(self.cfg.evaluation.visualization_metadata_columns)
+        configured_columns = list(self.slide_retrieval_cfg.visualization_metadata_columns)
         lines = [f"slide: {asset.slide_id}"]
         for column_name in configured_columns:
             normalized_name = str(column_name).strip()
@@ -400,7 +444,13 @@ class SlideRetrievalVisualizationService:
                 title=asset.slide_id,
                 message="thumbnail unavailable",
             )
-        return thumbnail_and_spec[0]
+        thumbnail_image, thumbnail_spec = thumbnail_and_spec
+        return crop_thumbnail_to_tissue_bounds(
+            thumbnail_image,
+            tissue_polygons=self._load_tissue_polygons(asset),
+            downscale_x=float(thumbnail_spec["downscale_x"]),
+            downscale_y=float(thumbnail_spec["downscale_y"]),
+        )
 
     def _load_thumbnail_and_spec(
         self,
@@ -467,6 +517,46 @@ class SlideRetrievalVisualizationService:
             coords_array = tiles_io.read_coords(slide_artifact, tiling_id)
             tiling_spec = tiles_io.read_tiling_spec(slide_artifact, tiling_id)
         return coords_array, tiling_spec
+
+    def _load_tissue_polygons(
+        self,
+        asset: SlideVisualizationAsset,
+    ) -> list[Any] | None:
+        if not asset.artifact_path.is_file():
+            return None
+
+        with FileHandleH5(asset.artifact_path, mode="r") as slide_artifact:
+            if not tissue_io.tissue_exists(slide_artifact):
+                return None
+            return tissue_io.read_tissue(slide_artifact)
+
+    def _load_base_mpp(
+        self,
+        asset: SlideVisualizationAsset,
+    ) -> float | None:
+        if asset.slide_path is None or not asset.slide_path.exists():
+            return None
+
+        slide_processor = self._build_processor()
+        wsi = WSI(
+            slide=asset.slide_id,
+            patient=asset.patient_id,
+            category=asset.category,
+            path=asset.slide_path,
+            artifact_path=asset.artifact_path,
+            fallback_mpp=asset.fallback_mpp,
+        )
+        slide_processor.load_wsi(wsi)
+        try:
+            return float(slide_processor.get_base_mpp(wsi))
+        except Exception:
+            logger.warning(
+                "Failed to resolve base_mpp for slide '%s' while rendering retrieval representation.",
+                asset.slide_id,
+            )
+            return None
+        finally:
+            slide_processor.close_wsi(wsi)
 
     def _load_representation_payload(self, asset: SlideVisualizationAsset) -> Any | None:
         retrieval_artifact_path = build_retrieval_representation_artifact_path(
@@ -535,21 +625,133 @@ class SlideRetrievalVisualizationService:
                     height = int(coord_row[3])
                     level = int(coord_row[4])
 
-                patch_array = slide_processor.read_patch_region(
-                    wsi,
-                    int(coord[0]),
-                    int(coord[1]),
-                    width,
-                    height,
-                    level,
-                )
-                patch_images.append(
-                    Image.fromarray(np.asarray(patch_array, dtype=np.uint8)).convert("RGB")
-                )
+                try:
+                    patch_array = slide_processor.read_patch_region(
+                        wsi,
+                        int(coord[0]),
+                        int(coord[1]),
+                        width,
+                        height,
+                        level,
+                    )
+                    patch_images.append(
+                        Image.fromarray(
+                            np.asarray(patch_array, dtype=np.uint8)
+                        ).convert("RGB")
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Using unreadable-patch placeholder for slide '%s' at "
+                        "x=%s, y=%s, width=%s, height=%s, level=%s: %s",
+                        asset.slide_id,
+                        int(coord[0]),
+                        int(coord[1]),
+                        width,
+                        height,
+                        level,
+                        exc,
+                    )
+                    patch_images.append(
+                        self._build_unreadable_patch_placeholder(
+                            width=width,
+                            height=height,
+                        )
+                    )
+                    slide_processor.close_wsi(wsi)
+                    try:
+                        slide_processor.load_wsi(wsi)
+                    except Exception:
+                        logger.warning(
+                            "Could not reopen slide '%s' after an unreadable "
+                            "patch; remaining patch-strip entries will use "
+                            "placeholders.",
+                            asset.slide_id,
+                        )
+                        remaining_count = len(np.asarray(selected_coords)) - len(
+                            patch_images
+                        )
+                        for _ in range(max(0, remaining_count)):
+                            patch_images.append(
+                                self._build_unreadable_patch_placeholder(
+                                    width=width,
+                                    height=height,
+                                )
+                            )
+                        break
         finally:
             slide_processor.close_wsi(wsi)
 
         return patch_images
+
+    def _build_unreadable_patch_placeholder(
+        self,
+        *,
+        width: int,
+        height: int,
+    ) -> Image.Image:
+        placeholder_width = max(1, int(width))
+        placeholder_height = max(1, int(height))
+        image = Image.new(
+            "RGB",
+            (placeholder_width, placeholder_height),
+            (196, 57, 45),
+        )
+        draw = ImageDraw.Draw(image)
+        draw.rectangle(
+            [(0, 0), (placeholder_width - 1, placeholder_height - 1)],
+            outline=(122, 31, 26),
+            width=max(1, min(placeholder_width, placeholder_height) // 32),
+        )
+        draw.line(
+            [(0, 0), (placeholder_width - 1, placeholder_height - 1)],
+            fill=(255, 178, 142),
+            width=max(1, min(placeholder_width, placeholder_height) // 24),
+        )
+        draw.line(
+            [(0, placeholder_height - 1), (placeholder_width - 1, 0)],
+            fill=(255, 178, 142),
+            width=max(1, min(placeholder_width, placeholder_height) // 24),
+        )
+        label = "unreadable"
+        font = ImageFont.load_default()
+        text_bbox = draw.textbbox((0, 0), label, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        text_x = max(2, (placeholder_width - text_width) // 2)
+        text_y = max(2, (placeholder_height - text_height) // 2)
+        draw.rectangle(
+            [
+                (text_x - 4, text_y - 3),
+                (text_x + text_width + 4, text_y + text_height + 3),
+            ],
+            fill=(122, 31, 26),
+        )
+        draw.text((text_x, text_y), label, fill=(255, 244, 237), font=font)
+        return image
+
+    def _resolve_selected_patch_group_ids(
+        self,
+        *,
+        selected_coords: np.ndarray | None,
+        coords_array: np.ndarray,
+        group_ids: np.ndarray | None,
+    ) -> list[int | None]:
+        if (
+            selected_coords is None
+            or selected_coords.size == 0
+            or group_ids is None
+            or coords_array.shape[0] != int(group_ids.shape[0])
+        ):
+            return []
+
+        coords_lookup = {
+            (int(row[0]), int(row[1])): int(group_ids[idx])
+            for idx, row in enumerate(np.asarray(coords_array))
+        }
+        return [
+            coords_lookup.get((int(coord[0]), int(coord[1])))
+            for coord in np.asarray(selected_coords)
+        ]
 
     def _build_processor(self) -> SlideProcessorBase:
         if self._slide_processor is not None:
@@ -569,7 +771,11 @@ class SlideRetrievalVisualizationService:
         return self._slide_processor
 
     def _ensure_output_dir(self, visualization_name: str) -> Path:
-        output_dir = self.run_dir / "evaluation" / "vis" / visualization_name
+        visualization_dir_name = f"vis_{visualization_name}"
+        if self.visualization_root is not None:
+            output_dir = self.visualization_root / visualization_dir_name
+        else:
+            output_dir = self.run_dir / visualization_dir_name
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
 

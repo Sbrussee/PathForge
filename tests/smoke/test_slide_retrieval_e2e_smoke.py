@@ -12,7 +12,6 @@ These tests exercise more complex scenarios than the basic benchmark smoke test:
 
 from __future__ import annotations
 
-import csv
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -20,6 +19,20 @@ from unittest.mock import MagicMock
 import pytest
 
 from pathbench.core.experiments.combinations import ComboConfig
+
+
+def _read_query_results_xlsx(path: Path) -> tuple[list[str] | None, list[dict[str, object]]]:
+    """Read a ranked query-results Excel workbook into (fieldnames, row dicts)."""
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(path, read_only=True)
+    rows = list(workbook.active.iter_rows(values_only=True))
+    workbook.close()
+    if not rows:
+        return None, []
+    fieldnames = [str(value) for value in rows[0]]
+    records = [dict(zip(fieldnames, row)) for row in rows[1:]]
+    return fieldnames, records
 from pathbench.core.tasks.slide_retrieval import SlideRetrievalTask
 from pathbench.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
@@ -45,7 +58,7 @@ def _make_task(tmp_path: Path, *, exclusion_level: str = "patient") -> SlideRetr
 
 
 def _make_combo(
-    *, representation: str = "hshr_features", search: str = "yottixel"
+    *, representation: str = "hshr-features", search: str = "yottixel"
 ) -> ComboConfig:
     return ComboConfig(
         tile_px=224,
@@ -193,9 +206,9 @@ def test_smoke_multi_combo_grid_produces_separate_run_dirs(
     }
 
     combos = [
-        _make_combo(representation="hshr_features", search="yottixel"),
-        _make_combo(representation="sdm_features", search="yottixel"),
-        _make_combo(representation="hshr_features", search="retccl"),
+        _make_combo(representation="hshr-features", search="yottixel"),
+        _make_combo(representation="sdm-features", search="yottixel"),
+        _make_combo(representation="hshr-features", search="retccl"),
     ]
 
     task = _make_task(tmp_path)
@@ -273,7 +286,7 @@ def test_smoke_query_reference_roundtrip(
             metadata,
             step_name="smoke_retrieval_query_reference_roundtrip",
             final={
-                "query_results_csv": output_dir / "query_results.csv",
+                "query_results_xlsx": output_dir / "query_results.xlsx",
                 "manifest_json": output_dir / "manifest.json",
             },
         )
@@ -281,9 +294,7 @@ def test_smoke_query_reference_roundtrip(
     assert result["num_queries"] == pool_dataset.num_bags
     assert result["num_reference_items"] == pool_dataset.num_bags
 
-    csv_path = output_dir / "query_results.csv"
-    with csv_path.open("r", newline="") as fh:
-        rows = list(csv.DictReader(fh))
+    _, rows = _read_query_results_xlsx(output_dir / "query_results.xlsx")
     assert len(rows) == pool_dataset.num_bags
 
 
@@ -488,11 +499,11 @@ def test_smoke_manifest_and_csv_are_well_formed(
         metadata={
             "num_queries": qry_dataset.num_bags,
             "num_reference": ref_dataset.num_bags,
-            "representation": "hshr_features",
+            "representation": "hshr-features",
         },
     ) as metadata:
         result = task.execute(
-            combo_cfg=_make_combo(representation="hshr_features", search="yottixel"),
+            combo_cfg=_make_combo(representation="hshr-features", search="yottixel"),
             datasets_by_use={
                 "reference": [ref_dataset],
                 "query": [qry_dataset],
@@ -504,13 +515,13 @@ def test_smoke_manifest_and_csv_are_well_formed(
             step_name="smoke_retrieval_manifest_csv_well_formed",
             final={
                 "manifest_json": output_dir / "manifest.json",
-                "query_results_csv": output_dir / "query_results.csv",
+                "query_results_xlsx": output_dir / "query_results.xlsx",
             },
         )
 
     manifest = json.loads((output_dir / "manifest.json").read_text())
 
-    assert manifest["slide_representation"] == "hshr_features"
+    assert manifest["slide_representation"] == "hshr-features"
     assert manifest["search_method"] == "yottixel"
     assert manifest["num_queries"] == qry_dataset.num_bags
     assert manifest["num_reference_items"] == ref_dataset.num_bags
@@ -518,12 +529,10 @@ def test_smoke_manifest_and_csv_are_well_formed(
     assert isinstance(manifest["representation_id"], str)
     assert len(manifest["representation_id"]) > 0
 
-    with (output_dir / "query_results.csv").open("r", newline="") as fh:
-        reader = csv.DictReader(fh)
-        rows = list(reader)
+    fieldnames, rows = _read_query_results_xlsx(output_dir / "query_results.xlsx")
 
-    assert reader.fieldnames is not None
-    assert "query_sample_id" in reader.fieldnames
+    assert fieldnames is not None
+    assert "query_sample_id" in fieldnames
     assert len(rows) == qry_dataset.num_bags
     ref_ids = {ref_dataset.get_sample(i).sample_id for i in range(ref_dataset.num_bags)}
     qry_ids = {qry_dataset.get_sample(i).sample_id for i in range(qry_dataset.num_bags)}

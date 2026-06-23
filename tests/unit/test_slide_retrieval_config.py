@@ -19,6 +19,9 @@ def test_slide_retrieval_config_does_not_require_mil(tmp_path: Path) -> None:
                 "task": "slide_retrieval",
                 "mode": "benchmark",
             },
+            "slide_retrieval": {
+                "search_workers": 4,
+            },
             "datasets": [
                 {
                     "name": "train",
@@ -37,6 +40,8 @@ def test_slide_retrieval_config_does_not_require_mil(tmp_path: Path) -> None:
     )
 
     assert cfg.experiment.task == "slide_retrieval"
+    assert cfg.slide_retrieval is not None
+    assert cfg.slide_retrieval.search_workers == 4
 
 
 def test_slide_retrieval_config_rejects_mil_dataset_use_semantics(tmp_path: Path) -> None:
@@ -95,8 +100,8 @@ def test_slide_retrieval_config_accepts_strategy_hyperparams(tmp_path: Path) -> 
                 "tile_mpp": [0.5],
                 "feature_extraction": ["resnet18"],
                 "retrieval_representation": [
-                    "sdm_features",
-                    {"splice_rgb": {"percentile_threshold": 25}},
+                    "sdm-features",
+                    {"splice-rgb": {"percentile_threshold": 25}},
                 ],
                 "search_strategy": [
                     {"yottixel": {"k": 10}},
@@ -142,7 +147,7 @@ def test_slide_retrieval_config_rejects_unknown_strategy_hyperparam(
                     "tile_mpp": [0.5],
                     "feature_extraction": ["resnet18"],
                     "retrieval_representation": [
-                        {"splice_rgb": {"does_not_exist": 25}},
+                        {"splice-rgb": {"does_not_exist": 25}},
                     ],
                     "mil": [],
                 },

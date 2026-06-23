@@ -11,7 +11,7 @@ from pathbench.core.datasets.wsi_dataset import WSI
 from pathbench.core.io.slide_artifacts import tiles as tiles_io
 from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.core.io.slide_retrieval import descriptors as descriptors_io
-from pathbench.slide_retrieval.mean_rgb import (
+from pathbench.slide_retrieval.representation_strategies.mean_rgb import (
     _build_slide_processor,
     _resolve_sample_slide_paths,
 )

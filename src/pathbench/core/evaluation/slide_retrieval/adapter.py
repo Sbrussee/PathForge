@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import re
@@ -11,39 +10,21 @@ import pandas as pd
 from pathbench.core.tasks.registry import get_task, import_task_modules
 from pathbench.core.evaluation.base import TaskEvaluationAdapterBase
 from pathbench.core.evaluation.registry import evaluation_task_adapter
+from pathbench.core.evaluation.slide_retrieval.data import (
+    SlideRetrievalEvaluationData,
+    SlideRetrievalEvaluationHit,
+    SlideRetrievalEvaluationQuery,
+)
 from pathbench.core.evaluation.types import EvaluationRunContext
 from pathbench.core.experiments.combinations import build_combinations
 from pathbench.core.experiments.combo_ids import build_feature_name, build_tiling_id
-from pathbench.slide_retrieval.io import build_slide_retrieval_output_root
+from pathbench.slide_retrieval.io import (
+    build_slide_retrieval_output_root,
+    resolve_slide_retrieval_results_path,
+)
 from pathbench.utils.constants import CASE_ID_COL, PATIENT_ID_COL, SLIDE_ID_COL
 
 _RANK_SAMPLE_PATTERN = re.compile(r"^rank_(?P<rank>[1-9]\d*)_sample_id$")
-
-
-@dataclass(frozen=True, slots=True)
-class SlideRetrievalEvaluationHit:
-    """One normalized retrieval hit for evaluation."""
-
-    sample_id: str
-    label: str
-    score: float
-    rank: int
-
-
-@dataclass(frozen=True, slots=True)
-class SlideRetrievalEvaluationQuery:
-    """One normalized retrieval query with resolved labels."""
-
-    query_id: str
-    query_label: str
-    hits: list[SlideRetrievalEvaluationHit] = field(default_factory=list)
-
-
-@dataclass(frozen=True, slots=True)
-class SlideRetrievalEvaluationData:
-    """Task-specific evaluation payload for slide retrieval."""
-
-    queries: list[SlideRetrievalEvaluationQuery]
 
 
 @evaluation_task_adapter("slide_retrieval")
@@ -68,30 +49,40 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
             raise ValueError(
                 "evaluation.label_column is required for slide-retrieval evaluation."
             )
+        reference_dataset_names = tuple(
+            sorted(
+                str(ds_cfg.name)
+                for ds_cfg in self.cfg.datasets
+                if str(ds_cfg.used_for) in {"reference", "query_reference"}
+            )
+        )
 
         run_contexts: list[EvaluationRunContext] = []
         for combo_cfg in combos:
-            output_root = build_slide_retrieval_output_root(
+            search_root = build_slide_retrieval_output_root(
                 project_root=str(self.experiment.project_root),
                 tiling_id=build_tiling_id(combo_cfg),
                 feature_name=build_feature_name(combo_cfg),
                 slide_representation=str(combo_cfg.get("retrieval_representation")),
                 search_method=str(combo_cfg.get("search_strategy")),
             )
-            if not output_root.exists():
+            if not search_root.exists():
                 continue
 
             for run_dir in sorted(
                 path
-                for path in output_root.iterdir()
+                for path in search_root.iterdir()
                 if path.is_dir() and path.name.startswith("run_")
             ):
                 manifest_path = run_dir / "manifest.json"
-                results_path = run_dir / "query_results.csv"
+                results_path = resolve_slide_retrieval_results_path(
+                    run_dir / "query_results.xlsx"
+                )
                 if not manifest_path.is_file() or not results_path.is_file():
                     continue
 
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest["reference_dataset_names"] = list(reference_dataset_names)
                 run_contexts.append(
                     EvaluationRunContext(
                         task_name=self.task_name,
@@ -110,7 +101,9 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
         run_context: EvaluationRunContext,
     ) -> SlideRetrievalEvaluationData:
         annotations_df = self.experiment.load_annotations()
-        raw_results = self._load_raw_results(run_context.run_dir / "query_results.csv")
+        raw_results = self._load_raw_results(
+            resolve_slide_retrieval_results_path(run_context.run_dir / "query_results.xlsx")
+        )
         label_lookup = self._build_label_lookup(
             annotations_df=annotations_df,
             sample_ids=self._collect_sample_ids(raw_results),
@@ -141,7 +134,10 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
         return SlideRetrievalEvaluationData(queries=queries)
 
     def _load_raw_results(self, path: Path) -> list[dict[str, Any]]:
-        results_df = pd.read_csv(path)
+        if path.suffix.lower() == ".xlsx":
+            results_df = pd.read_excel(path)
+        else:
+            results_df = pd.read_csv(path)
         raw_results: list[dict[str, Any]] = []
         for _, row in results_df.iterrows():
             query_id = str(row["query_sample_id"])

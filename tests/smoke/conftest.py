@@ -101,6 +101,7 @@ def extracted_wsi_workspace(
                 "project_root": str(project_root.resolve()),
                 "mode": "feature_extraction",
                 "report": True,
+                "thumbnail": True,
             },
             "slide_processing": {
                 "backend": "lazyslide",

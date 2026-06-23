@@ -14,13 +14,13 @@ from tests.conftest import DUMMY_FE
 @pytest.mark.smoke
 def test_optimize_cli_importable() -> None:
     """The optimization CLI module must be importable without side-effects."""
-    from pathbench.cli import optimize  # noqa: F401
+    from pathbench.cli import optimize_run  # noqa: F401
 
 
 @pytest.mark.smoke
 def test_optimize_cli_missing_config_exits(tmp_path) -> None:
     """main() with a nonexistent config path must raise FileNotFoundError."""
-    from pathbench.cli.optimize import main
+    from pathbench.cli.optimize_run import main
 
     with pytest.raises(FileNotFoundError):
         main(["--config", str(tmp_path / "missing.yaml")])
@@ -81,7 +81,7 @@ def test_optimize_cli_writes_summary_and_visualizations(
     monkeypatch, tmp_path: Path
 ) -> None:
     """CLI smoke run should emit optimization CSV summaries and visual reports."""
-    from pathbench.cli.optimize import main
+    from pathbench.cli.optimize_run import main
     import pathbench.policy.optimization as opt_mod
 
     cfg_path = tmp_path / "optimize.yaml"

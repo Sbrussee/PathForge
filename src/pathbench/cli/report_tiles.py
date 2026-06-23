@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import argparse
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from pathbench.cli.base import (
-    add_config_argument,
-    add_log_level_argument,
-    configure_logging,
-    load_experiment,
-)
+import typer
+
 from pathbench.config.config import Config
+from pathbench.cli.common import LOG_LEVEL_CHOICES, configure_logging, resolve_config_path
+from pathbench.core.experiments.base import Experiment
 from pathbench.core.experiments.combinations import ComboConfig
 from pathbench.core.experiments.combo_ids import build_tiling_id
 from pathbench.core.reports.tiles_report_pdf import create_tiles_report_pdf
@@ -100,27 +97,26 @@ def _unique_tiling_ids_from_config(cfg: Config) -> list[str]:
     return tiling_ids
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Build a PDF tiles-overview report from existing slide artifact files."""
-    parser = argparse.ArgumentParser(
-        description="Generate tile extraction PDF reports (from H5 tiles_overview) for all datasets/bags in config."
-    )
-    add_config_argument(parser)
-    add_log_level_argument(parser)
-    args = parser.parse_args(argv)
-
-    configure_logging(args.log_level)
+def run_tiles_report(
+    *,
+    config: Path,
+    log_level: str = "INFO",
+) -> int:
+    """Generate the tiles report for one YAML config and return an exit code."""
+    configure_logging(log_level)
+    config_path = resolve_config_path(config)
 
     logger.info("Starting tiles report CLI")
-    logger.info("Using config: %s", args.config)
+    logger.info("Using config: %s", config_path)
 
-    experiment = load_experiment(args.config)
+    cfg = Config.from_yaml(config_path)
+    experiment = Experiment(cfg)
     annotations_df = experiment.load_annotations()
     datasets = _build_artifact_only_datasets(
         cfg=experiment.cfg,
         annotations_df=annotations_df,
     )
-    tiling_ids = _unique_tiling_ids_from_config(experiment.cfg)
+    tiling_ids = _unique_tiling_ids_from_config(cfg)
 
     logger.info("Found %d dataset(s) in config", len(datasets))
     logger.info("Found %d unique tiling_id(s): %s", len(tiling_ids), tiling_ids)
@@ -176,6 +172,37 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     return 1 if failed_count > 0 else 0
+
+
+def run_command(
+    config: Path = typer.Option(..., "--config", help="Path to YAML config"),
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        help="Logging level.",
+        show_default=True,
+    ),
+) -> None:
+    """Typer command that builds the tiles report from the provided config option."""
+    raise SystemExit(run_tiles_report(config=config, log_level=log_level))
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Argparse entry point for the tiles-report CLI; returns a process exit code."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Generate tile extraction PDF reports (from H5 tiles_overview) for all datasets/bags in config."
+    )
+    parser.add_argument("--config", required=True, type=Path, help="Path to YAML config")
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=LOG_LEVEL_CHOICES,
+        help="Logging level (default: INFO)",
+    )
+    args = parser.parse_args(argv)
+    return run_tiles_report(config=args.config, log_level=args.log_level)
 
 
 if __name__ == "__main__":

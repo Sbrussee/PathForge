@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from pathbench.config.config import DatasetEntry
 from pathbench.core.datasets.wsi_dataset import WSIDataset
