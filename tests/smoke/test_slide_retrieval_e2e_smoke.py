@@ -242,60 +242,101 @@ def test_smoke_multi_combo_grid_produces_separate_run_dirs(
 
 
 @pytest.mark.smoke
-def test_smoke_query_reference_roundtrip(
+def test_smoke_query_reference_self_retrieval(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     retrieval_wsi_datasets: RetrievalDatasets,
+    slide_level_feature_matrix: tuple,
 ) -> None:
-    """query_reference pool: every slide is both a reference and a query."""
-    from pathbench.config.config import DatasetEntry
-    from pathbench.core.experiments.combinations import ComboConfig
-    from pathbench.core.datasets.bag_dataset import SlideRetrievalBagDataset
-    import pandas as pd
+    """Real Yottixel self-retrieval over a query_reference pool.
 
-    # Build a pool dataset using a subset of GTEx slides (not split into ref/qry)
-    from pathbench.slide_retrieval.representation_strategies.registry import (
-        import_representation_strategy_modules,
-    )
-    from pathbench.slide_retrieval.search_strategies.registry import (
-        import_search_strategy_modules,
-    )
+    Each slide is both a query and a reference, backed by its *own* distinct
+    real GTEx feature vector. With ``exclusion_level='none'`` (so nothing is
+    filtered out), a correct search must return every query as its own rank-1
+    hit at distance 0 — this verifies the search actually ranks by similarity,
+    not just that the pipeline emits well-formed rows.
+    """
+    _register_retrieval_strategies()
+    slide_ids, feature_matrix = slide_level_feature_matrix
 
-    import_representation_strategy_modules()
-    import_search_strategy_modules()
+    def _distinct_real_cache(
+        self, *, bag_dataset, representation_id, aggregation_level, exclusion_level
+    ):
+        """Return a distinct real per-slide representation with no exclusion key."""
+        reps = []
+        for i in range(bag_dataset.num_bags):
+            sample = bag_dataset.get_sample(i)
+            idx = slide_ids.index(sample.sample_id)  # pool slides are a subset of slide_ids
+            reps.append(
+                RetrievalRepresentation(
+                    sample_id=sample.sample_id,
+                    data=[feature_matrix[idx].tolist()],
+                    exclusion_key=None,  # no exclusion -> a query may retrieve itself
+                )
+            )
+        return reps, None
+
     monkeypatch.setattr(
-        SlideRetrievalTask, "_collect_existing_representations", _full_cache
+        SlideRetrievalTask, "_collect_existing_representations", _distinct_real_cache
     )
 
-    pool_ids = retrieval_wsi_datasets.all_slide_ids[:10]
     pool_dataset = retrieval_wsi_datasets.reference  # reuse 10-slide dataset as pool
-
-    task = _make_task(tmp_path)
+    pool_ids = {
+        pool_dataset.get_sample(i).sample_id for i in range(pool_dataset.num_bags)
+    }
+    task = _make_task(tmp_path, exclusion_level="none")
 
     with capture_smoke_metrics(
         tmp_path / "metrics",
-        step_name="smoke_retrieval_query_reference_roundtrip",
-        metadata={"pool_size": pool_dataset.num_bags, "exclusion_level": "patient"},
+        step_name="smoke_retrieval_self_retrieval",
+        metadata={"pool_size": pool_dataset.num_bags, "exclusion_level": "none"},
     ) as metadata:
         result = task.execute(
-            combo_cfg=_make_combo(),
+            combo_cfg=_make_combo(representation="hshr-features", search="yottixel"),
             datasets_by_use={"query_reference": [pool_dataset]},
         )
         output_dir = Path(result["output_dir"])
         attach_smoke_outputs(
             metadata,
-            step_name="smoke_retrieval_query_reference_roundtrip",
-            final={
-                "query_results_xlsx": output_dir / "query_results.xlsx",
-                "manifest_json": output_dir / "manifest.json",
-            },
+            step_name="smoke_retrieval_self_retrieval",
+            final={"query_results_xlsx": output_dir / "query_results.xlsx"},
         )
 
     assert result["num_queries"] == pool_dataset.num_bags
     assert result["num_reference_items"] == pool_dataset.num_bags
 
-    _, rows = _read_query_results_xlsx(output_dir / "query_results.xlsx")
+    fieldnames, rows = _read_query_results_xlsx(output_dir / "query_results.xlsx")
+    assert fieldnames is not None and "rank_1_sample_id" in fieldnames
     assert len(rows) == pool_dataset.num_bags
+
+    rank_id_cols = sorted(
+        (int(name.split("_")[1]), name)
+        for name in fieldnames
+        if name.startswith("rank_") and name.endswith("_sample_id")
+    )
+
+    for row in rows:
+        query_id = row["query_sample_id"]
+
+        # Real correctness: the query retrieves *itself* as rank-1 at distance 0.
+        assert row["rank_1_sample_id"] == query_id, (
+            f"query {query_id} did not self-retrieve; rank-1 was "
+            f"{row.get('rank_1_sample_id')!r}"
+        )
+        assert float(row["rank_1_score"]) == pytest.approx(0.0, abs=1e-6)
+
+        # Ranking sanity: contiguous ranks, hits are real pool members,
+        # scores monotonically non-decreasing (Yottixel score == distance).
+        present_ranks = [r for r, col in rank_id_cols if row.get(col)]
+        assert present_ranks == list(range(1, len(present_ranks) + 1))
+        previous_score = None
+        for rank in present_ranks:
+            hit_id = row[f"rank_{rank}_sample_id"]
+            assert hit_id in pool_ids
+            score = float(row[f"rank_{rank}_score"])
+            if previous_score is not None:
+                assert score >= previous_score - 1e-9
+            previous_score = score
 
 
 # ---------------------------------------------------------------------------
