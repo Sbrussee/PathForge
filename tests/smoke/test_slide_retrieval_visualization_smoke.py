@@ -1,7 +1,10 @@
 """Smoke tests for slide retrieval visualization rendering.
 
-Exercises render_retrieval_results_image() end-to-end with real slide thumbnails
-extracted from the session-scoped GTEx workspace.
+Renders ``render_retrieval_results_image()`` end-to-end using real slide
+thumbnails from the session-scoped GTEx workspace **and the real ranked hits
+and distances produced by an actual Yottixel search** over the slides' real
+features — so the visualizations show genuine queries and scores, not
+hand-fabricated values.
 """
 
 from __future__ import annotations
@@ -14,6 +17,12 @@ from PIL import Image
 
 from pathbench.core.io.slide_artifacts.base import FileHandleH5
 from pathbench.core.io.slide_artifacts import thumbnail as thumbnail_io
+from pathbench.slide_retrieval.representation_strategies.types import (
+    RetrievalRepresentation,
+)
+from pathbench.slide_retrieval.search_strategies.strategies.yottixel import (
+    YottixelSearch,
+)
 from pathbench.slide_retrieval.visualization.renderers import (
     render_retrieval_results_image,
     RESULT_THUMB_SIZE,
@@ -29,29 +38,74 @@ def _load_thumbnail(artifact_path: Path) -> Image.Image:
     return img.resize(RESULT_THUMB_SIZE, Image.LANCZOS)
 
 
+def _real_search(
+    *,
+    query_id: str,
+    ref_ids: list[str],
+    slide_ids: list[str],
+    feature_matrix,
+):
+    """Run a real Yottixel search (query vs references) on real features.
+
+    Returns the search result whose ranked hits carry the real reference
+    ``item_id``s and Yottixel distances (lower = more similar).
+    """
+
+    def _rep(sample_id: str) -> RetrievalRepresentation:
+        idx = slide_ids.index(sample_id)
+        return RetrievalRepresentation(
+            sample_id=sample_id,
+            data=[feature_matrix[idx].tolist()],
+            exclusion_key=None,
+        )
+
+    strategy = YottixelSearch(params={"k": len(ref_ids)})
+    strategy.build_database([_rep(ref_id) for ref_id in ref_ids])
+    return strategy.search(_rep(query_id))
+
+
+def _hit_panels_from_result(result, workspace: ExtractedWsiWorkspace):
+    """Build (thumbnail, lines) panels from real ranked hits and their scores."""
+    return [
+        (
+            _load_thumbnail(workspace.artifact_paths[hit.item_id]),
+            [f"slide: {hit.item_id}", f"score: {hit.score:.3f}", "dataset: GTEx"],
+        )
+        for hit in result.hits
+    ]
+
+
 @pytest.mark.smoke
 def test_smoke_retrieval_results_visualization_produces_valid_png(
     tmp_path: Path,
     extracted_wsi_workspace: ExtractedWsiWorkspace,
+    slide_level_feature_matrix: tuple,
 ) -> None:
-    """render_retrieval_results_image() must write a valid, non-empty PNG for 1 query + 5 hits."""
-    artifact_paths = list(sorted(extracted_wsi_workspace.artifact_paths.values()))
-    assert len(artifact_paths) >= 6, "Need at least 6 slides for this test"
+    """Render a 1-query/5-hit panel from a real Yottixel search over real features."""
+    slide_ids, feature_matrix = slide_level_feature_matrix
+    ordered_ids = list(sorted(extracted_wsi_workspace.artifact_paths.keys()))
+    assert len(ordered_ids) >= 6, "Need at least 6 slides for this test"
 
-    slide_ids = list(sorted(extracted_wsi_workspace.artifact_paths.keys()))
-    query_id = slide_ids[0]
-    ref_ids = slide_ids[1:6]
+    query_id = ordered_ids[0]
+    ref_ids = ordered_ids[1:6]
 
-    query_thumbnail = _load_thumbnail(artifact_paths[0])
-    query_lines = [f"slide: {query_id}", "dataset: GTEx"]
+    result = _real_search(
+        query_id=query_id,
+        ref_ids=ref_ids,
+        slide_ids=slide_ids,
+        feature_matrix=feature_matrix,
+    )
 
-    hit_panels = [
-        (
-            _load_thumbnail(extracted_wsi_workspace.artifact_paths[ref_id]),
-            [f"slide: {ref_id}", f"score: {round(0.9 - i * 0.08, 2)}", "dataset: GTEx"],
-        )
-        for i, ref_id in enumerate(ref_ids)
-    ]
+    # The rendered hits/scores are the *real* search output.
+    assert result.query_id == query_id
+    assert len(result.hits) == len(ref_ids)
+    assert all(hit.item_id in ref_ids for hit in result.hits)
+    assert [hit.rank for hit in result.hits] == list(range(1, len(result.hits) + 1))
+    scores = [hit.score for hit in result.hits]
+    assert scores == sorted(scores), "Yottixel hits must be ranked by ascending distance"
+
+    query_thumbnail = _load_thumbnail(extracted_wsi_workspace.artifact_paths[query_id])
+    hit_panels = _hit_panels_from_result(result, extracted_wsi_workspace)
 
     output_dir = tmp_path / "retrieval_visualizations" / "retrieval_results"
     output_dir.mkdir(parents=True)
@@ -60,11 +114,17 @@ def test_smoke_retrieval_results_visualization_produces_valid_png(
     with capture_smoke_metrics(
         tmp_path / "metrics",
         step_name="smoke_retrieval_results_visualization",
-        metadata={"num_hits": len(hit_panels), "query_id": query_id},
+        metadata={
+            "num_hits": len(hit_panels),
+            "query_id": query_id,
+            "top_hit": result.hits[0].item_id,
+            "top_score": float(result.hits[0].score),
+            "hit_scores": [float(hit.score) for hit in result.hits],
+        },
     ) as metadata:
         rendered = render_retrieval_results_image(
             query_thumbnail=query_thumbnail,
-            query_lines=query_lines,
+            query_lines=[f"slide: {query_id}", "dataset: GTEx"],
             hit_panels=hit_panels,
         )
         rendered.save(output_path, format="PNG")
@@ -86,18 +146,21 @@ def test_smoke_retrieval_results_visualization_produces_valid_png(
 def test_smoke_retrieval_results_visualization_multi_query(
     tmp_path: Path,
     extracted_wsi_workspace: ExtractedWsiWorkspace,
+    slide_level_feature_matrix: tuple,
 ) -> None:
-    """One PNG per query must be written when multiple queries are rendered."""
-    slide_ids = list(sorted(extracted_wsi_workspace.artifact_paths.keys()))
-    assert len(slide_ids) >= 10, "Need at least 10 slides for this test"
+    """One PNG per query, each rendered from that query's real ranked search hits."""
+    slide_ids, feature_matrix = slide_level_feature_matrix
+    ordered_ids = list(sorted(extracted_wsi_workspace.artifact_paths.keys()))
+    assert len(ordered_ids) >= 10, "Need at least 10 slides for this test"
 
-    query_ids = slide_ids[:5]
-    ref_ids = slide_ids[5:10]
+    query_ids = ordered_ids[:5]
+    ref_ids = ordered_ids[5:10]
 
     output_dir = tmp_path / "retrieval_visualizations" / "retrieval_results"
     output_dir.mkdir(parents=True)
 
     written_paths: list[Path] = []
+    per_query_scores: dict[str, list[float]] = {}
 
     with capture_smoke_metrics(
         tmp_path / "metrics",
@@ -105,14 +168,22 @@ def test_smoke_retrieval_results_visualization_multi_query(
         metadata={"num_queries": len(query_ids), "num_refs_per_query": len(ref_ids)},
     ) as metadata:
         for query_id in query_ids:
-            query_thumbnail = _load_thumbnail(extracted_wsi_workspace.artifact_paths[query_id])
-            hit_panels = [
-                (
-                    _load_thumbnail(extracted_wsi_workspace.artifact_paths[ref_id]),
-                    [f"slide: {ref_id}", f"score: {round(0.9 - i * 0.05, 2)}"],
-                )
-                for i, ref_id in enumerate(ref_ids)
-            ]
+            result = _real_search(
+                query_id=query_id,
+                ref_ids=ref_ids,
+                slide_ids=slide_ids,
+                feature_matrix=feature_matrix,
+            )
+            assert result.query_id == query_id
+            assert all(hit.item_id in ref_ids for hit in result.hits)
+            scores = [hit.score for hit in result.hits]
+            assert scores == sorted(scores)
+            per_query_scores[query_id] = [float(s) for s in scores]
+
+            query_thumbnail = _load_thumbnail(
+                extracted_wsi_workspace.artifact_paths[query_id]
+            )
+            hit_panels = _hit_panels_from_result(result, extracted_wsi_workspace)
             rendered = render_retrieval_results_image(
                 query_thumbnail=query_thumbnail,
                 query_lines=[f"slide: {query_id}"],
@@ -122,6 +193,7 @@ def test_smoke_retrieval_results_visualization_multi_query(
             rendered.save(out, format="PNG")
             written_paths.append(out)
 
+        metadata["per_query_hit_scores"] = per_query_scores
         attach_smoke_outputs(
             metadata,
             step_name="smoke_retrieval_results_visualization_multi_query",
