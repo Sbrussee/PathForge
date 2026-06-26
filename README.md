@@ -1,17 +1,10 @@
-# PathForge-MIL
+# PathForge
 
-PathForge-MIL is a modular benchmarking framework for multiple instance
+PathForge is a modular benchmarking framework for multiple instance
 learning (MIL) in computational pathology. It supports WSI feature extraction,
-H5 artifact generation, tile overview reports, MIL benchmarking, hyperparameter
-optimization, optional TorchMIL backends, optional metrics backends, and
-explainability hooks.
-
-The repository follows the Clean Architecture contract described in
-[docs/design.md](docs/design.md): policies and trainers resolve implementations through
-PathForge interfaces and registries, while concrete third-party packages live in
-adapter modules.
-
-![Design](design.png)
+H5 artifact generation, tile overview reports, MIL benchmarking, hyperparameter- and pipeline optimization, support for classification,
+regression, survival and retrieval tasks, and support for model inference and
+visualization.
 
 ## What PathForge-MIL Does
 
