@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pathbench.slide_retrieval.representation_strategies.types import (
+from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.search_strategies.strategies.pbss import (
+from pathforge.slide_retrieval.search_strategies.strategies.pbss import (
     PrototypeSimilaritySearch,
 )
 

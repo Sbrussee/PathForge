@@ -1,6 +1,6 @@
 # Slide Retrieval Results And Metrics
 
-This page explains where slide-retrieval benchmark outputs are stored in a PathBench2.0 project, how to find the files for one specific benchmark combination, and how the saved metrics are structured.
+This page explains where slide-retrieval benchmark outputs are stored in a PathForge2.0 project, how to find the files for one specific benchmark combination, and how the saved metrics are structured.
 
 ## Overview
 
@@ -143,7 +143,7 @@ So if you want to inspect the retrieval list for one sample, find its row in `qu
 
 ### `evaluation_metrics.json`
 
-After running the evaluation workflow, PathBench2.0 writes:
+After running the evaluation workflow, PathForge2.0 writes:
 
 ```text
 <run_dir>/evaluation_metrics.json
@@ -348,7 +348,7 @@ If you have multiple `run_*` folders for the same combination, compare their `ma
 
 ## Cached Retrieval Representations
 
-The final run results live in the project folder, but PathBench2.0 also caches retrieval representations in each dataset's `artifacts_dir`.
+The final run results live in the project folder, but PathForge2.0 also caches retrieval representations in each dataset's `artifacts_dir`.
 
 Those cached files are stored at:
 

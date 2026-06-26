@@ -65,7 +65,7 @@ def _discrete_survival_data(n: int = 30, d: int = 8, n_bins: int = 4, seed: int 
 
 
 def _continuous_survival_data(n: int = 30, d: int = 6, seed: int = 4):
-    from pathbench.core.models.sklearn_slide import make_survival_structured_array
+    from pathforge.core.models.sklearn_slide import make_survival_structured_array
 
     rng = np.random.default_rng(seed)
     X = rng.standard_normal((n, d)).astype(np.float32)
@@ -83,8 +83,8 @@ def _continuous_survival_data(n: int = 30, d: int = 6, seed: int = 4):
 
 
 def test_logistic_regression_binary_classification(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _binary_data()
     model = SklearnLogisticRegressionClassifier(max_iter=300)
@@ -100,8 +100,8 @@ def test_logistic_regression_binary_classification(tmp_path: Path):
 
 
 def test_random_forest_binary_classification(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnRandomForestClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnRandomForestClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _binary_data()
     model = SklearnRandomForestClassifier(n_estimators=10)
@@ -113,8 +113,8 @@ def test_random_forest_binary_classification(tmp_path: Path):
 
 
 def test_gradient_boosting_binary_classification(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnGradientBoostingClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnGradientBoostingClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _binary_data()
     model = SklearnGradientBoostingClassifier(n_estimators=10)
@@ -125,8 +125,8 @@ def test_gradient_boosting_binary_classification(tmp_path: Path):
 
 
 def test_svm_binary_classification(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnSVMClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnSVMClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _binary_data()
     model = SklearnSVMClassifier(C=1.0)
@@ -143,8 +143,8 @@ def test_svm_binary_classification(tmp_path: Path):
 
 
 def test_logistic_regression_multiclass_classification(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _multiclass_data(n_classes=4)
     model = SklearnLogisticRegressionClassifier(max_iter=300)
@@ -157,8 +157,8 @@ def test_logistic_regression_multiclass_classification(tmp_path: Path):
 
 
 def test_random_forest_multiclass_classification(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnRandomForestClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnRandomForestClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _multiclass_data(n_classes=3)
     model = SklearnRandomForestClassifier(n_estimators=10)
@@ -170,8 +170,8 @@ def test_random_forest_multiclass_classification(tmp_path: Path):
 
 
 def test_gradient_boosting_multiclass_classification(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnGradientBoostingClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnGradientBoostingClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _multiclass_data(n_classes=4)
     model = SklearnGradientBoostingClassifier(n_estimators=10)
@@ -187,8 +187,8 @@ def test_gradient_boosting_multiclass_classification(tmp_path: Path):
 
 
 def test_linear_regression(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnLinearRegressor
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnLinearRegressor
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _regression_data()
     model = SklearnLinearRegressor()
@@ -202,8 +202,8 @@ def test_linear_regression(tmp_path: Path):
 
 
 def test_ridge_regression(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnRidgeRegressor
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnRidgeRegressor
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _regression_data()
     model = SklearnRidgeRegressor(alpha=1.0)
@@ -215,8 +215,8 @@ def test_ridge_regression(tmp_path: Path):
 
 
 def test_gradient_boosting_regression(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnGradientBoostingRegressor
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnGradientBoostingRegressor
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _regression_data()
     model = SklearnGradientBoostingRegressor(n_estimators=10)
@@ -227,8 +227,8 @@ def test_gradient_boosting_regression(tmp_path: Path):
 
 
 def test_svm_regression(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnSVMRegressor
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnSVMRegressor
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _regression_data()
     model = SklearnSVMRegressor(C=1.0)
@@ -246,8 +246,8 @@ def test_svm_regression(tmp_path: Path):
 
 def test_random_forest_discrete_survival(tmp_path: Path):
     """RandomForest trained on time-bin labels for discrete survival prediction."""
-    from pathbench.core.models.sklearn_slide import SklearnRandomForestClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnRandomForestClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     n_bins = 4
     X, y = _discrete_survival_data(n_bins=n_bins)
@@ -263,8 +263,8 @@ def test_random_forest_discrete_survival(tmp_path: Path):
 
 
 def test_gradient_boosting_discrete_survival(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnGradientBoostingClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnGradientBoostingClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     n_bins = 3
     X, y = _discrete_survival_data(n_bins=n_bins)
@@ -278,8 +278,8 @@ def test_gradient_boosting_discrete_survival(tmp_path: Path):
 
 
 def test_logistic_regression_discrete_survival(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _discrete_survival_data(n_bins=4)
     model = SklearnLogisticRegressionClassifier(max_iter=300)
@@ -301,8 +301,8 @@ def test_logistic_regression_discrete_survival(tmp_path: Path):
     reason="scikit-survival not installed",
 )
 def test_cox_ph_continuous_survival(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnCoxPH
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnCoxPH
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _continuous_survival_data()
     model = SklearnCoxPH(alpha=0.1)
@@ -322,8 +322,8 @@ def test_cox_ph_continuous_survival(tmp_path: Path):
     reason="scikit-survival not installed",
 )
 def test_coxnet_continuous_survival(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnCoxnet
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnCoxnet
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _continuous_survival_data()
     model = SklearnCoxnet(l1_ratio=0.5)
@@ -339,8 +339,8 @@ def test_coxnet_continuous_survival(tmp_path: Path):
     reason="scikit-survival not installed",
 )
 def test_ipc_ridge_continuous_survival(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnIPCRidge
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnIPCRidge
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _continuous_survival_data()
     model = SklearnIPCRidge(alpha=1.0)
@@ -355,8 +355,8 @@ def test_ipc_ridge_continuous_survival(tmp_path: Path):
     reason="scikit-survival not installed",
 )
 def test_survival_tree_continuous_survival(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnSurvivalTree
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnSurvivalTree
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _continuous_survival_data()
     model = SklearnSurvivalTree(max_depth=3)
@@ -373,8 +373,8 @@ def test_survival_tree_continuous_survival(tmp_path: Path):
     reason="scikit-survival not installed",
 )
 def test_hinge_loss_svm_continuous_survival(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnHingeLossSurvivalSVM
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnHingeLossSurvivalSVM
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _continuous_survival_data()
     model = SklearnHingeLossSurvivalSVM(alpha=1.0)
@@ -391,8 +391,8 @@ def test_hinge_loss_svm_continuous_survival(tmp_path: Path):
     reason="scikit-survival not installed",
 )
 def test_naive_survival_svm_continuous_survival(tmp_path: Path):
-    from pathbench.core.models.sklearn_slide import SklearnNaiveSurvivalSVM
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnNaiveSurvivalSVM
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     X, y = _continuous_survival_data()
     model = SklearnNaiveSurvivalSVM(alpha=1.0)
@@ -424,7 +424,7 @@ class _ToyBagDataset:
 
 
 def _make_trainer_config(tmp_path: Path):
-    from pathbench.config.config import Config
+    from pathforge.config.config import Config
     from tests.conftest import DUMMY_FE, DUMMY_MIL
 
     annotation_path = tmp_path / "ann.csv"
@@ -454,9 +454,9 @@ def _make_trainer_config(tmp_path: Path):
 
 
 def test_slide_vector_mlp_lightning_trainer_classification(tmp_path: Path):
-    from pathbench.core.models.slide_mlp import SlideVectorMLP
-    from pathbench.training.lightning import LightningTrainer
-    from pathbench.utils.registries import LOSSES
+    from pathforge.core.models.slide_mlp import SlideVectorMLP
+    from pathforge.training.lightning import LightningTrainer
+    from pathforge.utils.registries import LOSSES
 
     dataset = _ToyBagDataset()
     model = SlideVectorMLP(input_dim=8, hidden_dim=16, output_dim=2)

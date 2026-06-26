@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 import torch
 
-from pathbench.core.models.mil_base import MILModelBase
-from pathbench.core.models.prototype_mil import PrototypeMIL
-from pathbench.core.models.var_mil import VarMIL
+from pathforge.core.models.mil_base import MILModelBase
+from pathforge.core.models.prototype_mil import PrototypeMIL
+from pathforge.core.models.var_mil import VarMIL
 
 
 def test_instance_scores_returns_attention_for_varmil() -> None:

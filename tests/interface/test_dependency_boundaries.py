@@ -1,4 +1,4 @@
-"""Architecture-boundary tests for the PathBench package layers."""
+"""Architecture-boundary tests for the PathForge package layers."""
 
 from __future__ import annotations
 
@@ -31,14 +31,14 @@ def test_core_layer_does_not_import_outer_application_layers() -> None:
     co-location with the registry and base class, but are not pure domain
     abstractions.
     """
-    core_root = Path("src/pathbench/core")
-    tasks_root = Path("src/pathbench/core/tasks")
+    core_root = Path("src/pathforge/core")
+    tasks_root = Path("src/pathforge/core/tasks")
     forbidden_prefixes = (
-        "pathbench.cli",
-        "pathbench.policy",
-        "pathbench.training",
-        "pathbench.inference",
-        "pathbench.optimization",
+        "pathforge.cli",
+        "pathforge.policy",
+        "pathforge.training",
+        "pathforge.inference",
+        "pathforge.optimization",
     )
     offenders: list[tuple[str, str]] = []
 
@@ -54,12 +54,12 @@ def test_core_layer_does_not_import_outer_application_layers() -> None:
 
 def test_policy_layer_does_not_import_cli_layer() -> None:
     """Policies should stay independent from CLI entrypoints."""
-    policy_root = Path("src/pathbench/policy")
+    policy_root = Path("src/pathforge/policy")
     offenders: list[tuple[str, str]] = []
 
     for path in policy_root.rglob("*.py"):
         for module_name in _imported_modules(path):
-            if module_name.startswith("pathbench.cli"):
+            if module_name.startswith("pathforge.cli"):
                 offenders.append((str(path), module_name))
 
     assert offenders == []
@@ -67,12 +67,12 @@ def test_policy_layer_does_not_import_cli_layer() -> None:
 
 def test_training_layer_does_not_import_cli_layer() -> None:
     """Training code should not depend on CLI entrypoints."""
-    training_root = Path("src/pathbench/training")
+    training_root = Path("src/pathforge/training")
     offenders: list[tuple[str, str]] = []
 
     for path in training_root.rglob("*.py"):
         for module_name in _imported_modules(path):
-            if module_name.startswith("pathbench.cli"):
+            if module_name.startswith("pathforge.cli"):
                 offenders.append((str(path), module_name))
 
     assert offenders == []

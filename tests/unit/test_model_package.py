@@ -4,15 +4,15 @@ import json
 
 import torch
 
-from pathbench.cli.inference import main as inference_main
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.io.h5.features import write_features
-from pathbench.inference.model_package import (
+from pathforge.cli.inference import main as inference_main
+from pathforge.core.io.h5.base import FileHandleH5
+from pathforge.core.io.h5.features import write_features
+from pathforge.inference.model_package import (
     load_packaged_model,
     predict_bag,
     save_packaged_model,
 )
-from pathbench.utils.registries import populate_dynamic_registries
+from pathforge.utils.registries import populate_dynamic_registries
 from tests.smoke._smoke_training import make_training_config
 
 
@@ -26,7 +26,7 @@ def test_packaged_model_roundtrip_preserves_predictions(tmp_path) -> None:
         dropout=0.0,
     )
     torch.manual_seed(7)
-    from pathbench.utils.registries import MODELS
+    from pathforge.utils.registries import MODELS
 
     model = MODELS.get("VarMIL")(input_dim=4, hidden_dim=8, output_dim=2)
     bag = torch.randn(1, 6, 4)
@@ -59,7 +59,7 @@ def test_inference_cli_reads_packaged_model_and_h5(tmp_path) -> None:
         dropout=0.0,
     )
     torch.manual_seed(11)
-    from pathbench.utils.registries import MODELS
+    from pathforge.utils.registries import MODELS
 
     model = MODELS.get("VarMIL")(input_dim=4, hidden_dim=8, output_dim=2)
     package_path = save_packaged_model(

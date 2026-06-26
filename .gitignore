@@ -41,7 +41,7 @@ wandb/
 *.ckpt
 *.pt
 
-# PathBench runtime outputs
+# PathForge runtime outputs
 experiments/
 user_configs/
 .cache/

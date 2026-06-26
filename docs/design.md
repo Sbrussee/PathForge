@@ -1,8 +1,8 @@
-# PathBench-MIL — Design Document
+# PathForge-MIL — Design Document
 
 ## 1. Overview
 
-**PathBench-MIL** is a modular, extensible benchmarking framework for **Multiple Instance Learning (MIL)** in **computational pathology**.  
+**PathForge-MIL** is a modular, extensible benchmarking framework for **Multiple Instance Learning (MIL)** in **computational pathology**.  
 It supports interchangeable slide-processing backends for feature extraction and modular **PyTorch Lightning–based** MIL training pipelines.  
 Pipeline configuration and optimization are driven via **Optuna**.
 
@@ -16,7 +16,7 @@ The framework is designed for:
 
 ## 2. Architectural Principles
 
-PathBench-MIL strictly adheres to **Clean Architecture** principles.
+PathForge-MIL strictly adheres to **Clean Architecture** principles.
 
 ### 2.1 Dependency Rule
 
@@ -93,7 +93,7 @@ Config
 ## 4. Codebase Structure
 
 ### 4.1 CLI Layer  
-**Path:** `src/pathbench/cli`
+**Path:** `src/pathforge/cli`
 
 **Responsibilities:**
 - Command-line argument parsing
@@ -142,7 +142,7 @@ The **Core layer** contains stable abstractions and domain objects.
 - Slide processing interfaces
 - Model, loss, and task definitions
 
-This is the **contract layer** of PathBench-MIL.
+This is the **contract layer** of PathForge-MIL.
 
 ---
 
@@ -190,7 +190,7 @@ Policies define **how an experiment is executed**.
 
 ## 7. Registries (Plugin System)
 
-Registries act as the **plugin backbone** of PathBench-MIL.
+Registries act as the **plugin backbone** of PathForge-MIL.
 
 ### 7.1 Registry Responsibilities
 
@@ -232,7 +232,7 @@ The WSI abstraction:
 
 ## 9. Slide-Level Artifact Format (`.h5`)
 
-For each WSI, PathBench-MIL produces a:
+For each WSI, PathForge-MIL produces a:
 
 {slide_stem}.h5
 
@@ -304,7 +304,7 @@ The `.h5` format is explicitly designed to:
 
 ## 9.5 Vector-Based Annotations (ASAP / QuPath Compatible)
 
-PathBench-MIL supports **vector-based annotations** for tissue and semantic regions, designed for interoperability with **ASAP XML** and **QuPath GeoJSON**.
+PathForge-MIL supports **vector-based annotations** for tissue and semantic regions, designed for interoperability with **ASAP XML** and **QuPath GeoJSON**.
 
 Vector annotations are:
 - Stored in **level-0 pixel coordinates**
@@ -492,14 +492,14 @@ All converters must:
 - Maintain level-0 coordinate consistency
 - 
 ---
-# PathBench-MIL HDF5 Structure — Canonical Overview
+# PathForge-MIL HDF5 Structure — Canonical Overview
 
 **File:**  
 
 {slide_stem}.h5
 
 
-This document defines the **authoritative structure** of PathBench-MIL slide-level HDF5 files, including explicit rules for **where** each artifact is stored and **how** it is formatted.
+This document defines the **authoritative structure** of PathForge-MIL slide-level HDF5 files, including explicit rules for **where** each artifact is stored and **how** it is formatted.
 
 ---
 
@@ -522,7 +522,7 @@ meta/
 
 
 **Required attributes**
-- `schema_name = "pathbench_mil_extended"`
+- `schema_name = "pathforge_mil_extended"`
 - `schema_version = "1.0"`
 - `coord_space = "level0_pixel"`
 - `num_levels : int32`
@@ -824,7 +824,7 @@ labels/instances/{instance_type}/classes
 - `graphs/` → how things connect  
 ## 10. Summary
 
-PathBench-MIL is designed as a **clean, extensible, and reproducible** framework for MIL benchmarking in computational pathology.  
+PathForge-MIL is designed as a **clean, extensible, and reproducible** framework for MIL benchmarking in computational pathology.  
 By enforcing strict architectural boundaries, interface-based design, and extensible artifact formats, it enables rapid experimentation without sacrificing correctness, maintainability, or scientific rigor.
 
 ---

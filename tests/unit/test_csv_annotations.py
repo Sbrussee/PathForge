@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pathbench.core.annotations.csv import CSVAnnotations
+from pathforge.core.annotations.csv import CSVAnnotations
 
 
 def test_csv_annotations_loads_required_columns(tmp_path: Path) -> None:

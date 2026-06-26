@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import pathbench.cli.infer_run as infer_cli
+import pathforge.cli.infer_run as infer_cli
 
 
 def test_main_executes_inference_policy_with_config_and_input_csv(

@@ -5,30 +5,30 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from pathbench.core.evaluation.slide_retrieval.metrics.f1 import (
+from pathforge.core.evaluation.slide_retrieval.metrics.f1 import (
     compute_macro_f1_at_k,
 )
-from pathbench.core.evaluation.slide_retrieval.metrics.hit import (
+from pathforge.core.evaluation.slide_retrieval.metrics.hit import (
     compute_hit_at_k,
 )
-from pathbench.core.evaluation.slide_retrieval.metrics.map import (
+from pathforge.core.evaluation.slide_retrieval.metrics.map import (
     compute_map_at_k,
 )
-from pathbench.core.evaluation.slide_retrieval.metrics.mmv import (
+from pathforge.core.evaluation.slide_retrieval.metrics.mmv import (
     compute_mmv_at_k,
 )
-from pathbench.core.evaluation.slide_retrieval.metrics.ndcg import (
+from pathforge.core.evaluation.slide_retrieval.metrics.ndcg import (
     compute_ndcg_at_k,
 )
-from pathbench.core.evaluation.slide_retrieval.metrics.precision import (
+from pathforge.core.evaluation.slide_retrieval.metrics.precision import (
     compute_precision_at_k,
 )
-from pathbench.core.evaluation.slide_retrieval.data import (
+from pathforge.core.evaluation.slide_retrieval.data import (
     SlideRetrievalEvaluationData,
     SlideRetrievalEvaluationHit,
     SlideRetrievalEvaluationQuery,
 )
-from pathbench.core.evaluation.types import MetricRequest
+from pathforge.core.evaluation.types import MetricRequest
 
 
 def test_compute_hit_at_k_returns_macro_micro_and_counts() -> None:

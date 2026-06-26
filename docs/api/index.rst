@@ -1,7 +1,7 @@
 API Reference
 =============
 
-PathBench is organized into several packages following Clean Architecture
+PathForge is organized into several packages following Clean Architecture
 principles. All public interfaces are documented here.
 
 .. toctree::
@@ -43,4 +43,4 @@ Package Map
    * - :doc:`inference`
      - Heatmap generation and H5-backed inference visualization helpers.
    * - :doc:`optimization`
-     - Optuna helpers removed; see :doc:`policy` (``OptimizationPolicy``) and ``pathbench.policy.utils``.
+     - Optuna helpers removed; see :doc:`policy` (``OptimizationPolicy``) and ``pathforge.policy.utils``.

@@ -1,7 +1,7 @@
 Architecture
 ============
 
-PathBench follows the `Clean Architecture <https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html>`_
+PathForge follows the `Clean Architecture <https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html>`_
 pattern. Concrete implementations depend on abstractions; abstractions never
 depend on implementations.
 
@@ -51,7 +51,7 @@ Inner layers never import from outer layers:
 This means the domain logic is always testable without any framework or
 optional package.
 
-Core Layer (``pathbench.core``)
+Core Layer (``pathforge.core``)
 --------------------------------
 
 The stable domain layer. Contains abstractions that never change when
@@ -64,59 +64,59 @@ frameworks are swapped.
    * - Sub-package
      - Contents
    * - ``core.models``
-     - :class:`~pathbench.core.models.base.ModelBase`,
-       :class:`~pathbench.core.models.base.TorchModelBase`,
-       :class:`~pathbench.core.models.mil_base.MILModelBase`,
-       :class:`~pathbench.core.models.base.ScikitBase`
+     - :class:`~pathforge.core.models.base.ModelBase`,
+       :class:`~pathforge.core.models.base.TorchModelBase`,
+       :class:`~pathforge.core.models.mil_base.MILModelBase`,
+       :class:`~pathforge.core.models.base.ScikitBase`
    * - ``core.losses``
-     - :class:`~pathbench.core.losses.base.BaseLoss`,
-       :class:`~pathbench.core.losses.base.ClassificationLoss`,
-       :class:`~pathbench.core.losses.base.SurvivalContinuousLoss`,
-       :class:`~pathbench.core.losses.base.SurvivalDiscreteLoss`
+     - :class:`~pathforge.core.losses.base.BaseLoss`,
+       :class:`~pathforge.core.losses.base.ClassificationLoss`,
+       :class:`~pathforge.core.losses.base.SurvivalContinuousLoss`,
+       :class:`~pathforge.core.losses.base.SurvivalDiscreteLoss`
    * - ``core.datasets``
-     - :class:`~pathbench.core.datasets.base.DatasetBase`,
-       :class:`~pathbench.core.datasets.base.BagDatasetBase`,
-       :class:`~pathbench.core.datasets.wsi_dataset.WSIDataset`,
-       :class:`~pathbench.core.datasets.wsi_dataset.WSI`
+     - :class:`~pathforge.core.datasets.base.DatasetBase`,
+       :class:`~pathforge.core.datasets.base.BagDatasetBase`,
+       :class:`~pathforge.core.datasets.wsi_dataset.WSIDataset`,
+       :class:`~pathforge.core.datasets.wsi_dataset.WSI`
    * - ``core.experiments``
-     - :class:`~pathbench.core.experiments.base.Experiment`,
-       :class:`~pathbench.core.experiments.base.ComboConfig`
+     - :class:`~pathforge.core.experiments.base.Experiment`,
+       :class:`~pathforge.core.experiments.base.ComboConfig`
    * - ``core.tasks``
-     - :class:`~pathbench.core.tasks.base.TaskBase`, task registry
-       (:func:`~pathbench.core.tasks.registry.register_task`,
-       :func:`~pathbench.core.tasks.registry.build_task`,
-       :func:`~pathbench.core.tasks.registry.import_task_modules`),
+     - :class:`~pathforge.core.tasks.base.TaskBase`, task registry
+       (:func:`~pathforge.core.tasks.registry.register_task`,
+       :func:`~pathforge.core.tasks.registry.build_task`,
+       :func:`~pathforge.core.tasks.registry.import_task_modules`),
        MIL tasks (``ClassificationMilTask``, ``RegressionMilTask``,
        ``SurvivalMilTask``, ``SurvivalDiscreteMilTask``),
-       :class:`~pathbench.core.tasks.slide_retrieval.SlideRetrievalTask`
+       :class:`~pathforge.core.tasks.slide_retrieval.SlideRetrievalTask`
    * - ``core.io.h5``
-     - :class:`~pathbench.core.io.h5.base.FileHandleH5`, coordinate/feature/tissue I/O helpers
+     - :class:`~pathforge.core.io.h5.base.FileHandleH5`, coordinate/feature/tissue I/O helpers
    * - ``core.slide_processing``
-     - :class:`~pathbench.core.slide_processing.base.SlideProcessorBase`
+     - :class:`~pathforge.core.slide_processing.base.SlideProcessorBase`
    * - ``core.explainer_base``
-     - :class:`~pathbench.core.explainer_base.ExplainerBase`
+     - :class:`~pathforge.core.explainer_base.ExplainerBase`
 
-Policy Layer (``pathbench.policy``)
+Policy Layer (``pathforge.policy``)
 -------------------------------------
 
 Orchestrates domain objects. Never imports concrete framework packages directly.
 
-- :class:`~pathbench.policy.feature_extraction.FeatureExtractionPolicy` — Runs tiling and feature extraction for all configured combinations.
-- :class:`~pathbench.policy.benchmarking.BenchmarkingPolicy` — Grid-searches model/loss/feature configurations.
-- :class:`~pathbench.policy.optimization.OptimizationPolicy` — Runs Optuna studies.
+- :class:`~pathforge.policy.feature_extraction.FeatureExtractionPolicy` — Runs tiling and feature extraction for all configured combinations.
+- :class:`~pathforge.policy.benchmarking.BenchmarkingPolicy` — Grid-searches model/loss/feature configurations.
+- :class:`~pathforge.policy.optimization.OptimizationPolicy` — Runs Optuna studies.
 
-CLI Layer (``pathbench.cli``)
+CLI Layer (``pathforge.cli``)
 ------------------------------
 
 Thin shells that parse arguments and delegate to policies.
 
-- :func:`~pathbench.cli.feature_extraction.main` → ``pathbench-features``
-- :func:`~pathbench.cli.benchmark.main` → ``pathbench-benchmark``
-- :func:`~pathbench.cli.optimize.main` → ``pathbench-optimize``
-- :func:`~pathbench.cli.inference.main` → ``pathbench-infer``
-- :func:`~pathbench.cli.slide_retrieval_representations.main` → ``pathbench-slide-retrieval-representations``
+- :func:`~pathforge.cli.feature_extraction.main` → ``pathforge-features``
+- :func:`~pathforge.cli.benchmark.main` → ``pathforge-benchmark``
+- :func:`~pathforge.cli.optimize.main` → ``pathforge-optimize``
+- :func:`~pathforge.cli.inference.main` → ``pathforge-infer``
+- :func:`~pathforge.cli.slide_retrieval_representations.main` → ``pathforge-slide-retrieval-representations``
 
-Infrastructure / Adapters (``pathbench.adapters``, ``pathbench.training``)
+Infrastructure / Adapters (``pathforge.adapters``, ``pathforge.training``)
 ---------------------------------------------------------------------------
 
 Concrete implementations registered through the registry system.
@@ -128,21 +128,21 @@ Concrete implementations registered through the registry system.
    * - Module
      - What it provides
    * - ``training.lightning``
-     - PyTorch Lightning trainer registered as ``"lightning"`` in :data:`~pathbench.utils.registries.TRAINERS`.
+     - PyTorch Lightning trainer registered as ``"lightning"`` in :data:`~pathforge.utils.registries.TRAINERS`.
    * - ``adapters.torchmil.backend``
-     - ``TorchMILBackendModel`` — generic PathBench wrapper for any TorchMIL model.
+     - ``TorchMILBackendModel`` — generic PathForge wrapper for any TorchMIL model.
    * - ``adapters.torchmil.collate``
-     - Collate functions for canonical PathBench bag dictionaries and padded TorchMIL-compatible batches.
+     - Collate functions for canonical PathForge bag dictionaries and padded TorchMIL-compatible batches.
    * - ``adapters.torchmil.heatmap_explainer``
-     - TorchMIL heatmap explainer registered in :data:`~pathbench.utils.registries.EXPLAINERS`.
+     - TorchMIL heatmap explainer registered in :data:`~pathforge.utils.registries.EXPLAINERS`.
    * - ``adapters.metrics.classification``
      - TorchMetrics classification backend.
    * - ``adapters.metrics.survival``
      - TorchSurv survival metrics backend.
    * - ``adapters.losses``
-     - ``torch.nn`` and TorchSurv-backed loss adapters registered in :data:`~pathbench.utils.registries.LOSSES`.
+     - ``torch.nn`` and TorchSurv-backed loss adapters registered in :data:`~pathforge.utils.registries.LOSSES`.
    * - ``core.slide_processing.lazyslide``
-     - Lazyslide/WSIData/timm slide processor registered in :data:`~pathbench.utils.registries.SLIDE_PROCESSORS`.
+     - Lazyslide/WSIData/timm slide processor registered in :data:`~pathforge.utils.registries.SLIDE_PROCESSORS`.
 
 Registry System
 ---------------
@@ -151,10 +151,10 @@ All extensible components use a registry pattern:
 
 .. code-block:: python
 
-   from pathbench.utils.registries import MODELS, LOSSES, TRAINERS
-   from pathbench.utils.registries import FEATURE_EXTRACTORS, SLIDE_PROCESSORS
-   from pathbench.utils.registries import CLASSIFICATION_METRICS, SURVIVAL_METRICS
-   from pathbench.utils.registries import EXPLAINERS
+   from pathforge.utils.registries import MODELS, LOSSES, TRAINERS
+   from pathforge.utils.registries import FEATURE_EXTRACTORS, SLIDE_PROCESSORS
+   from pathforge.utils.registries import CLASSIFICATION_METRICS, SURVIVAL_METRICS
+   from pathforge.utils.registries import EXPLAINERS
 
 Registration is done via a decorator:
 
@@ -175,13 +175,13 @@ Dynamic population of optional backends:
 
 .. code-block:: python
 
-   from pathbench.utils.registries import populate_dynamic_registries
+   from pathforge.utils.registries import populate_dynamic_registries
    populate_dynamic_registries()  # conditionally registers TorchMIL, TorchMetrics, TorchSurv
 
 H5 Artifact Contract
 --------------------
 
-PathBench writes one H5 file per slide. The layout is backend-agnostic:
+PathForge writes one H5 file per slide. The layout is backend-agnostic:
 
 .. code-block:: text
 
@@ -212,8 +212,8 @@ Optional Package Isolation
 Optional dependencies (``torchmil``, ``torchmetrics``, ``torchsurv``) are
 confined to two locations:
 
-- ``pathbench.adapters.*`` — concrete implementations
-- ``pathbench.utils.optional.*`` — availability guards
+- ``pathforge.adapters.*`` — concrete implementations
+- ``pathforge.utils.optional.*`` — availability guards
 
 All other layers (core, policy, training, config, CLI) are import-safe without
 these packages. Architecture tests in ``tests/unit/test_torchmil_architecture.py``

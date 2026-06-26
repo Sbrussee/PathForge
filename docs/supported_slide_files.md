@@ -94,7 +94,7 @@ Example:
 - `slides_dir/T12-00123/000001.dcm`
 - `slides_dir/T12-00123/000002.dcm`
 
-This is deterministic in the current implementation: PathBench prefers the direct
+This is deterministic in the current implementation: PathForge prefers the direct
 file match and only falls back to the DICOM folder when no direct file exists.
 
 ### 2. Multiple exact direct-file matches exist for the same `slide_id`
@@ -139,5 +139,5 @@ This keeps slide resolution explicit, predictable, and easy to validate.
 
 ## Explicit path override
 
-If the annotation CSV includes a `wsi_path` column, PathBench first tries that
+If the annotation CSV includes a `wsi_path` column, PathForge first tries that
 path for the row before resolving the slide through `slides_dir`.

@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 import torch
 
-from pathbench.core.datasets.bag_dataset import BagSample
-from pathbench.core.io.slide_artifacts import tiles as tiles_io
-from pathbench.core.io.slide_artifacts.base import FileHandleH5
-from pathbench.slide_retrieval.representation_strategies.strategies.yottixel import (
+from pathforge.core.datasets.bag_dataset import BagSample
+from pathforge.core.io.slide_artifacts import tiles as tiles_io
+from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.slide_retrieval.representation_strategies.strategies.yottixel import (
     YottixelFeatures,
     YottixelRGB,
 )

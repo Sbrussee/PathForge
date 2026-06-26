@@ -1,6 +1,6 @@
-# PathBench-MIL
+# PathForge-MIL
 
-PathBench-MIL is a modular benchmarking framework for multiple instance
+PathForge-MIL is a modular benchmarking framework for multiple instance
 learning (MIL) in computational pathology. It supports WSI feature extraction,
 H5 artifact generation, tile overview reports, MIL benchmarking, hyperparameter
 optimization, optional TorchMIL backends, optional metrics backends, and
@@ -8,14 +8,14 @@ explainability hooks.
 
 The repository follows the Clean Architecture contract described in
 [docs/design.md](docs/design.md): policies and trainers resolve implementations through
-PathBench interfaces and registries, while concrete third-party packages live in
+PathForge interfaces and registries, while concrete third-party packages live in
 adapter modules.
 
 ![Design](design.png)
 
-## What PathBench-MIL Does
+## What PathForge-MIL Does
 
-PathBench-MIL is organized around a config-driven workflow:
+PathForge-MIL is organized around a config-driven workflow:
 
 1. Read a YAML config.
 2. Create an experiment folder with copied annotations and metadata.
@@ -36,9 +36,10 @@ Primary functionality:
 - **Benchmarking:** evaluate MIL model/loss combinations from config grids.
 - **Slide retrieval:** rank reference slides against query slides using bag-level features and configurable representation/search strategies.
 - **Optimization:** run Optuna studies over model and training choices.
-- **Inference:** lightweight inference CLI placeholder for checkpoint prediction
-  outputs.
-- **Backends:** native PathBench MIL models or optional TorchMIL models through
+- **Inference:** config-driven inference over a CSV of slides
+  (`pathforge-infer`), plus packaged-model prediction and heatmap generation
+  from a single feature artifact (`pathforge-infer-model`).
+- **Backends:** native PathForge MIL models or optional TorchMIL models through
   one generic adapter.
 - **Metrics/loss adapters:** optional TorchMetrics and TorchSurv integrations.
 - **Explainability:** optional heatmap adapter for per-instance MIL scores.
@@ -81,48 +82,59 @@ Individual extras:
 - `torchmetrics`
 - `torchsurv`
 
-These packages are optional. Native PathBench workflows must remain import-safe
+These packages are optional. Native PathForge workflows must remain import-safe
 and runnable without them.
 
 ## Command Line Entry Points
 
-The package declares these console scripts in `pyproject.toml`:
+PathForge installs a single umbrella command, `pathforge`, plus flat console
+scripts for the most common workflows. Every workflow command accepts
+`--config` (a YAML file) and an optional `--log-level {DEBUG,INFO,WARNING,ERROR}`.
+
+### Unified `pathforge` command
 
 ```bash
-pathbench-benchmark --config config.yaml
-pathbench-evaluate --config config.yaml
-pathbench-optimize --config config.yaml
-pathbench-features --config config.yaml
-pathbench-mean-rgb --config config.yaml --dataset DatasetA --slide-id SLIDE_001
-pathbench-infer --model_path checkpoint.ckpt --input features.pt --output predictions.json
-pathbench-visualize --config config.yaml
-pathbench-slide-retrieval-representations --config retrieval.yaml
+pathforge features run    --config features.yaml
+pathforge features slide  --config features.yaml --dataset TrainingSet --input /path/to/slide.svs
+pathforge benchmark run   --config benchmark.yaml
+pathforge evaluate run    --config benchmark.yaml
+pathforge visualize run   --config benchmark.yaml
+pathforge optimize run    --config optimize.yaml
+pathforge report tiles    --config features.yaml
+pathforge retrieval representations --config retrieval.yaml
+pathforge retrieval mean-rgb        --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
+pathforge retrieval sish-vqvae      --config retrieval.yaml
+pathforge infer run       --config inference.yaml --input-csv slides.csv
 ```
 
-`feature_extraction_slide` and `tiles_report` are currently module-only CLIs:
+Run `pathforge --help` (or `pathforge <group> --help`) to list every command.
+
+### Flat console scripts
+
+Shortcuts are installed for the common workflows:
 
 ```bash
-python -m pathbench.cli.feature_extraction_slide --config config.yaml --dataset DatasetA --input /path/to/slide.svs
-python -m pathbench.cli.tiles_report --config config.yaml --log-level INFO
+pathforge-features   --config features.yaml
+pathforge-benchmark  --config benchmark.yaml
+pathforge-evaluate   --config benchmark.yaml
+pathforge-optimize   --config optimize.yaml
+pathforge-visualize  --config benchmark.yaml
+pathforge-mean-rgb   --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
+pathforge-slide-retrieval-representations --config retrieval.yaml
+pathforge-infer      --config inference.yaml --input-csv slides.csv
 ```
 
-The modules can also be called directly:
+### Packaged-model inference and heatmaps
+
+`pathforge-infer-model` runs a packaged checkpoint on a single feature artifact
+and can optionally attach a heatmap:
 
 ```bash
-python -m pathbench.cli.feature_extraction --config config.yaml --log-level INFO
-python -m pathbench.cli.benchmark --config config.yaml
-python -m pathbench.cli.evaluate --config config.yaml
-python -m pathbench.cli.optimize --config config.yaml
-python -m pathbench.cli.inference --model_path checkpoint.ckpt --input features.pt --output predictions.json
-python -m pathbench.cli.mean_rgb --config config.yaml --dataset DatasetA --slide-id SLIDE_001
-python -m pathbench.cli.visualize --config config.yaml
-python -m pathbench.cli.slide_retrieval_representations --config retrieval.yaml
-python -m pathbench.cli.feature_extraction_slide --config config.yaml --dataset DatasetA --input /path/to/slide.svs
-python -m pathbench.cli.tiles_report --config config.yaml --log-level INFO
+pathforge-infer-model \
+  --model_path checkpoints/best.ckpt \
+  --input artifacts/SLIDE_001.h5 \
+  --output predictions/SLIDE_001.json
 ```
-
-Use module commands during development when validating CLI changes; they make it
-obvious which implementation file is being executed.
 
 ## Data Layout
 
@@ -142,7 +154,7 @@ Optional column:
 - `fallback_mpp`: positive floating-point microns-per-pixel fallback used when a
   WSI backend cannot read valid base MPP metadata.
 - `wsi_path`: explicit absolute or relative slide path. When present and valid,
-  PathBench uses it instead of resolving `{slide}` inside `datasets[].slides_dir`.
+  PathForge uses it instead of resolving `{slide}` inside `datasets[].slides_dir`.
 
 Rules:
 
@@ -162,7 +174,7 @@ Each dataset entry points to slide inputs and artifact outputs:
 datasets:
   - name: TrainingSet
     slides_dir: /data/slides/train
-    artifacts_dir: /data/pathbench_artifacts/train
+    artifacts_dir: /data/pathforge_artifacts/train
     tissue_annotations_dir: null
     used_for: training
 ```
@@ -175,7 +187,7 @@ artifacts_dir/{slide_id}.h5
 
 ## TCGA-Tools Datasets
 
-PathBench can call the `tcga-tools` package to check whether requested datasets
+PathForge can call the `tcga-tools` package to check whether requested datasets
 exist in TCGA or TCIA, download metadata first, select the configured task
 column, and download image data only when it is missing.
 
@@ -192,15 +204,15 @@ datasets:
 
 This allows users to:
 
-- specify TCGA or TCIA datasets directly in the PathBench config
-- let PathBench validate those dataset names through `tcga-tools`
-- generate a PathBench annotation CSV automatically under `datasets/`
+- specify TCGA or TCIA datasets directly in the PathForge config
+- let PathForge validate those dataset names through `tcga-tools`
+- generate a PathForge annotation CSV automatically under `datasets/`
 - split one downloaded dataset across multiple roles when `used_for` contains more than one role
 
 To find which columns exist for a dataset, use `tcga-tools` to do a metadata-only
 download first and inspect the generated CSV files such as `files_metadata.csv`,
 `clinical.csv`, `molecular_index.csv`, or `diagnosis.csv`. The chosen column name
-then becomes `annotation_column` in the PathBench config.
+then becomes `annotation_column` in the PathForge config.
 
 ## Configuration Reference
 
@@ -210,7 +222,7 @@ Minimal feature extraction config:
 experiment:
   project_name: example_features
   annotation_file: /data/annotations.csv
-  project_root: /data/pathbench_projects
+  project_root: /data/pathforge_projects
   mode: feature_extraction
   task: null
   report: true
@@ -282,7 +294,7 @@ Feature extraction creates WSI H5 artifacts. It uses:
 Run all configured datasets and combinations:
 
 ```bash
-python -m pathbench.cli.feature_extraction --config features.yaml --log-level INFO
+pathforge-features --config features.yaml --log-level INFO
 ```
 
 The policy builds combinations over:
@@ -291,7 +303,7 @@ The policy builds combinations over:
 feature_extraction x tile_px x tile_mpp
 ```
 
-For each slide and combination, PathBench:
+For each slide and combination, PathForge:
 
 1. Validates base MPP.
 2. Reuses existing valid coordinates and tiling specs when possible.
@@ -316,7 +328,7 @@ exactly with `coords`.
 Use this for cluster jobs where each task processes one slide:
 
 ```bash
-python -m pathbench.cli.feature_extraction_slide \
+pathforge features slide \
   --config features.yaml \
   --dataset TrainingSet \
   --input /data/slides/train/SLIDE_001.svs \
@@ -341,7 +353,7 @@ If `experiment.report: true`, feature extraction writes `tiles_overview` image
 bytes into the slide H5 files. Generate PDF reports after extraction with:
 
 ```bash
-python -m pathbench.cli.tiles_report --config features.yaml --log-level INFO
+pathforge report tiles --config features.yaml --log-level INFO
 ```
 
 The report CLI derives bag ids from all configured `tile_px` and `tile_mpp`
@@ -363,7 +375,7 @@ occur.
 
 ## H5 Artifact Contract
 
-PathBench writes one H5 artifact per slide. The layout is backend-agnostic and
+PathForge writes one H5 artifact per slide. The layout is backend-agnostic and
 row-aligned:
 
 - coordinates: `(N, 5)` `int32`
@@ -381,18 +393,18 @@ Invariants:
 
 ## MIL Backends
 
-PathBench supports two MIL backend modes:
+PathForge supports two MIL backend modes:
 
-- `native`: use PathBench model classes registered directly in `MODELS`.
-- `torchmil`: use one generic TorchMIL adapter registered under the PathBench
+- `native`: use PathForge model classes registered directly in `MODELS`.
+- `torchmil`: use one generic TorchMIL adapter registered under the PathForge
   model key `torchmil`.
 
 TorchMIL, TorchMetrics, and TorchSurv are optional integrations. They are not
-required to import PathBench or to run native workflows. Package-specific imports
+required to import PathForge or to run native workflows. Package-specific imports
 are confined to:
 
-- `src/pathbench/adapters/...`
-- `src/pathbench/utils/optional/...`
+- `src/pathforge/adapters/...`
+- `src/pathforge/utils/optional/...`
 
 Trainer, policy, config, and domain code select implementations through
 configuration and registries. They do not call `torchmil`, `torchmetrics`, or
@@ -400,7 +412,7 @@ configuration and registries. They do not call `torchmil`, `torchmetrics`, or
 
 ### Native Backend
 
-Use `native` when you want existing PathBench models and no optional MIL backend
+Use `native` when you want existing PathForge models and no optional MIL backend
 dependency.
 
 ```yaml
@@ -435,7 +447,7 @@ bag, and `sample["Y"]` is the task label.
 
 ### TorchMIL Backend
 
-Use `torchmil` when you want TorchMIL models while keeping PathBench's trainer,
+Use `torchmil` when you want TorchMIL models while keeping PathForge's trainer,
 policy, dataset, and registry contracts.
 
 ```yaml
@@ -466,12 +478,12 @@ benchmark_parameters:
 
 Important rules:
 
-- `benchmark_parameters.mil` contains the PathBench registry key `torchmil`.
+- `benchmark_parameters.mil` contains the PathForge registry key `torchmil`.
 - `mil.torchmil_model` contains the TorchMIL model class name.
 - `mil.torchmil_model_kwargs` are forwarded to the TorchMIL constructor.
 - `mil.use_torchmil_collate: true` enables padded dict batches compatible with
   TorchMIL semantics.
-- The generic `TorchMILBackendModel` is the only PathBench model adapter for
+- The generic `TorchMILBackendModel` is the only PathForge model adapter for
   TorchMIL models.
 
 If `torchmil` is selected but unavailable, config validation raises:
@@ -514,7 +526,7 @@ Benchmark mode evaluates combinations from `benchmark_parameters`.
 Run:
 
 ```bash
-python -m pathbench.cli.benchmark --config benchmark.yaml
+pathforge-benchmark --config benchmark.yaml
 ```
 
 Minimal native benchmark:
@@ -553,7 +565,7 @@ For a TorchMIL benchmark, every run resolves:
 5. `LightningTrainer`, which accepts canonical dict batches
 
 This keeps TorchMIL as one backend plugin. Benchmarking policies still interact
-with PathBench registries and trainer/model interfaces; they do not import or
+with PathForge registries and trainer/model interfaces; they do not import or
 call TorchMIL directly.
 
 To compare native and TorchMIL backends, use separate config files. Native
@@ -568,7 +580,7 @@ boundary as benchmarking.
 Run:
 
 ```bash
-python -m pathbench.cli.optimize --config optimize.yaml
+pathforge-optimize --config optimize.yaml
 ```
 
 Example:
@@ -604,7 +616,7 @@ benchmark_parameters:
 
 TorchMIL integration affects optimization in these places:
 
-- Search spaces may include `model = "torchmil"` as a PathBench registry key.
+- Search spaces may include `model = "torchmil"` as a PathForge registry key.
 - Search spaces may include `mil.torchmil_model`, for example `ABMIL`, `DSMIL`,
   or another installed TorchMIL class.
 - Trial parameters may update `mil.torchmil_model_kwargs`, such as hidden
@@ -623,7 +635,7 @@ features. It reuses existing H5 artifacts — no training is required.
 Run:
 
 ```bash
-python -m pathbench.cli.benchmark --config retrieval.yaml
+pathforge-benchmark --config retrieval.yaml
 ```
 
 Minimal config:
@@ -650,8 +662,8 @@ benchmark_parameters:
   tile_px: [256]
   tile_mpp: [0.5]
   feature_extraction: [uni]
-  retrieval_representation: [mean_pooling]
-  search_strategy: [cosine_knn]
+  retrieval_representation: [yottixel-features]
+  search_strategy: [yottixel]
 
 slide_retrieval:
   exclusion_level: patient
@@ -670,7 +682,7 @@ the same patient when querying a shared pool.
 Pre-compute representations ahead of the search step for large datasets:
 
 ```bash
-python -m pathbench.cli.slide_retrieval_representations --config retrieval.yaml
+pathforge-slide-retrieval-representations --config retrieval.yaml
 ```
 
 Outputs are written to:
@@ -737,7 +749,7 @@ metrics:
   survival_continuous_backend: torchsurv
 ```
 
-PathBench expects continuous survival outputs to normalize to risk or log-hazard
+PathForge expects continuous survival outputs to normalize to risk or log-hazard
 tensors shaped `[B]` or `[B, 1]`. Targets should follow the existing survival
 loss contract:
 
@@ -781,7 +793,7 @@ The inference CLI currently provides a small stable surface for checkpoint-style
 prediction workflows:
 
 ```bash
-python -m pathbench.cli.inference \
+pathforge-infer-model \
   --model_path checkpoint.ckpt \
   --input /data/artifacts/SLIDE_001.h5 \
   --output predictions.json
@@ -794,7 +806,7 @@ available from a backend model.
 TorchMIL heatmap inference example:
 
 ```bash
-python -m pathbench.cli.inference \
+pathforge-infer-model \
   --model_path /models/abmil.ckpt \
   --input /data/artifacts/SLIDE_001.h5 \
   --output /data/predictions/SLIDE_001.json \
@@ -807,7 +819,7 @@ python -m pathbench.cli.inference \
 
 Inputs:
 
-- `--input`: slide H5 artifact. When `--coords` is omitted, PathBench reads
+- `--input`: slide H5 artifact. When `--coords` is omitted, PathForge reads
   `bags/{bag_id}/coords` and uses the first two columns as level-0 x/y
   coordinates.
 - `--scores`: `.npy`, `.npz`, or `.json` vector shaped `[N]` containing
@@ -839,11 +851,11 @@ Persisted heatmap contracts:
 
 This path still follows Clean Architecture: inference resolves the heatmap
 implementation through `EXPLAINERS`; TorchMIL-specific behavior remains in
-`pathbench.adapters.torchmil.heatmap_explainer`.
+`pathforge.adapters.torchmil.heatmap_explainer`.
 
 ## Registries And Extensibility
 
-PathBench uses registries as the plugin backbone:
+PathForge uses registries as the plugin backbone:
 
 - `MODELS`
 - `LOSSES`
@@ -858,14 +870,14 @@ PathBench uses registries as the plugin backbone:
 
 Register new implementations by importing a module that calls the relevant
 registry decorator or explicit registration function. Keep concrete package
-logic in adapter/infrastructure modules and expose it through PathBench
+logic in adapter/infrastructure modules and expose it through PathForge
 interfaces.
 
 Example native model registration:
 
 ```python
-from pathbench.core.models.mil_base import MILModelBase
-from pathbench.utils.registries import MODELS
+from pathforge.core.models.mil_base import MILModelBase
+from pathforge.utils.registries import MODELS
 
 
 @MODELS.register("MyMIL")
@@ -882,10 +894,10 @@ The integration is intentionally interface-first:
 
 - Domain/core contracts remain stable: `MILModelBase`, `TrainerBase`,
   `ExplainerBase`, and the bag schema.
-- Optional package guards live under `pathbench.utils.optional`.
+- Optional package guards live under `pathforge.utils.optional`.
 - TorchMIL model/collate/output/heatmap code lives under
-  `pathbench.adapters.torchmil`.
-- TorchMetrics and TorchSurv code lives under `pathbench.adapters.metrics`.
+  `pathforge.adapters.torchmil`.
+- TorchMetrics and TorchSurv code lives under `pathforge.adapters.metrics`.
 - Dynamic registry population conditionally registers optional implementations
   only when packages are installed.
 - Trainer code accepts canonical batches but does not import `torchmil`,
@@ -918,8 +930,8 @@ adapter and optional-guard modules.
 
 `cfg.experiment.project_root must be an absolute path.`
 
-: Use an absolute path such as `/data/pathbench_projects`. If omitted,
-  PathBench writes under the repository-level `experiments/` directory.
+: Use an absolute path such as `/data/pathforge_projects`. If omitted,
+  PathForge writes under the repository-level `experiments/` directory.
 
 No slides are found for a dataset.
 

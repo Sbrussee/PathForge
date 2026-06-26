@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pathbench.core.experiments.combinations import ComboConfig
+from pathforge.core.experiments.combinations import ComboConfig
 
 
 def _read_query_results_xlsx(path: Path) -> tuple[list[str] | None, list[dict[str, object]]]:
@@ -33,11 +33,11 @@ def _read_query_results_xlsx(path: Path) -> tuple[list[str] | None, list[dict[st
     fieldnames = [str(value) for value in rows[0]]
     records = [dict(zip(fieldnames, row)) for row in rows[1:]]
     return fieldnames, records
-from pathbench.core.tasks.slide_retrieval import SlideRetrievalTask
-from pathbench.slide_retrieval.representation_strategies.types import (
+from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
+from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.search_strategies.types import SearchHit, SearchResult
+from pathforge.slide_retrieval.search_strategies.types import SearchHit, SearchResult
 from ._smoke_dataset import attach_smoke_outputs, capture_smoke_metrics
 from .conftest import RetrievalDatasets
 
@@ -89,10 +89,10 @@ def _full_cache(self, *, bag_dataset, representation_id, aggregation_level, excl
 
 def _register_retrieval_strategies() -> None:
     """Register all production representation and search strategies."""
-    from pathbench.slide_retrieval.representation_strategies.registry import (
+    from pathforge.slide_retrieval.representation_strategies.registry import (
         import_representation_strategy_modules,
     )
-    from pathbench.slide_retrieval.search_strategies.registry import (
+    from pathforge.slide_retrieval.search_strategies.registry import (
         import_search_strategy_modules,
     )
 
@@ -166,7 +166,7 @@ def test_smoke_multi_combo_grid_produces_separate_run_dirs(
     slide_level_feature_matrix: tuple,
 ) -> None:
     """Each (representation, search_strategy) combination writes a separate run dir."""
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     _register_retrieval_strategies()
     slide_ids, feature_matrix = slide_level_feature_matrix
@@ -351,7 +351,7 @@ def test_smoke_representation_cache_reuse_across_executions(
     retrieval_wsi_datasets: RetrievalDatasets,
 ) -> None:
     """Second execution with the same combo must reuse cached representations."""
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     _register_retrieval_strategies()
     compute_log: list[str] = []
@@ -389,7 +389,7 @@ def test_smoke_failed_representation_materialisation_raises(
     retrieval_wsi_datasets: RetrievalDatasets,
 ) -> None:
     """A strategy crash during materialisation must surface as RuntimeError."""
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     _register_retrieval_strategies()
 
@@ -457,7 +457,7 @@ def test_smoke_no_reference_representations_raises(
     retrieval_wsi_datasets: RetrievalDatasets,
 ) -> None:
     """When the reference set is empty after splitting, execution must raise."""
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     _register_retrieval_strategies()
 
@@ -494,7 +494,7 @@ def test_smoke_manifest_and_csv_are_well_formed(
     slide_level_feature_matrix: tuple,
     retrieval_wsi_datasets: RetrievalDatasets,
 ) -> None:
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     _register_retrieval_strategies()
 

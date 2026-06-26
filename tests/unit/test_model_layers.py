@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from pathbench.core.models.layers import create_mlp
+from pathforge.core.models.layers import create_mlp
 
 
 def test_create_mlp_builds_hidden_stack_and_output_shape() -> None:

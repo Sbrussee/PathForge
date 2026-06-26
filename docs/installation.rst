@@ -60,7 +60,7 @@ The ``mil-backends`` extra installs:
 - **torchmetrics** — classification metrics (accuracy, AUROC, F1, etc.)
 - **torchsurv** — survival metrics and losses (C-index, time-dependent AUC)
 
-These are optional. Native PathBench workflows are import-safe and runnable
+These are optional. Native PathForge workflows are import-safe and runnable
 without them.
 
 Installing for Documentation
@@ -79,13 +79,13 @@ Verifying the Install
 
 .. code-block:: bash
 
-   python -c "import pathbench; print('ok')"
+   python -c "import pathforge; print('ok')"
 
 Check optional backends:
 
 .. code-block:: python
 
-   from pathbench.utils.optional.torchmil import (
+   from pathforge.utils.optional.torchmil import (
        is_torchmil_available,
        is_torchmetrics_available,
        is_torchsurv_available,

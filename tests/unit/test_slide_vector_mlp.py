@@ -6,16 +6,16 @@ import torch
 
 
 def _register_and_import():
-    from pathbench.utils.registries import MODELS
-    from pathbench.core.models.mil_base import MILModelBase
-    from pathbench.core.models.slide_base import SlideLevelModel
-    from pathbench.core.models.base import ModelBase
+    from pathforge.utils.registries import MODELS
+    from pathforge.core.models.mil_base import MILModelBase
+    from pathforge.core.models.slide_base import SlideLevelModel
+    from pathforge.core.models.base import ModelBase
 
     if not MODELS.is_available("SlideVectorMLP"):
         import importlib
-        importlib.import_module("pathbench.core.models.slide_mlp")
+        importlib.import_module("pathforge.core.models.slide_mlp")
 
-    from pathbench.core.models.slide_mlp import SlideVectorMLP
+    from pathforge.core.models.slide_mlp import SlideVectorMLP
     return SlideVectorMLP, MILModelBase, SlideLevelModel, ModelBase
 
 
@@ -37,7 +37,7 @@ def test_slide_vector_mlp_forward_bag_output_shape():
 
 def test_slide_vector_mlp_forward_bag_with_loss_returns_dict():
     SlideVectorMLP, *_ = _register_and_import()
-    from pathbench.utils.registries import LOSSES
+    from pathforge.utils.registries import LOSSES
 
     model = SlideVectorMLP(input_dim=8, hidden_dim=16, output_dim=2)
     bag = torch.randn(4, 5, 8)
@@ -78,7 +78,7 @@ def test_slide_vector_mlp_bag_size_is_none():
 
 
 def test_slide_vector_mlp_registered_in_models_registry():
-    from pathbench.utils.registries import MODELS
+    from pathforge.utils.registries import MODELS
     # trigger lazy registration
     _register_and_import()
     assert MODELS.is_available("SlideVectorMLP")

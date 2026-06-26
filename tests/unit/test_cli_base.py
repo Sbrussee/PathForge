@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import pathbench.cli.base as cli_base
+import pathforge.cli.base as cli_base
 
 
 def test_add_shared_arguments_parses_config_and_log_level() -> None:

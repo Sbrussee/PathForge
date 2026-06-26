@@ -4,14 +4,14 @@ from pathlib import Path
 
 import torch
 
-from pathbench.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
-from pathbench.adapters.torchmil.backend import (
+from pathforge.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
+from pathforge.adapters.torchmil.backend import (
     TorchMILBackendModel,
     register_torchmil_backend,
 )
-from pathbench.config.config import Config
-from pathbench.training.lightning import LightningTrainer
-from pathbench.utils.registries import LOSSES
+from pathforge.config.config import Config
+from pathforge.training.lightning import LightningTrainer
+from pathforge.utils.registries import LOSSES
 from tests.conftest import DUMMY_FE, DUMMY_MIL
 
 
@@ -126,11 +126,11 @@ def test_torchmil_backend_trainer_writes_classification_visualizations(
 ) -> None:
     register_torchmil_backend()
     monkeypatch.setattr(
-        "pathbench.adapters.torchmil.backend.require_torchmil",
+        "pathforge.adapters.torchmil.backend.require_torchmil",
         lambda feature: None,
     )
     monkeypatch.setattr(
-        "pathbench.adapters.torchmil.backend.build_torchmil_model",
+        "pathforge.adapters.torchmil.backend.build_torchmil_model",
         lambda spec, config_kwargs: _FakeTorchMILModel(),
     )
 
@@ -165,11 +165,11 @@ def test_mil_lab_backend_trainer_writes_classification_visualizations(
 ) -> None:
     register_mil_lab_backend()
     monkeypatch.setattr(
-        "pathbench.adapters.mil_lab.backend.require_mil_lab",
+        "pathforge.adapters.mil_lab.backend.require_mil_lab",
         lambda feature: None,
     )
     monkeypatch.setattr(
-        "pathbench.adapters.mil_lab.backend.build_mil_lab_model",
+        "pathforge.adapters.mil_lab.backend.build_mil_lab_model",
         lambda spec, config_kwargs, from_pretrained=False: _FakeMILLabModel(),
     )
 

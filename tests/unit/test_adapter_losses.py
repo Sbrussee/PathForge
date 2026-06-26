@@ -3,12 +3,12 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from pathbench.adapters.losses import (
+from pathforge.adapters.losses import (
     TorchClassificationLoss,
     TorchRegressionLoss,
     TorchSurvivalLoss,
 )
-from pathbench.utils.registry import Registry
+from pathforge.utils.registry import Registry
 
 
 def test_torch_classification_loss_squeezes_binary_logits_and_targets() -> None:
@@ -125,7 +125,7 @@ def test_torch_survival_loss_passes_eval_time_for_discrete_losses() -> None:
 def test_register_builtin_loss_factories_populates_common_loss_names() -> None:
     registry = Registry()
 
-    from pathbench.adapters.losses import register_builtin_loss_factories
+    from pathforge.adapters.losses import register_builtin_loss_factories
 
     register_builtin_loss_factories(registry)
 

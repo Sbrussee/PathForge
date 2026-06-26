@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath("../src"))
 
-project = "PathBench"
+project = "PathForge"
 copyright = "2025, Siemen Brussee"
 author = "Siemen Brussee"
 release = "2.0"
@@ -23,7 +23,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "furo"
 html_static_path = ["_static"]
-html_title = "PathBench 2.0"
+html_title = "PathForge 2.0"
 html_logo = None
 
 autodoc_default_options = {

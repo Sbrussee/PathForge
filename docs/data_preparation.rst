@@ -1,7 +1,7 @@
 Data Preparation
 ================
 
-PathBench requires two inputs before any workflow can run:
+PathForge requires two inputs before any workflow can run:
 
 1. An **annotation CSV** that describes every slide, its patient grouping, its
    dataset split, and its task-specific label.
@@ -14,7 +14,7 @@ This page documents both requirements in full.
 Annotation CSV
 --------------
 
-The annotation CSV is the single source of truth for all PathBench workflows.
+The annotation CSV is the single source of truth for all PathForge workflows.
 Every CLI command reads it at startup via ``experiment.annotation_file``.
 
 Minimum Required Columns
@@ -57,18 +57,18 @@ Optional Columns
      - Description
    * - ``patient``
      - Patient identifier used for patient-level metric aggregation and
-       cross-validation splitting. When absent, PathBench falls back to the
+       cross-validation splitting. When absent, PathForge falls back to the
        slide ID (i.e. one patient per slide). Strongly recommended for any
        cohort where one patient has multiple slides.
    * - ``wsi_path``
-     - Absolute path to the WSI file. When present, PathBench uses this path
+     - Absolute path to the WSI file. When present, PathForge uses this path
        directly instead of resolving the slide through ``slides_dir``. Useful
        when slides are stored in heterogeneous subdirectory trees or remote
        mounts.
    * - ``fallback_mpp``
      - Fallback microns-per-pixel (MPP) value as a float. Used for slides
        whose metadata does not contain valid MPP information (e.g. scanned
-       without calibration). Provide this value so PathBench can still tile
+       without calibration). Provide this value so PathForge can still tile
        at the correct resolution.
 
 Survival Task Columns
@@ -152,7 +152,7 @@ Config (``task: classification``):
 Rules:
 
 - ``category`` must be a numeric float (any finite value).
-- No class mapping is applied; PathBench uses the raw value as the regression
+- No class mapping is applied; PathForge uses the raw value as the regression
   target.
 - The column name can be changed via ``experiment.label_column``; the column
   referenced must contain floats.
@@ -209,7 +209,7 @@ Slide Naming
 ------------
 
 Slide IDs in the annotation CSV must match files in ``slides_dir`` exactly.
-PathBench supports two layouts.
+PathForge supports two layouts.
 
 Layout 1 — Single-file slide (most common)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -264,7 +264,7 @@ Add a ``wsi_path`` column to the annotation CSV with absolute paths:
    dataset,slide,patient,category,wsi_path
    TrainingSet,slide-001,PAT-001,1,/mnt/nas/project_a/raw/slide-001.svs
 
-PathBench uses ``wsi_path`` directly and skips ``slides_dir`` resolution for
+PathForge uses ``wsi_path`` directly and skips ``slides_dir`` resolution for
 that row. Useful for heterogeneous storage.
 
 ----
@@ -286,7 +286,7 @@ A typical project layout for two dataset splits:
    │       └── TCGA-A2-A0D0-01Z.svs
    └── artifacts/
        ├── train/
-       │   ├── TCGA-A1-A0SB-01Z.h5    ← written by pathbench-features
+       │   ├── TCGA-A1-A0SB-01Z.h5    ← written by pathforge-features
        │   └── TCGA-A1-A0SD-01Z.h5
        └── test/
            └── TCGA-A2-A0D0-01Z.h5
@@ -337,7 +337,7 @@ overridden via config.
 Validation Checklist
 ---------------------
 
-Before running PathBench, verify:
+Before running PathForge, verify:
 
 .. code-block:: text
 

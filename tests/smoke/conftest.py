@@ -1,4 +1,4 @@
-"""Session-scoped fixtures for realistic PathBench smoke tests."""
+"""Session-scoped fixtures for realistic PathForge smoke tests."""
 
 from __future__ import annotations
 
@@ -60,15 +60,15 @@ def extracted_wsi_workspace(
     smoke_assets: DownloadedSmokeAssets,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> ExtractedWsiWorkspace:
-    """Run session-scoped PathBench tile extraction on a few small WSIs."""
+    """Run session-scoped PathForge tile extraction on a few small WSIs."""
     pytest.importorskip("torch")
     pytest.importorskip("timm")
     pytest.importorskip("lazyslide")
 
     register_smoke_components()
-    from pathbench.config.config import Config
-    from pathbench.core.experiments.base import Experiment
-    from pathbench.policy.feature_extraction import FeatureExtractionPolicy
+    from pathforge.config.config import Config
+    from pathforge.core.experiments.base import Experiment
+    from pathforge.policy.feature_extraction import FeatureExtractionPolicy
 
     root_dir = tmp_path_factory.mktemp("hf_smoke_wsi")
     slides_dir = root_dir / "slides"
@@ -389,9 +389,9 @@ def gtex_survival_workspace(
 @pytest.fixture(scope="session")
 def retrieval_wsi_datasets(extracted_wsi_workspace: ExtractedWsiWorkspace) -> RetrievalDatasets:
     """Pre-built real SlideRetrievalBagDataset instances from GTEx H5 artifacts."""
-    from pathbench.config.config import DatasetEntry
-    from pathbench.core.experiments.combinations import ComboConfig
-    from pathbench.core.datasets.bag_dataset import SlideRetrievalBagDataset
+    from pathforge.config.config import DatasetEntry
+    from pathforge.core.experiments.combinations import ComboConfig
+    from pathforge.core.datasets.bag_dataset import SlideRetrievalBagDataset
 
     annotations_df = pd.read_csv(extracted_wsi_workspace.annotations_csv)
     all_slide_ids = annotations_df["slide"].astype(str).tolist()

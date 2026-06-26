@@ -1,18 +1,18 @@
-PathBench 2.0
+PathForge 2.0
 =============
 
-**PathBench-MIL** is a modular benchmarking framework for multiple instance
+**PathForge-MIL** is a modular benchmarking framework for multiple instance
 learning (MIL) in computational pathology. It supports whole-slide image (WSI)
 feature extraction, H5 artifact generation, tile overview reports, MIL
 benchmarking, hyperparameter optimization, optional TorchMIL backends, metric
 adapters, and explainability hooks.
 
-PathBench follows a Clean Architecture: policies and trainers resolve
-implementations through PathBench interfaces and registries, while concrete
+PathForge follows a Clean Architecture: policies and trainers resolve
+implementations through PathForge interfaces and registries, while concrete
 third-party packages live in adapter modules.
 
 .. image:: ../design.png
-   :alt: PathBench architecture diagram
+   :alt: PathForge architecture diagram
    :align: center
 
 ----
@@ -67,7 +67,7 @@ Key Capabilities
    * - Inference
      - Checkpoint-based prediction and per-instance attention heatmap generation.
    * - Backends
-     - Native PathBench MIL models *or* TorchMIL via one generic adapter.
+     - Native PathForge MIL models *or* TorchMIL via one generic adapter.
    * - Metrics/losses
      - Optional TorchMetrics (classification) and TorchSurv (survival) integrations.
    * - Explainability

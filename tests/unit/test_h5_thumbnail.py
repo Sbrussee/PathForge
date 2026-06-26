@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from pathbench.config.config import Config
-from pathbench.core.io.slide_artifacts import thumbnail as thumbnail_io
-from pathbench.core.io.slide_artifacts.base import FileHandleH5
-from pathbench.core.visualization.thumbnail import (
+from pathforge.config.config import Config
+from pathforge.core.io.slide_artifacts import thumbnail as thumbnail_io
+from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.core.visualization.thumbnail import (
     project_level0_to_thumbnail,
     render_thumbnail_image,
 )

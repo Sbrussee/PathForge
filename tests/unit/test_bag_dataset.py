@@ -5,8 +5,8 @@ from pathlib import Path
 import pandas as pd
 import torch
 
-from pathbench.core.datasets.bag_schema import assert_bag_schema
-from pathbench.core.datasets.bag_dataset import BagDataset
+from pathforge.core.datasets.bag_schema import assert_bag_schema
+from pathforge.core.datasets.bag_dataset import BagDataset
 
 
 def test_bag_dataset_infers_feature_and_output_dimensions(tmp_path: Path) -> None:

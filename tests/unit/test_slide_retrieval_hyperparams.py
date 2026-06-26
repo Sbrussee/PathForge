@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from pathbench.slide_retrieval.hyperparams import HyperParam
-from pathbench.slide_retrieval.representation_strategies.base import (
+from pathforge.slide_retrieval.hyperparams import HyperParam
+from pathforge.slide_retrieval.representation_strategies.base import (
     BaseRetrievalRepresentationStrategy,
 )
-from pathbench.slide_retrieval.search_strategies.base import BaseSearchStrategy
+from pathforge.slide_retrieval.search_strategies.base import BaseSearchStrategy
 
 
 class _RepresentationBase(BaseRetrievalRepresentationStrategy):

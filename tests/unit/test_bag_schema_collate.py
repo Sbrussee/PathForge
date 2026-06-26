@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from pathbench.adapters.torchmil.collate import pathbench_collate, torchmil_or_pathbench_collate
-from pathbench.core.datasets.bag_schema import assert_bag_schema
+from pathforge.adapters.torchmil.collate import pathforge_collate, torchmil_or_pathforge_collate
+from pathforge.core.datasets.bag_schema import assert_bag_schema
 
 
 def test_assert_bag_schema_accepts_valid_batched_bag():
@@ -23,13 +23,13 @@ def test_assert_bag_schema_rejects_nonfinite_features():
         assert_bag_schema(batch)
 
 
-def test_pathbench_collate_pads_variable_length_bags_and_mask():
+def test_pathforge_collate_pads_variable_length_bags_and_mask():
     batch = [
         {"X": torch.ones(2, 4), "Y": torch.tensor(0)},
         {"X": torch.full((3, 4), 2.0), "Y": torch.tensor(1)},
     ]
 
-    out = pathbench_collate(batch)
+    out = pathforge_collate(batch)
 
     assert out["X"].shape == (2, 3, 4)
     assert out["X"].dtype == torch.float32
@@ -38,7 +38,7 @@ def test_pathbench_collate_pads_variable_length_bags_and_mask():
     assert out["X"][0, 2].tolist() == [0.0, 0.0, 0.0, 0.0]
 
 
-def test_pathbench_collate_pads_optional_coords_and_adjacency():
+def test_pathforge_collate_pads_optional_coords_and_adjacency():
     batch = [
         {
             "X": torch.ones(2, 4),
@@ -54,7 +54,7 @@ def test_pathbench_collate_pads_optional_coords_and_adjacency():
         },
     ]
 
-    out = pathbench_collate(batch)
+    out = pathforge_collate(batch)
 
     assert out["coords"].shape == (2, 3, 2)
     assert out["adj"].shape == (2, 3, 3)
@@ -62,22 +62,22 @@ def test_pathbench_collate_pads_optional_coords_and_adjacency():
     assert out["adj"][0, 2].tolist() == [0.0, 0.0, 0.0]
 
 
-def test_pathbench_collate_rejects_partial_optional_keys():
+def test_pathforge_collate_rejects_partial_optional_keys():
     batch = [
         {"X": torch.ones(2, 4), "Y": torch.tensor(0), "coords": torch.zeros(2, 2)},
         {"X": torch.ones(3, 4), "Y": torch.tensor(1)},
     ]
 
     with pytest.raises(AssertionError, match="coords"):
-        pathbench_collate(batch)
+        pathforge_collate(batch)
 
-def test_torchmil_or_pathbench_collate_accepts_canonical_single_bag_dicts():
+def test_torchmil_or_pathforge_collate_accepts_canonical_single_bag_dicts():
     batch = [
         {"X": torch.ones(1, 2), "Y": torch.tensor(0)},
         {"X": torch.ones(2, 2), "Y": torch.tensor(1)},
     ]
 
-    out = torchmil_or_pathbench_collate(batch, use_torchmil=False)
+    out = torchmil_or_pathforge_collate(batch, use_torchmil=False)
 
     assert out["X"].shape == (2, 2, 2)
     assert out["mask"].tolist() == [[True, False], [True, True]]

@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from pathbench.slide_retrieval.io import (
+from pathforge.slide_retrieval.io import (
     build_slide_retrieval_representation_root,
     build_slide_retrieval_output_root,
     write_metrics_csv,

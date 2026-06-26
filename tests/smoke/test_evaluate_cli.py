@@ -6,14 +6,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-import pathbench.cli.evaluate_run as evaluate_cli
-from pathbench.config.config import Config
-from pathbench.core.experiments.base import Experiment
-from pathbench.slide_retrieval.io import (
+import pathforge.cli.evaluate_run as evaluate_cli
+from pathforge.config.config import Config
+from pathforge.core.experiments.base import Experiment
+from pathforge.slide_retrieval.io import (
     build_slide_retrieval_output_root,
     write_slide_retrieval_results_csv,
 )
-from pathbench.slide_retrieval.search_strategies.types import SearchHit, SearchResult
+from pathforge.slide_retrieval.search_strategies.types import SearchHit, SearchResult
 
 
 @pytest.mark.smoke

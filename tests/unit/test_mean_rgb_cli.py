@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import pathbench.cli.retrieval_mean_rgb as mean_rgb_cli
+import pathforge.cli.retrieval_mean_rgb as mean_rgb_cli
 
 
 def _fake_cfg(*, dataset_name: str, artifacts_dir: Path) -> SimpleNamespace:

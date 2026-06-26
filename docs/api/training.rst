@@ -1,19 +1,19 @@
-pathbench.training
+pathforge.training
 ==================
 
 Trainer abstractions and the PyTorch Lightning implementation. Trainers are
-registered in :data:`~pathbench.utils.registries.TRAINERS` and resolved by
+registered in :data:`~pathforge.utils.registries.TRAINERS` and resolved by
 name at runtime.
 
 Base Abstractions
 -----------------
 
-.. autoclass:: pathbench.training.base.TrainerBase
+.. autoclass:: pathforge.training.base.TrainerBase
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.training.base.MILTrainer
+.. autoclass:: pathforge.training.base.MILTrainer
    :members:
    :undoc-members:
    :show-inheritance:
@@ -22,9 +22,9 @@ Lightning Trainer
 -----------------
 
 The Lightning trainer is registered as ``"lightning"`` in
-:data:`~pathbench.utils.registries.TRAINERS`.
+:data:`~pathforge.utils.registries.TRAINERS`.
 
-.. automodule:: pathbench.training.lightning
+.. automodule:: pathforge.training.lightning
    :members:
    :undoc-members:
    :show-inheritance:
@@ -32,7 +32,7 @@ The Lightning trainer is registered as ``"lightning"`` in
 Callbacks
 ---------
 
-.. automodule:: pathbench.training.callbacks
+.. automodule:: pathforge.training.callbacks
    :members:
    :undoc-members:
    :show-inheritance:
@@ -40,7 +40,7 @@ Callbacks
 Metrics
 -------
 
-.. automodule:: pathbench.training.metrics
+.. automodule:: pathforge.training.metrics
    :members:
    :undoc-members:
    :show-inheritance:
@@ -48,7 +48,7 @@ Metrics
 Scikit-Learn Trainer
 --------------------
 
-.. automodule:: pathbench.training.sklearn_trainer
+.. automodule:: pathforge.training.sklearn_trainer
    :members:
    :undoc-members:
    :show-inheritance:

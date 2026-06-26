@@ -5,17 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from pathbench.config.config import Config
-from pathbench.core.evaluation.slide_retrieval.adapter import (
+from pathforge.config.config import Config
+from pathforge.core.evaluation.slide_retrieval.adapter import (
     SlideRetrievalEvaluationAdapter,
 )
-from pathbench.core.experiments.base import Experiment
-from pathbench.core.experiments.combinations import ComboConfig
-from pathbench.slide_retrieval.io import (
+from pathforge.core.experiments.base import Experiment
+from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.slide_retrieval.io import (
     build_slide_retrieval_output_root,
     write_slide_retrieval_results_csv,
 )
-from pathbench.slide_retrieval.search_strategies.types import SearchHit, SearchResult
+from pathforge.slide_retrieval.search_strategies.types import SearchHit, SearchResult
 
 
 def _make_cfg(

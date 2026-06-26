@@ -22,7 +22,7 @@ Save as ``optimize.yaml``:
    experiment:
      project_name: luad_optimization
      annotation_file: /data/annotations.csv
-     project_root: /data/pathbench_projects
+     project_root: /data/pathforge_projects
      mode: optimization
      task: classification
      num_workers: 4
@@ -48,7 +48,7 @@ Save as ``optimize.yaml``:
 
    optimization:
      study_name: luad_abmil_search
-     objective_metric: val_auroc
+     objective_metric: auroc
      objective_mode: max
      sampler: TPESampler
      pruner: HyperbandPruner
@@ -74,7 +74,7 @@ Step 2 — Run Optimization
 
 .. code-block:: bash
 
-   pathbench-optimize --config optimize.yaml
+   pathforge-optimize --config optimize.yaml
 
 Each Optuna trial:
 
@@ -126,7 +126,7 @@ Search Space Types
 ------------------
 
 Each entry in ``optimization.search_space`` maps a config parameter name to a
-type spec. The documented key is ``type``; PathBench also accepts ``kind`` for
+type spec. The documented key is ``type``; PathForge also accepts ``kind`` for
 the same field.
 
 .. code-block:: yaml
@@ -209,7 +209,7 @@ directory. Rerun the same command to resume:
 
 .. code-block:: bash
 
-   pathbench-optimize --config optimize.yaml
+   pathforge-optimize --config optimize.yaml
 
 Optuna will detect the existing study by ``study_name`` and continue from
 where it left off.
@@ -217,7 +217,7 @@ where it left off.
 Inspecting Results
 ------------------
 
-PathBench writes both raw and ranked optimization summaries under the
+PathForge writes both raw and ranked optimization summaries under the
 experiment root:
 
 .. code-block:: text
@@ -244,7 +244,7 @@ Optuna study results are also accessible via the Optuna API:
 
    study = optuna.load_study(
        study_name="luad_abmil_search",
-       storage="sqlite:////data/pathbench_projects/luad_optimization/study.db",
+       storage="sqlite:////data/pathforge_projects/luad_optimization/study.db",
    )
 
    print(study.best_trial.params)
@@ -256,7 +256,7 @@ Optuna study results are also accessible via the Optuna API:
 Visualization notes
 -------------------
 
-PathBench exports the Plotly-backed Optuna visualizations documented in the
+PathForge exports the Plotly-backed Optuna visualizations documented in the
 current Optuna API:
 
 - ``plot_optimization_history``
@@ -268,6 +268,6 @@ current Optuna API:
 The current Optuna documentation states that
 ``plot_param_importances`` requires ``scikit-learn`` and that
 ``plot_hypervolume_history`` requires a study with at least two objectives plus
-an explicit reference point. PathBench therefore skips only the figures whose
+an explicit reference point. PathForge therefore skips only the figures whose
 backend requirements are not met while still writing the summary CSVs and the
 remaining visualization files.

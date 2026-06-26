@@ -3,14 +3,14 @@ from __future__ import annotations
 import pytest
 import torch
 
-from pathbench.adapters.mil_lab.backend import (
+from pathforge.adapters.mil_lab.backend import (
     MILLabBackendModel,
     _canonicalize_mil_lab_kwargs,
     normalize_mil_lab_output,
 )
-from pathbench.config.config import Config
-from pathbench.training.metrics import save_task_evaluation_artifacts
-from pathbench.utils import registries as registries_module
+from pathforge.config.config import Config
+from pathforge.training.metrics import save_task_evaluation_artifacts
+from pathforge.utils import registries as registries_module
 from tests.conftest import DUMMY_FE, DUMMY_MIL
 
 
@@ -32,7 +32,7 @@ class _FakeMILLabModel(torch.nn.Module):
         return results, {"logits": logits.detach().cpu().numpy()}
 
 
-def test_canonicalize_mil_lab_kwargs_maps_pathbench_names() -> None:
+def test_canonicalize_mil_lab_kwargs_maps_pathforge_names() -> None:
     kwargs = _canonicalize_mil_lab_kwargs(
         {"input_dim": 1024, "output_dim": 3, "hidden_dim": 256}
     )
@@ -57,11 +57,11 @@ def test_normalize_mil_lab_output_handles_tuple_results() -> None:
 
 def test_mil_lab_backend_model_wraps_results_dict(monkeypatch) -> None:
     monkeypatch.setattr(
-        "pathbench.adapters.mil_lab.backend.require_mil_lab",
+        "pathforge.adapters.mil_lab.backend.require_mil_lab",
         lambda feature: None,
     )
     monkeypatch.setattr(
-        "pathbench.adapters.mil_lab.backend.build_mil_lab_model",
+        "pathforge.adapters.mil_lab.backend.build_mil_lab_model",
         lambda spec, config_kwargs, from_pretrained=False: _FakeMILLabModel(),
     )
 
@@ -100,11 +100,11 @@ def test_mil_lab_backend_outputs_support_visualization_artifacts(
             return {"logits": logits}, {"ignored": True}
 
     monkeypatch.setattr(
-        "pathbench.adapters.mil_lab.backend.require_mil_lab",
+        "pathforge.adapters.mil_lab.backend.require_mil_lab",
         lambda feature: None,
     )
     monkeypatch.setattr(
-        "pathbench.adapters.mil_lab.backend.build_mil_lab_model",
+        "pathforge.adapters.mil_lab.backend.build_mil_lab_model",
         lambda spec, config_kwargs, from_pretrained=False: _BinaryFakeMILLabModel(),
     )
 
@@ -144,7 +144,7 @@ def test_config_requires_mil_lab_model_when_backend_selected(
 ) -> None:
     cfg_dict = dict(minimal_benchmark_config)
     cfg_dict["mil"] = {"backend": "mil-lab"}
-    monkeypatch.setattr("pathbench.config.config.is_mil_lab_available", lambda: True)
+    monkeypatch.setattr("pathforge.config.config.is_mil_lab_available", lambda: True)
 
     with pytest.raises(ValueError, match="mil\\.mil_lab_model"):
         Config.model_validate(cfg_dict)
@@ -169,7 +169,7 @@ def test_config_accepts_mil_lab_backend_when_model_is_set(
         "mil": [DUMMY_MIL],
         "loss": ["CrossEntropyLoss"],
     }
-    monkeypatch.setattr("pathbench.config.config.is_mil_lab_available", lambda: True)
+    monkeypatch.setattr("pathforge.config.config.is_mil_lab_available", lambda: True)
 
     cfg = Config.model_validate(cfg_dict)
 

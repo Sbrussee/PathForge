@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pathbench.core.io.h5.base import FileHandleH5, write_array_dataset
-from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.core.io.h5 import features as features_io
+from pathforge.core.io.h5.base import FileHandleH5, write_array_dataset
+from pathforge.core.io.h5 import tiles as tiles_io
+from pathforge.core.io.h5 import features as features_io
 
 
 def test_tiles_coords_and_tiling_spec_roundtrip(tmp_path: Path) -> None:

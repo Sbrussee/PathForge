@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.io.h5 import tissue as tissue_io
+from pathforge.core.io.h5.base import FileHandleH5
+from pathforge.core.io.h5 import tissue as tissue_io
 
 
 def test_h5_tissue_roundtrip(tmp_path: Path) -> None:

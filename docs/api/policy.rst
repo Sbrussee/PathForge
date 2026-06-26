@@ -1,4 +1,4 @@
-pathbench.policy
+pathforge.policy
 ================
 
 Use-case layer. Policies coordinate domain objects via registries and the
@@ -7,7 +7,7 @@ config without importing concrete framework packages directly.
 Base
 ----
 
-.. autoclass:: pathbench.policy.base.PolicyBase
+.. autoclass:: pathforge.policy.base.PolicyBase
    :members:
    :undoc-members:
    :show-inheritance:
@@ -15,7 +15,7 @@ Base
 Feature Extraction
 ------------------
 
-.. autoclass:: pathbench.policy.feature_extraction.FeatureExtractionPolicy
+.. autoclass:: pathforge.policy.feature_extraction.FeatureExtractionPolicy
    :members:
    :undoc-members:
    :show-inheritance:
@@ -23,7 +23,7 @@ Feature Extraction
 Benchmarking
 ------------
 
-.. autoclass:: pathbench.policy.benchmarking.BenchmarkingPolicy
+.. autoclass:: pathforge.policy.benchmarking.BenchmarkingPolicy
    :members:
    :undoc-members:
    :show-inheritance:
@@ -31,7 +31,7 @@ Benchmarking
 Optimization
 ------------
 
-.. autoclass:: pathbench.policy.optimization.OptimizationPolicy
+.. autoclass:: pathforge.policy.optimization.OptimizationPolicy
    :members:
    :undoc-members:
    :show-inheritance:
@@ -39,7 +39,7 @@ Optimization
 Shared Utilities
 ----------------
 
-.. automodule:: pathbench.policy.utils
+.. automodule:: pathforge.policy.utils
    :members:
    :undoc-members:
    :show-inheritance:

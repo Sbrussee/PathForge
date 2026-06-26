@@ -6,16 +6,16 @@ import numpy as np
 import torch
 from PIL import Image
 
-import pathbench.inference.heatmaps as heatmaps_mod
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.io.h5 import heatmaps as heatmap_io
-from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.inference.heatmaps import (
+import pathforge.inference.heatmaps as heatmaps_mod
+from pathforge.core.io.h5.base import FileHandleH5
+from pathforge.core.io.h5 import heatmaps as heatmap_io
+from pathforge.core.io.h5 import tiles as tiles_io
+from pathforge.inference.heatmaps import (
     _coords_to_pixel_rectangles,
     _top_tiles_grid_shape,
     create_inference_heatmap,
 )
-from pathbench.utils.registries import EXPLAINERS
+from pathforge.utils.registries import EXPLAINERS
 
 
 @dataclass(frozen=True)

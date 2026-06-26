@@ -23,7 +23,7 @@ Save as ``benchmark.yaml``:
    experiment:
      project_name: luad_benchmark
      annotation_file: /data/annotations.csv
-     project_root: /data/pathbench_projects
+     project_root: /data/pathforge_projects
      mode: benchmark
      task: classification
      num_workers: 4
@@ -76,9 +76,9 @@ Step 2 — Run Benchmarking
 
 .. code-block:: bash
 
-   pathbench-benchmark --config benchmark.yaml
+   pathforge-benchmark --config benchmark.yaml
 
-For each combination PathBench:
+For each combination PathForge:
 
 1. Builds the bag dataset from H5 features.
 2. Resolves the MIL model and loss via registries.
@@ -187,7 +187,7 @@ same tile_px/tile_mpp/feature_extraction values).
 Results
 -------
 
-PathBench writes an experiment-wide ranked summary CSV plus benchmark-level
+PathForge writes an experiment-wide ranked summary CSV plus benchmark-level
 visualizations under the experiment root:
 
 .. code-block:: text

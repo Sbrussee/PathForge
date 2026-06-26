@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from pathbench.core.evaluation.orchestrator import EvaluationOrchestrator
-from pathbench.core.evaluation.types import EvaluationRunContext
-from pathbench.core.experiments.combinations import ComboConfig
+from pathforge.core.evaluation.orchestrator import EvaluationOrchestrator
+from pathforge.core.evaluation.types import EvaluationRunContext
+from pathforge.core.experiments.combinations import ComboConfig
 
 
 class _FakeEvaluator:
@@ -52,19 +52,19 @@ def test_evaluation_orchestrator_writes_run_level_metrics_json(
             return {"k": 5, "macro": 1.0}
 
     monkeypatch.setattr(
-        "pathbench.core.evaluation.orchestrator.import_task_evaluation_adapter_modules",
+        "pathforge.core.evaluation.orchestrator.import_task_evaluation_adapter_modules",
         lambda: None,
     )
     monkeypatch.setattr(
-        "pathbench.core.evaluation.orchestrator.import_evaluation_metric_modules",
+        "pathforge.core.evaluation.orchestrator.import_evaluation_metric_modules",
         lambda: None,
     )
     monkeypatch.setattr(
-        "pathbench.core.evaluation.orchestrator.build_task_evaluation_adapter",
+        "pathforge.core.evaluation.orchestrator.build_task_evaluation_adapter",
         lambda name, experiment: _FakeEvaluator([run_context]),
     )
     monkeypatch.setattr(
-        "pathbench.core.evaluation.orchestrator.resolve_metric_request",
+        "pathforge.core.evaluation.orchestrator.resolve_metric_request",
         lambda **kwargs: (
             _MetricSpec(),
             SimpleNamespace(raw_name="hit_at_5"),

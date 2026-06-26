@@ -1,11 +1,11 @@
-# PathBench-MIL HDF5 Structure — Canonical Overview
+# PathForge-MIL HDF5 Structure — Canonical Overview
 
 **File:**  
 
 {slide_stem}.h5
 
 
-This document defines the **authoritative structure** of PathBench-MIL slide-level HDF5 files, including explicit rules for **where** each artifact is stored and **how** it is formatted.
+This document defines the **authoritative structure** of PathForge-MIL slide-level HDF5 files, including explicit rules for **where** each artifact is stored and **how** it is formatted.
 
 ---
 
@@ -28,7 +28,7 @@ meta/
 
 
 **Required attributes**
-- `schema_name = "pathbench_mil_extended"`
+- `schema_name = "pathforge_mil_extended"`
 - `schema_version = "1.0"`
 - `coord_space = "level0_pixel"`
 - `num_levels : int32`

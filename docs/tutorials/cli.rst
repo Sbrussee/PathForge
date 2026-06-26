@@ -1,49 +1,53 @@
 Tutorial: Command-Line Interface
 ================================
 
-All PathBench workflows are driven by CLI commands. Every command accepts a
+All PathForge workflows are driven by CLI commands. Every command accepts a
 ``--config`` flag pointing to a YAML file and an optional ``--log-level`` flag.
 
 Entry Points
 ------------
 
-When the package is installed, these commands are available globally:
+PathForge installs a unified ``pathforge`` command plus flat console scripts.
+Every workflow command takes ``--config`` and an optional ``--log-level``.
+
+Unified ``pathforge`` command (run ``pathforge --help`` for the full list):
 
 .. code-block:: bash
 
-   pathbench-features   --config features.yaml
-   pathbench-benchmark  --config benchmark.yaml
-   pathbench-evaluate   --config benchmark.yaml
-   pathbench-optimize   --config optimize.yaml
-   pathbench-mean-rgb   --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
-   pathbench-infer      --model_path ckpt --input h5 --output json
-   pathbench-visualize  --config benchmark.yaml
-   pathbench-slide-retrieval-representations --config retrieval.yaml
+   pathforge features run    --config features.yaml
+   pathforge features slide  --config features.yaml --dataset TrainingSet --input /path/to/slide.svs
+   pathforge benchmark run   --config benchmark.yaml
+   pathforge evaluate run    --config benchmark.yaml
+   pathforge visualize run   --config benchmark.yaml
+   pathforge optimize run    --config optimize.yaml
+   pathforge report tiles    --config features.yaml
+   pathforge retrieval representations --config retrieval.yaml
+   pathforge retrieval mean-rgb        --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
+   pathforge retrieval sish-vqvae      --config retrieval.yaml
+   pathforge infer run       --config inference.yaml --input-csv slides.csv
 
-All commands can also be invoked as Python modules (useful during development):
+Flat console scripts (shortcuts for the common workflows):
 
 .. code-block:: bash
 
-   python -m pathbench.cli.feature_extraction  --config features.yaml
-   python -m pathbench.cli.benchmark           --config benchmark.yaml
-   python -m pathbench.cli.evaluate            --config benchmark.yaml
-   python -m pathbench.cli.optimize            --config optimize.yaml
-   python -m pathbench.cli.mean_rgb           --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
-   python -m pathbench.cli.inference           --model_path ckpt --input h5 --output json
-   python -m pathbench.cli.visualize           --config benchmark.yaml
-   python -m pathbench.cli.slide_retrieval_representations --config retrieval.yaml
-   python -m pathbench.cli.feature_extraction_slide \
-     --config features.yaml --dataset TrainingSet --input /path/to/slide.svs
-   python -m pathbench.cli.tiles_report        --config features.yaml
+   pathforge-features    --config features.yaml
+   pathforge-benchmark   --config benchmark.yaml
+   pathforge-evaluate    --config benchmark.yaml
+   pathforge-optimize    --config optimize.yaml
+   pathforge-visualize   --config benchmark.yaml
+   pathforge-mean-rgb    --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
+   pathforge-slide-retrieval-representations --config retrieval.yaml
+   pathforge-infer       --config inference.yaml --input-csv slides.csv
+   pathforge-infer-model --model_path best.ckpt --input artifact.h5 --output predictions.json
 
-``pathbench-features``
+``pathforge-features``
 -----------------------
 
 Extract tile features from all configured datasets and combinations.
 
 .. code-block:: text
 
-   usage: pathbench-features [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
+   usage: pathforge-features [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
 
    options:
      --config CONFIG        Path to YAML config file.
@@ -53,61 +57,61 @@ Example:
 
 .. code-block:: bash
 
-   pathbench-features --config features.yaml --log-level DEBUG
+   pathforge-features --config features.yaml --log-level DEBUG
 
-``pathbench-benchmark``
+``pathforge-benchmark``
 ------------------------
 
 Run grid-search benchmarking over model/loss/extractor combinations.
 
 .. code-block:: text
 
-   usage: pathbench-benchmark [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
+   usage: pathforge-benchmark [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
 
 Example:
 
 .. code-block:: bash
 
-   pathbench-benchmark --config benchmark.yaml
+   pathforge-benchmark --config benchmark.yaml
 
-``pathbench-optimize``
+``pathforge-optimize``
 -----------------------
 
 Run an Optuna hyperparameter optimization study.
 
 .. code-block:: text
 
-   usage: pathbench-optimize [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
+   usage: pathforge-optimize [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
 
 Example:
 
 .. code-block:: bash
 
-   pathbench-optimize --config optimize.yaml
+   pathforge-optimize --config optimize.yaml
 
-``pathbench-evaluate``
+``pathforge-evaluate``
 ----------------------
 
 Run post-hoc metrics and visualization workflows from the ``evaluation`` block.
 
 .. code-block:: text
 
-   usage: pathbench-evaluate [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
+   usage: pathforge-evaluate [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
 
 Example:
 
 .. code-block:: bash
 
-   pathbench-evaluate --config benchmark.yaml
+   pathforge-evaluate --config benchmark.yaml
 
-``pathbench-mean-rgb``
+``pathforge-mean-rgb``
 ----------------------
 
 Precompute patch mean RGB descriptors used by RGB-based slide retrieval representations.
 
 .. code-block:: text
 
-   usage: pathbench-mean-rgb [-h] --config CONFIG --dataset DATASET --slide-id SLIDE_ID
+   usage: pathforge-mean-rgb [-h] --config CONFIG --dataset DATASET --slide-id SLIDE_ID
                              [--input INPUT] [--bag-id BAG_ID] [--artifact-path ARTIFACT_PATH]
                              [--log-level {DEBUG,INFO,WARNING,ERROR}]
 
@@ -115,36 +119,58 @@ Example:
 
 .. code-block:: bash
 
-   pathbench-mean-rgb \
+   pathforge-mean-rgb \
      --config retrieval.yaml \
      --dataset ReferenceSet \
      --slide-id SLIDE_001 \
      --bag-id 256px_0.5mpp
 
-``pathbench-infer``
+``pathforge-infer``
 --------------------
 
-Run inference with a trained checkpoint and optionally generate heatmaps.
+Run config-driven inference: load a project in ``experiment.mode='inference'``
+and score the slides selected by an input CSV.
 
 .. code-block:: text
 
-   usage: pathbench-infer [-h]
-                          --model_path MODEL_PATH
-                          --input INPUT
-                          --output OUTPUT
-                          [--heatmap-backend {native,torchmil}]
-                          [--bag-id BAG_ID]
-                          [--scores SCORES]
-                          [--coords COORDS]
-                          [--mask MASK]
-                          [--heatmap-name HEATMAP_NAME]
-                          [--heatmap-output HEATMAP_OUTPUT]
+   usage: pathforge-infer [-h] --config CONFIG --input-csv INPUT_CSV
+                          [--log-level {DEBUG,INFO,WARNING,ERROR}]
 
    options:
-     --model_path           Path to .ckpt checkpoint file.
-     --input                Path to slide H5 artifact.
+     --config       Path to YAML config (experiment.mode must be 'inference').
+     --input-csv    CSV selecting the slides to run inference for.
+
+Example:
+
+.. code-block:: bash
+
+   pathforge-infer --config inference.yaml --input-csv slides.csv
+
+``pathforge-infer-model``
+--------------------------
+
+Run a packaged checkpoint on a single feature artifact and optionally attach a
+heatmap. Use this for ad-hoc prediction/explainability outside the config flow.
+
+.. code-block:: text
+
+   usage: pathforge-infer-model [-h]
+                                --model_path MODEL_PATH
+                                --input INPUT
+                                --output OUTPUT
+                                [--heatmap-backend {native,torchmil}]
+                                [--bag-id BAG_ID]
+                                [--scores SCORES]
+                                [--coords COORDS]
+                                [--mask MASK]
+                                [--heatmap-name HEATMAP_NAME]
+                                [--heatmap-output HEATMAP_OUTPUT]
+
+   options:
+     --model_path           Path to packaged model checkpoint.
+     --input                Feature artifact (.h5 / .pt / .npy / .npz).
      --output               Output JSON for predictions.
-     --heatmap-backend      Heatmap explainer backend (default: native).
+     --heatmap-backend      Heatmap explainer backend (e.g. torchmil).
      --bag-id               Bag identifier, e.g. "256px_0.5mpp".
      --scores               Per-instance scores (.npy / .npz / .json).
      --coords               Per-instance coordinates (.npy shaped [N,2]).
@@ -156,7 +182,7 @@ Example (prediction only):
 
 .. code-block:: bash
 
-   pathbench-infer \
+   pathforge-infer-model \
      --model_path checkpoints/best.ckpt \
      --input artifacts/SLIDE_001.h5 \
      --output predictions/SLIDE_001.json
@@ -165,7 +191,7 @@ Example (with heatmap):
 
 .. code-block:: bash
 
-   pathbench-infer \
+   pathforge-infer-model \
      --model_path checkpoints/best.ckpt \
      --input artifacts/SLIDE_001.h5 \
      --output predictions/SLIDE_001.json \
@@ -175,45 +201,45 @@ Example (with heatmap):
      --heatmap-name abmil_attention \
      --heatmap-output predictions/SLIDE_001_heatmap.json
 
-``pathbench-visualize``
+``pathforge-visualize``
 -----------------------
 
 Run visualization workflows configured in the ``evaluation`` block.
 
 .. code-block:: text
 
-   usage: pathbench-visualize [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
+   usage: pathforge-visualize [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
 
 Example:
 
 .. code-block:: bash
 
-   pathbench-visualize --config benchmark.yaml
+   pathforge-visualize --config benchmark.yaml
 
-``pathbench-slide-retrieval-representations``
+``pathforge-slide-retrieval-representations``
 ---------------------------------------------
 
 Materialize slide retrieval representations without running the full benchmark stage.
 
 .. code-block:: text
 
-   usage: pathbench-slide-retrieval-representations [-h] --config CONFIG
+   usage: pathforge-slide-retrieval-representations [-h] --config CONFIG
                                                     [--log-level {DEBUG,INFO,WARNING,ERROR}]
 
 Example:
 
 .. code-block:: bash
 
-   pathbench-slide-retrieval-representations --config retrieval.yaml
+   pathforge-slide-retrieval-representations --config retrieval.yaml
 
-``feature_extraction_slide`` (module only)
-------------------------------------------
+``pathforge features slide``
+----------------------------
 
 Extract features for a single slide. Designed for SLURM array jobs.
 
 .. code-block:: text
 
-   usage: python -m pathbench.cli.feature_extraction_slide
+   usage: pathforge features slide
           --config CONFIG
           --dataset DATASET
           --input INPUT
@@ -228,20 +254,20 @@ Example:
 
 .. code-block:: bash
 
-   python -m pathbench.cli.feature_extraction_slide \
+   pathforge features slide \
      --config features.yaml \
      --dataset TrainingSet \
      --input /data/slides/train/TCGA-A1-A0SB-01Z.svs \
      --log-level INFO
 
-``tiles_report`` (module only)
---------------------------------
+``pathforge report tiles``
+--------------------------
 
 Generate PDF tile overview reports from stored H5 tile overview images.
 
 .. code-block:: text
 
-   usage: python -m pathbench.cli.tiles_report
+   usage: pathforge report tiles
           --config CONFIG
           [--log-level LEVEL]
 
@@ -249,7 +275,7 @@ Example:
 
 .. code-block:: bash
 
-   python -m pathbench.cli.tiles_report --config features.yaml
+   pathforge report tiles --config features.yaml
 
 Logging
 -------
@@ -275,11 +301,11 @@ Tips
 ----
 
 - Use ``--log-level DEBUG`` when diagnosing slide loading or segmentation issues.
-- Use the module form (``python -m pathbench.cli.benchmark``) during development to
-  see which file is actually executing.
+- Run ``pathforge --help`` or ``pathforge <group> --help`` to discover every
+  command and its flags.
 - Config validation runs before any work starts — use a dummy run to check a
   new config without processing slides:
 
   .. code-block:: bash
 
-     pathbench-features --config features.yaml --log-level DEBUG 2>&1 | head -30
+     pathforge-features --config features.yaml --log-level DEBUG 2>&1 | head -30

@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from pathbench.adapters.torchmil.task_output import normalize_torchmil_output
+from pathforge.adapters.torchmil.task_output import normalize_torchmil_output
 
 
 def test_normalize_classification_logits_from_dict():

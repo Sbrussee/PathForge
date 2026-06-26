@@ -20,7 +20,7 @@ Run prediction on a single slide:
 
 .. code-block:: bash
 
-   pathbench-infer \
+   pathforge-infer \
      --model_path /experiments/luad_benchmark/checkpoints/best_package.pt \
      --input /data/artifacts/train/TCGA-A1-A0SB-01Z.h5 \
      --output /data/predictions/TCGA-A1-A0SB-01Z.json
@@ -48,7 +48,7 @@ Loop over all slides in a cohort:
 
    for H5 in /data/artifacts/test/*.h5; do
      SLIDE=$(basename "$H5" .h5)
-     pathbench-infer \
+     pathforge-infer \
        --model_path /experiments/luad_benchmark/checkpoints/best_package.pt \
        --input "$H5" \
        --output "/data/predictions/${SLIDE}.json"
@@ -59,22 +59,22 @@ Generating Attention Heatmaps
 
 Heatmaps require per-instance attention scores. These are typically saved
 alongside the checkpoint during training or extracted by running a forward
-pass with :meth:`~pathbench.core.models.mil_base.MILModelBase.instance_scores`
+pass with :meth:`~pathforge.core.models.mil_base.MILModelBase.instance_scores`
 from the model.
 
 Step 1 — Extract attention scores
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Read features from an H5 artifact using the
-:class:`~pathbench.core.io.h5.base.FileHandleH5` context manager, then run a
+:class:`~pathforge.core.io.h5.base.FileHandleH5` context manager, then run a
 forward pass to collect per-instance scores:
 
 .. code-block:: python
 
    import torch
    import numpy as np
-   from pathbench.core.io.h5.base import FileHandleH5
-   from pathbench.core.io.h5.features import read_features
+   from pathforge.core.io.h5.base import FileHandleH5
+   from pathforge.core.io.h5.features import read_features
 
    # Load bag features from H5 artifact using the FileHandleH5 context manager
    with FileHandleH5("/data/artifacts/train/TCGA-A1-A0SB-01Z.h5", mode="r") as fh:
@@ -92,7 +92,7 @@ forward pass to collect per-instance scores:
 
 .. note::
 
-   :meth:`~pathbench.core.models.mil_base.MILModelBase.instance_scores` returns
+   :meth:`~pathforge.core.models.mil_base.MILModelBase.instance_scores` returns
    a tensor shaped ``[B, N]`` (batch × instances). Call ``.squeeze(0)`` to get
    ``[N]`` for a single-bag inference pass.
 
@@ -104,7 +104,7 @@ Step 2 — Run inference with heatmap generation
 
 .. code-block:: bash
 
-   pathbench-infer \
+   pathforge-infer \
      --model_path /experiments/luad_benchmark/checkpoints/best.ckpt \
      --input /data/artifacts/train/TCGA-A1-A0SB-01Z.h5 \
      --output /data/predictions/TCGA-A1-A0SB-01Z.json \
@@ -159,12 +159,12 @@ Heatmaps are persisted in the slide H5 artifact under:
    └── metadata  — JSON            — backend, model path, score range, coord space
 
 Reading back the heatmap using
-:func:`~pathbench.core.io.h5.heatmaps.read_prediction_heatmap`:
+:func:`~pathforge.core.io.h5.heatmaps.read_prediction_heatmap`:
 
 .. code-block:: python
 
-   from pathbench.core.io.h5.base import FileHandleH5
-   from pathbench.core.io.h5.heatmaps import read_prediction_heatmap
+   from pathforge.core.io.h5.base import FileHandleH5
+   from pathforge.core.io.h5.heatmaps import read_prediction_heatmap
 
    with FileHandleH5("/data/artifacts/train/TCGA-A1-A0SB-01Z.h5", mode="r") as fh:
        result = read_prediction_heatmap(fh, bag_id="256px_0.5mpp",
@@ -176,9 +176,9 @@ Reading back the heatmap using
 
 .. note::
 
-   The function is :func:`~pathbench.core.io.h5.heatmaps.read_prediction_heatmap`
+   The function is :func:`~pathforge.core.io.h5.heatmaps.read_prediction_heatmap`
    (not ``read_heatmap``). It takes a
-   :class:`~pathbench.core.io.h5.base.FileHandleH5` context-manager object,
+   :class:`~pathforge.core.io.h5.base.FileHandleH5` context-manager object,
    not a file path, and returns a ``dict`` with ``"coords"``, ``"scores"``,
    and ``"metadata"`` keys.
 
@@ -191,8 +191,8 @@ Use the stored coordinates and scores to overlay on the WSI thumbnail:
 
    import numpy as np
    import matplotlib.pyplot as plt
-   from pathbench.core.io.h5.base import FileHandleH5
-   from pathbench.core.io.h5.heatmaps import read_prediction_heatmap
+   from pathforge.core.io.h5.base import FileHandleH5
+   from pathforge.core.io.h5.heatmaps import read_prediction_heatmap
 
    with FileHandleH5(h5_path, mode="r") as fh:
        result = read_prediction_heatmap(fh, bag_id="256px_0.5mpp",

@@ -1,4 +1,4 @@
-pathbench.utils
+pathforge.utils
 ===============
 
 Registries, optional package guards, constants, and helper utilities.
@@ -6,12 +6,12 @@ Registries, optional package guards, constants, and helper utilities.
 Registries
 ----------
 
-.. automodule:: pathbench.utils.registries
+.. automodule:: pathforge.utils.registries
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.utils.registry
+.. automodule:: pathforge.utils.registry
    :members:
    :undoc-members:
    :show-inheritance:
@@ -46,12 +46,12 @@ Available registries:
 Optional Package Guards
 -----------------------
 
-.. automodule:: pathbench.utils.optional.torchmil
+.. automodule:: pathforge.utils.optional.torchmil
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.utils.optional.mil_lab
+.. automodule:: pathforge.utils.optional.mil_lab
    :members:
    :undoc-members:
    :show-inheritance:
@@ -59,7 +59,7 @@ Optional Package Guards
 Constants
 ---------
 
-.. automodule:: pathbench.utils.constants
+.. automodule:: pathforge.utils.constants
    :members:
    :undoc-members:
    :show-inheritance:
@@ -67,7 +67,7 @@ Constants
 Logging
 -------
 
-.. automodule:: pathbench.utils.logging
+.. automodule:: pathforge.utils.logging
    :members:
    :undoc-members:
    :show-inheritance:
@@ -75,7 +75,7 @@ Logging
 I/O Utilities
 -------------
 
-.. automodule:: pathbench.utils.io
+.. automodule:: pathforge.utils.io
    :members:
    :undoc-members:
    :show-inheritance:
@@ -83,7 +83,7 @@ I/O Utilities
 Serialization
 -------------
 
-.. automodule:: pathbench.utils.serialization
+.. automodule:: pathforge.utils.serialization
    :members:
    :undoc-members:
    :show-inheritance:

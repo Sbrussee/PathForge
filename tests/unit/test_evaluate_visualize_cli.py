@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import pathbench.cli.evaluate_run as evaluate_cli
-import pathbench.cli.visualize_run as visualize_cli
+import pathforge.cli.evaluate_run as evaluate_cli
+import pathforge.cli.visualize_run as visualize_cli
 
 
 def test_evaluate_main_executes_evaluation_orchestrator(

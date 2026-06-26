@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-import pathbench.policy.inference as inference_mod
-from pathbench.core.experiments.combinations import ComboConfig
-from pathbench.policy.inference import InferencePolicy
+import pathforge.policy.inference as inference_mod
+from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.policy.inference import InferencePolicy
 
 
 class _FakeTask:

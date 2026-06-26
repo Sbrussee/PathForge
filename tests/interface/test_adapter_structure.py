@@ -6,7 +6,7 @@ import ast
 from pathlib import Path
 
 
-SRC_ROOT = Path("src/pathbench")
+SRC_ROOT = Path("src/pathforge")
 
 
 def _base_names(node: ast.ClassDef) -> set[str]:

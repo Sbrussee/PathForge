@@ -8,9 +8,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pathbench.config.config import DatasetEntry
-from pathbench.core.datasets.wsi_dataset import WSIDataset
-from pathbench.utils.constants import SLIDE_FILE_FORMATS
+from pathforge.config.config import DatasetEntry
+from pathforge.core.datasets.wsi_dataset import WSIDataset
+from pathforge.utils.constants import SLIDE_FILE_FORMATS
 
 
 def _suffixes() -> list[str]:

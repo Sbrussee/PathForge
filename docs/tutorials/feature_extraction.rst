@@ -1,7 +1,7 @@
 Tutorial: Feature Extraction
 =============================
 
-Feature extraction is the first step in every PathBench workflow. It tiles
+Feature extraction is the first step in every PathForge workflow. It tiles
 whole-slide images (WSIs), segments tissue, extracts per-tile embeddings with a
 chosen encoder, and writes everything to row-aligned H5 artifacts.
 
@@ -42,7 +42,7 @@ Save as ``features.yaml``:
    experiment:
      project_name: luad_features
      annotation_file: /data/annotations.csv
-     project_root: /data/pathbench_projects
+     project_root: /data/pathforge_projects
      mode: feature_extraction
      report: true           # generates tile overview PDFs
      num_workers: 8
@@ -77,9 +77,9 @@ Step 3 — Run Feature Extraction
 
 .. code-block:: bash
 
-   pathbench-features --config features.yaml --log-level INFO
+   pathforge-features --config features.yaml --log-level INFO
 
-PathBench will:
+PathForge will:
 
 1. Load the annotation CSV and resolve slides for each dataset.
 2. Create the experiment directory under ``project_root/luad_features/``.
@@ -114,7 +114,7 @@ If ``report: true`` was set, generate PDF tile overview reports:
 
 .. code-block:: bash
 
-   python -m pathbench.cli.tiles_report --config features.yaml --log-level INFO
+   pathforge report tiles --config features.yaml --log-level INFO
 
 PDFs are written to the experiment directory.
 
@@ -127,18 +127,18 @@ For large cohorts, run one slide per array task:
 
    #!/bin/bash
    #SBATCH --array=0-99
-   #SBATCH --job-name=pathbench_features
+   #SBATCH --job-name=pathforge_features
 
    SLIDES=(/data/slides/train/*.svs)
    SLIDE=${SLIDES[$SLURM_ARRAY_TASK_ID]}
 
-   python -m pathbench.cli.feature_extraction_slide \
+   pathforge features slide \
      --config features.yaml \
      --dataset TrainingSet \
      --input "$SLIDE" \
      --log-level INFO
 
-PathBench automatically appends ``_${SLURM_JOB_ID}`` to the project name to
+PathForge automatically appends ``_${SLURM_JOB_ID}`` to the project name to
 avoid directory collisions between tasks.
 
 Using Multiple Feature Extractors
@@ -173,7 +173,7 @@ Hugging Face token:
 Skipping Existing Artifacts
 -----------------------------
 
-By default PathBench skips slides whose H5 features already exist
+By default PathForge skips slides whose H5 features already exist
 (``mil.skip_extracted: true``). To force re-extraction, delete the H5 file
 or set:
 

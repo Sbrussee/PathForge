@@ -16,8 +16,8 @@ from tests.smoke._smoke_dataset import (
 def test_default_smoke_cache_dir_falls_back_to_tmp_for_unwritable_home_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("PATHBENCH_SMOKE_CACHE", raising=False)
-    monkeypatch.setenv("TMPDIR", "/tmp/pathbench-tests")
+    monkeypatch.delenv("PATHFORGE_SMOKE_CACHE", raising=False)
+    monkeypatch.setenv("TMPDIR", "/tmp/pathforge-tests")
     monkeypatch.setattr(
         os,
         "access",
@@ -25,7 +25,7 @@ def test_default_smoke_cache_dir_falls_back_to_tmp_for_unwritable_home_cache(
     )
     monkeypatch.setenv("HOME", "/readonly-home")
 
-    assert default_smoke_cache_dir() == Path("/tmp/pathbench-tests/pathbench_smoke")
+    assert default_smoke_cache_dir() == Path("/tmp/pathforge-tests/pathforge_smoke")
 
 
 def test_build_gtex_smoke_annotations_uses_requested_slide_ids(tmp_path: Path) -> None:

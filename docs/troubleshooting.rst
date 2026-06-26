@@ -64,7 +64,7 @@ Use an absolute path:
 .. code-block:: yaml
 
    experiment:
-     project_root: /data/pathbench_projects   # must be absolute
+     project_root: /data/pathforge_projects   # must be absolute
 
 **``Feature extractor '<name>' is not registered.``**
 
@@ -78,7 +78,7 @@ Check available extractors:
 
 .. code-block:: python
 
-   from pathbench.utils.registries import all_feature_extractor_names, populate_dynamic_registries
+   from pathforge.utils.registries import all_feature_extractor_names, populate_dynamic_registries
    populate_dynamic_registries()
    print(all_feature_extractor_names())
 
@@ -141,13 +141,13 @@ H5 Artifact Errors
 
 **H5 files have mismatched coordinates and features.**
 
-PathBench enforces row alignment. If you see shape mismatches, the artifact
+PathForge enforces row alignment. If you see shape mismatches, the artifact
 is corrupt. Delete the affected H5 file and re-run feature extraction:
 
 .. code-block:: bash
 
    rm /data/artifacts/train/SLIDE_001.h5
-   pathbench-features --config features.yaml
+   pathforge-features --config features.yaml
 
 **Tile overview reports show no images.**
 
@@ -160,7 +160,7 @@ Cluster (SLURM) Jobs
 
 **Array jobs write to the same project directory.**
 
-When ``SLURM_JOB_ID`` is set in the environment, PathBench automatically
+When ``SLURM_JOB_ID`` is set in the environment, PathForge automatically
 suffixes the project name with the job ID:
 
 .. code-block:: text
@@ -175,7 +175,7 @@ Use ``feature_extraction_slide`` for per-task execution:
 
 .. code-block:: bash
 
-   python -m pathbench.cli.feature_extraction_slide \
+   pathforge features slide \
      --config features.yaml \
      --dataset TrainingSet \
      --input /data/slides/train/SLIDE_${SLURM_ARRAY_TASK_ID}.svs
@@ -187,7 +187,7 @@ Increase log verbosity with ``--log-level DEBUG``:
 
 .. code-block:: bash
 
-   pathbench-features --config features.yaml --log-level DEBUG
+   pathforge-features --config features.yaml --log-level DEBUG
 
 Run just the failing unit tests:
 

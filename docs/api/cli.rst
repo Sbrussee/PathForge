@@ -1,4 +1,4 @@
-pathbench.cli
+pathforge.cli
 =============
 
 Thin CLI shells. Each module exposes a ``main()`` function registered as a
@@ -7,7 +7,7 @@ console script entry point.
 Feature Extraction
 ------------------
 
-.. automodule:: pathbench.cli.feature_extraction
+.. automodule:: pathforge.cli.feature_extraction
    :members:
    :undoc-members:
    :show-inheritance:
@@ -15,7 +15,7 @@ Feature Extraction
 Single-Slide Feature Extraction
 ---------------------------------
 
-.. automodule:: pathbench.cli.feature_extraction_slide
+.. automodule:: pathforge.cli.feature_extraction_slide
    :members:
    :undoc-members:
    :show-inheritance:
@@ -23,7 +23,7 @@ Single-Slide Feature Extraction
 Benchmarking
 ------------
 
-.. automodule:: pathbench.cli.benchmark
+.. automodule:: pathforge.cli.benchmark
    :members:
    :undoc-members:
    :show-inheritance:
@@ -31,7 +31,7 @@ Benchmarking
 Optimization
 ------------
 
-.. automodule:: pathbench.cli.optimize
+.. automodule:: pathforge.cli.optimize
    :members:
    :undoc-members:
    :show-inheritance:
@@ -39,7 +39,7 @@ Optimization
 Inference
 ---------
 
-.. automodule:: pathbench.cli.inference
+.. automodule:: pathforge.cli.inference
    :members:
    :undoc-members:
    :show-inheritance:
@@ -47,7 +47,7 @@ Inference
 Evaluation
 ----------
 
-.. automodule:: pathbench.cli.evaluate
+.. automodule:: pathforge.cli.evaluate
    :members:
    :undoc-members:
    :show-inheritance:
@@ -55,7 +55,7 @@ Evaluation
 Mean RGB
 --------
 
-.. automodule:: pathbench.cli.mean_rgb
+.. automodule:: pathforge.cli.mean_rgb
    :members:
    :undoc-members:
    :show-inheritance:
@@ -63,7 +63,7 @@ Mean RGB
 Visualization
 -------------
 
-.. automodule:: pathbench.cli.visualize
+.. automodule:: pathforge.cli.visualize
    :members:
    :undoc-members:
    :show-inheritance:
@@ -71,7 +71,7 @@ Visualization
 Slide Retrieval Representations
 -------------------------------
 
-.. automodule:: pathbench.cli.slide_retrieval_representations
+.. automodule:: pathforge.cli.slide_retrieval_representations
    :members:
    :undoc-members:
    :show-inheritance:
@@ -79,7 +79,7 @@ Slide Retrieval Representations
 Tile Reports
 ------------
 
-.. automodule:: pathbench.cli.tiles_report
+.. automodule:: pathforge.cli.tiles_report
    :members:
    :undoc-members:
    :show-inheritance:
@@ -87,7 +87,7 @@ Tile Reports
 Base
 ----
 
-.. automodule:: pathbench.cli.base
+.. automodule:: pathforge.cli.base
    :members:
    :undoc-members:
    :show-inheritance:

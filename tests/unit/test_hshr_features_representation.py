@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from pathbench.core.datasets.bag_dataset import BagSample
-from pathbench.slide_retrieval.representation_strategies.strategies.hshr_features import (
+from pathforge.core.datasets.bag_dataset import BagSample
+from pathforge.slide_retrieval.representation_strategies.strategies.hshr_features import (
     HSHRFeatures,
 )
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pathbench.core.evaluation.registry import (
+from pathforge.core.evaluation.registry import (
     evaluation_metric,
     import_evaluation_metric_modules,
     resolve_metric_request,

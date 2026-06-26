@@ -1,7 +1,7 @@
 import torch
 
-from pathbench.training.lightning import LightningTrainer
-from pathbench.training.lightning import LightningModuleAdapter
+from pathforge.training.lightning import LightningTrainer
+from pathforge.training.lightning import LightningModuleAdapter
 from tests.smoke._smoke_training import make_training_config
 
 

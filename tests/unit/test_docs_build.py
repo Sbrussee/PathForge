@@ -128,11 +128,11 @@ def test_toctree_reference_exists(resolved_str: str, entry: str, src_str: str) -
 _SKIP_MODULES = frozenset(
     {
         # Optional extras not installed in the base environment
-        "pathbench.core.models.mamba_mil",
-        "pathbench.adapters.metrics.classification",   # requires torchmetrics
-        "pathbench.adapters.metrics.survival",         # requires torchsurv
-        "pathbench.adapters.tcga_tools",               # requires tcga-tools
-        "pathbench.core.slide_processing.lazyslide",   # lazyslide-safe to import but may need GPU
+        "pathforge.core.models.mamba_mil",
+        "pathforge.adapters.metrics.classification",   # requires torchmetrics
+        "pathforge.adapters.metrics.survival",         # requires torchsurv
+        "pathforge.adapters.tcga_tools",               # requires tcga-tools
+        "pathforge.core.slide_processing.lazyslide",   # lazyslide-safe to import but may need GPU
     }
 )
 

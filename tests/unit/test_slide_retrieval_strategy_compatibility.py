@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from pathbench.slide_retrieval.representation_strategies.registry import (
+from pathforge.slide_retrieval.representation_strategies.registry import (
     get_representation_strategy_output_kind,
     get_representation_strategy_supported_feature_levels,
 )
-from pathbench.slide_retrieval.search_strategies.registry import (
+from pathforge.slide_retrieval.search_strategies.registry import (
     get_search_strategy_supported_representation_kinds,
 )
 
