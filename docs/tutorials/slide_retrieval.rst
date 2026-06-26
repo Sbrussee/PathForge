@@ -38,7 +38,7 @@ Save as ``retrieval.yaml``:
    experiment:
      project_name: tcga_retrieval
      annotation_file: /data/annotations.csv
-     project_root: /data/pathbench_projects
+     project_root: /data/pathforge_projects
      mode: benchmark
      task: slide_retrieval
      aggregation_level: slide
@@ -58,8 +58,8 @@ Save as ``retrieval.yaml``:
      tile_px: [256]
      tile_mpp: [0.5]
      feature_extraction: [uni]
-     retrieval_representation: [mean_pooling]
-     search_strategy: [cosine_knn]
+     retrieval_representation: [yottixel-features]
+     search_strategy: [yottixel]
 
    slide_retrieval:
      exclusion_level: patient
@@ -82,9 +82,9 @@ Step 2 — Run Retrieval
 
 .. code-block:: bash
 
-   pathbench-benchmark --config retrieval.yaml
+   pathforge-benchmark --config retrieval.yaml
 
-For each combination PathBench:
+For each combination PathForge:
 
 1. Resolves the representation strategy and builds a ``representation_id``.
 2. Loads cached per-slide representations from H5 artifacts; computes and
@@ -101,7 +101,7 @@ retrieval (useful for SLURM array jobs):
 
 .. code-block:: bash
 
-   pathbench-slide-retrieval-representations --config retrieval.yaml
+   pathforge-slide-retrieval-representations --config retrieval.yaml
 
 This saturates I/O-bound representation work ahead of the retrieval step so
 the benchmark run only performs the fast in-memory search.
@@ -140,8 +140,8 @@ run:
      tile_px: [224, 256]
      tile_mpp: [0.5]
      feature_extraction: [resnet50, uni]
-     retrieval_representation: [mean_pooling, attention_pooling]
-     search_strategy: [cosine_knn, faiss_flat]
+     retrieval_representation: [yottixel-features, hshr-features]
+     search_strategy: [yottixel, retccl]
 
 This generates ``2 × 1 × 2 × 2 × 2 = 32`` combinations. Representations are
 cached per ``(feature_extraction, tile_px, tile_mpp, retrieval_representation)``
@@ -150,7 +150,7 @@ key, so repeated runs only recompute what is missing.
 Outputs
 -------
 
-PathBench writes one run directory per combination under the experiment root:
+PathForge writes one run directory per combination under the experiment root:
 
 .. code-block:: text
 

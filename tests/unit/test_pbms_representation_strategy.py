@@ -6,19 +6,19 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from pathbench.core.experiments.combinations import ComboConfig
-from pathbench.slide_retrieval.representation_strategies.panther import (
+from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.slide_retrieval.representation_strategies.panther import (
     PantherAssignment,
 )
-from pathbench.slide_retrieval.representation_strategies.prototype_bundles import (
+from pathforge.slide_retrieval.representation_strategies.prototype_bundles import (
     SalvPrototypeBundleResolver,
 )
-from pathbench.slide_retrieval.representation_strategies.registry import (
+from pathforge.slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
     import_representation_strategy_modules,
     is_representation_strategy_available,
 )
-from pathbench.slide_retrieval.representation_strategies.strategies.pbms import (
+from pathforge.slide_retrieval.representation_strategies.strategies.pbms import (
     PBMSFeatures,
 )
 
@@ -114,7 +114,7 @@ def test_pbms_features_excludes_labeled_prototypes_and_saves_panther_data(
             )
 
     monkeypatch.setattr(
-        "pathbench.slide_retrieval.representation_strategies.strategies.pbms.PantherPrototypeAssigner",
+        "pathforge.slide_retrieval.representation_strategies.strategies.pbms.PantherPrototypeAssigner",
         _FakeAssigner,
     )
 

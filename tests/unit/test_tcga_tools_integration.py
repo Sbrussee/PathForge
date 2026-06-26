@@ -5,8 +5,8 @@ from textwrap import dedent
 
 import pandas as pd
 
-from pathbench.adapters import tcga_tools as tcga_adapter
-from pathbench.config.config import Config
+from pathforge.adapters import tcga_tools as tcga_adapter
+from pathforge.config.config import Config
 from tests.conftest import DUMMY_FE
 
 
@@ -63,7 +63,7 @@ def test_from_yaml_resolves_tcga_dataset_into_local_annotations(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repo_root = tmp_path / "PathBench_2.0"
+    repo_root = tmp_path / "PathForge"
     repo_root.mkdir()
 
     patients = [("TCGA-01", "CASE-01", "slide_01")]
@@ -81,7 +81,7 @@ def test_from_yaml_resolves_tcga_dataset_into_local_annotations(
         column_name = "project_id" if source == "gdc" else "dataset_name"
         return pd.DataFrame([{column_name: "TCGA-LUSC"}])
 
-    monkeypatch.setattr(tcga_adapter, "_pathbench_repo_root", lambda: repo_root)
+    monkeypatch.setattr(tcga_adapter, "_pathforge_repo_root", lambda: repo_root)
     monkeypatch.setattr(
         tcga_adapter, "_load_tcga_tools_download", lambda: fake_download
     )
@@ -133,7 +133,7 @@ def test_from_yaml_resolves_tcga_dataset_into_local_annotations(
     annotation_file = Path(cfg.experiment.annotation_file)
     assert (
         annotation_file
-        == (repo_root / "datasets" / "pathbench_external_annotations.csv").resolve()
+        == (repo_root / "datasets" / "pathforge_external_annotations.csv").resolve()
     )
     annotations = pd.read_csv(annotation_file)
     assert annotations.loc[0, "dataset"] == "TCGA-LUSC"
@@ -149,7 +149,7 @@ def test_from_yaml_splits_remote_dataset_across_multiple_roles(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    repo_root = tmp_path / "PathBench_2.0"
+    repo_root = tmp_path / "PathForge"
     repo_root.mkdir()
 
     patients = [
@@ -172,7 +172,7 @@ def test_from_yaml_splits_remote_dataset_across_multiple_roles(
         column_name = "project_id" if source == "gdc" else "dataset_name"
         return pd.DataFrame([{column_name: "TCGA-LUAD"}])
 
-    monkeypatch.setattr(tcga_adapter, "_pathbench_repo_root", lambda: repo_root)
+    monkeypatch.setattr(tcga_adapter, "_pathforge_repo_root", lambda: repo_root)
     monkeypatch.setattr(
         tcga_adapter, "_load_tcga_tools_download", lambda: fake_download
     )

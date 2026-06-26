@@ -123,7 +123,7 @@ def test_binary_classification_optuna_smoke(
     """Run a very small Optuna study over binary MIL hyperparameters."""
     optuna = pytest.importorskip("optuna")
     pytest.importorskip("torch")
-    from pathbench.core.datasets.bag_dataset import BagDataset
+    from pathforge.core.datasets.bag_dataset import BagDataset
 
     register_smoke_components()
     dataset = BagDataset(
@@ -167,7 +167,7 @@ def test_binary_classification_optuna_smoke(
             final={"best_model_path": best_checkpoint} if best_checkpoint else None,
         )
 
-    from pathbench.policy.utils import save_optuna_visualizations, write_experiment_summary_csv
+    from pathforge.policy.utils import save_optuna_visualizations, write_experiment_summary_csv
 
     raw_results_csv = tmp_path / "smoke_study_results.csv"
     opt_results_csv = tmp_path / "optimization_results.csv"
@@ -236,10 +236,10 @@ def test_trained_mil_inference_heatmap_cli(
     """Attach a visual heatmap to an extracted slide artifact via the inference CLI."""
     torch = pytest.importorskip("torch")
     pytest.importorskip("torchmil")
-    from pathbench.cli.inference import main as inference_main
-    from pathbench.core.datasets.bag_dataset import BagDataset
-    from pathbench.core.io.h5.base import FileHandleH5
-    from pathbench.core.io.h5 import heatmaps as heatmap_io
+    from pathforge.cli.inference import main as inference_main
+    from pathforge.core.datasets.bag_dataset import BagDataset
+    from pathforge.core.io.h5.base import FileHandleH5
+    from pathforge.core.io.h5 import heatmaps as heatmap_io
 
     dataset = BagDataset(
         "smoke_inference_binary",
@@ -294,7 +294,7 @@ def test_trained_mil_inference_heatmap_cli(
         heatmap_top_tiles_png = tmp_path / f"{slide_id}_heatmap_top_tiles.png"
         checkpoint_path = tmp_path / "smoke_model.ckpt"
         np.save(scores_path, instance_scores)
-        from pathbench.inference.model_package import save_packaged_model
+        from pathforge.inference.model_package import save_packaged_model
 
         save_packaged_model(
             path=checkpoint_path,
@@ -392,7 +392,7 @@ def test_gtex_survival_mil_smoke(
     deterministically from GTEx metadata: calcification slides are treated as
     events, age bracket encodes observation time.
     """
-    from pathbench.policy.utils import (
+    from pathforge.policy.utils import (
         collect_run_summary_row,
         metric_should_minimize,
         save_benchmark_visualizations,
@@ -510,20 +510,20 @@ def test_gtex_survival_heatmap(
     with the slide thumbnail as background.
     """
     torch = pytest.importorskip("torch")
-    from pathbench.adapters.torchmil.heatmap_explainer import (
+    from pathforge.adapters.torchmil.heatmap_explainer import (
         register_torchmil_heatmap_explainer,
     )
-    from pathbench.core.io.h5 import heatmaps as heatmap_io
-    from pathbench.core.io.h5.base import FileHandleH5
-    from pathbench.inference.heatmaps import create_inference_heatmap
+    from pathforge.core.io.h5 import heatmaps as heatmap_io
+    from pathforge.core.io.h5.base import FileHandleH5
+    from pathforge.inference.heatmaps import create_inference_heatmap
 
     register_torchmil_heatmap_explainer()
     monkeypatch.setattr(
-        "pathbench.inference.heatmaps.require_torchmil",
+        "pathforge.inference.heatmaps.require_torchmil",
         lambda feature: None,
     )
     monkeypatch.setattr(
-        "pathbench.adapters.torchmil.heatmap_explainer.require_torchmil",
+        "pathforge.adapters.torchmil.heatmap_explainer.require_torchmil",
         lambda feature: None,
     )
 

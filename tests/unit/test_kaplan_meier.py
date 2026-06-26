@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pathbench.training.metrics import _kaplan_meier_curve
+from pathforge.training.metrics import _kaplan_meier_curve
 
 
 def test_kaplan_meier_basic_decreasing():

@@ -9,14 +9,14 @@ from typing import Any
 import pytest
 import torch
 
-from pathbench.core.models.base import ModelBase
-from pathbench.core.models.mil_base import MILModelBase
-from pathbench.core.models.slide_base import SlideLevelModel
-from pathbench.policy.base import PolicyBase
+from pathforge.core.models.base import ModelBase
+from pathforge.core.models.mil_base import MILModelBase
+from pathforge.core.models.slide_base import SlideLevelModel
+from pathforge.policy.base import PolicyBase
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SRC_ROOT = REPO_ROOT / "src" / "pathbench"
+SRC_ROOT = REPO_ROOT / "src" / "pathforge"
 MODELS_ROOT = SRC_ROOT / "core" / "models"
 LOSSES_ROOT = SRC_ROOT / "core" / "losses"
 POLICY_ROOT = SRC_ROOT / "policy"
@@ -33,7 +33,7 @@ LOSS_SUPPORT_MODULES = {"__init__", "base", "impl"}
 POLICY_SUPPORT_MODULES = {"__init__", "base", "utils"}
 
 OPTIONAL_MODULE_DEPS = {
-    "pathbench.core.models.mamba_mil": ("mamba",),
+    "pathforge.core.models.mamba_mil": ("mamba",),
 }
 
 

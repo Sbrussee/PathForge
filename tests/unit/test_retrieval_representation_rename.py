@@ -5,10 +5,10 @@ import json
 
 import pytest
 
-from pathbench.slide_retrieval.representation_strategies.base import (
+from pathforge.slide_retrieval.representation_strategies.base import (
     BaseRetrievalRepresentationStrategy,
 )
-from pathbench.slide_retrieval.representation_strategies.registry import (
+from pathforge.slide_retrieval.representation_strategies.registry import (
     _RETRIEVAL_REPRESENTATION_REGISTRY,
     build_representation_strategy,
     get_representation_strategy,
@@ -16,15 +16,15 @@ from pathbench.slide_retrieval.representation_strategies.registry import (
     list_representation_strategies,
     register_representation_strategy,
 )
-from pathbench.slide_retrieval.representation_strategies.storage import (
+from pathforge.slide_retrieval.representation_strategies.storage import (
     build_retrieval_representation_entry_id,
     build_retrieval_representation_id,
 )
-from pathbench.slide_retrieval.representation_strategies.types import (
+from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.types import RetrievalItemMetadata
-from pathbench.slide_retrieval.types import RetrievalItemIdentity
+from pathforge.slide_retrieval.types import RetrievalItemMetadata
+from pathforge.slide_retrieval.types import RetrievalItemIdentity
 
 
 class _TestRetrievalRepresentationStrategy(BaseRetrievalRepresentationStrategy):

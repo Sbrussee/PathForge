@@ -1,4 +1,4 @@
-"""Smoke tests for the pathbench-optimize CLI entry point."""
+"""Smoke tests for the pathforge-optimize CLI entry point."""
 
 from __future__ import annotations
 
@@ -7,20 +7,20 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pathbench.config.config import Config
+from pathforge.config.config import Config
 from tests.conftest import DUMMY_FE
 
 
 @pytest.mark.smoke
 def test_optimize_cli_importable() -> None:
     """The optimization CLI module must be importable without side-effects."""
-    from pathbench.cli import optimize_run  # noqa: F401
+    from pathforge.cli import optimize_run  # noqa: F401
 
 
 @pytest.mark.smoke
 def test_optimize_cli_missing_config_exits(tmp_path) -> None:
     """main() with a nonexistent config path must raise FileNotFoundError."""
-    from pathbench.cli.optimize_run import main
+    from pathforge.cli.optimize_run import main
 
     with pytest.raises(FileNotFoundError):
         main(["--config", str(tmp_path / "missing.yaml")])
@@ -81,8 +81,8 @@ def test_optimize_cli_writes_summary_and_visualizations(
     monkeypatch, tmp_path: Path
 ) -> None:
     """CLI smoke run should emit optimization CSV summaries and visual reports."""
-    from pathbench.cli.optimize_run import main
-    import pathbench.policy.optimization as opt_mod
+    from pathforge.cli.optimize_run import main
+    import pathforge.policy.optimization as opt_mod
 
     cfg_path = tmp_path / "optimize.yaml"
     project_root = (tmp_path / "project").resolve()

@@ -1,5 +1,5 @@
 experiment:
-  project_name: "PathBench_Study_v2"
+  project_name: "PathForge_Study_v2"
   annotation_file: "/data/annotations/dataset.csv"
   project_root: null
 

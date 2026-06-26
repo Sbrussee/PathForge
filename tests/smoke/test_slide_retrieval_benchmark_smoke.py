@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from pathbench.core.tasks.slide_retrieval import SlideRetrievalTask
-from pathbench.core.experiments.combinations import ComboConfig
-from pathbench.slide_retrieval.representation_strategies.types import RetrievalRepresentation
-from pathbench.slide_retrieval.search_strategies.types import SearchHit, SearchResult
+from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
+from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.slide_retrieval.representation_strategies.types import RetrievalRepresentation
+from pathforge.slide_retrieval.search_strategies.types import SearchHit, SearchResult
 
 
 class _FakeBagDataset:
@@ -73,7 +73,7 @@ def test_smoke_slide_retrieval_benchmark_writes_manifest_and_ranked_csv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import pathbench.core.tasks.slide_retrieval as slide_retrieval_task_module
+    import pathforge.core.tasks.slide_retrieval as slide_retrieval_task_module
 
     task = _make_task(tmp_path)
 

@@ -7,14 +7,14 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pathbench.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
-from pathbench.adapters.torchmil.backend import (
+from pathforge.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
+from pathforge.adapters.torchmil.backend import (
     TorchMILBackendModel,
     register_torchmil_backend,
 )
-from pathbench.core.datasets.bag_dataset import BagDataset
-from pathbench.training.lightning import LightningTrainer
-from pathbench.utils.registries import LOSSES
+from pathforge.core.datasets.bag_dataset import BagDataset
+from pathforge.training.lightning import LightningTrainer
+from pathforge.utils.registries import LOSSES
 
 from ._smoke_dataset import PreparedBagWorkspace, attach_smoke_outputs, capture_smoke_metrics
 from ._smoke_training import (

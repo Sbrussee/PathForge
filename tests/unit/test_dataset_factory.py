@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-import pathbench.core.datasets.factory as factory_mod
-from pathbench.core.datasets.factory import build_bag_dataset
-from pathbench.core.experiments.combinations import ComboConfig
+import pathforge.core.datasets.factory as factory_mod
+from pathforge.core.datasets.factory import build_bag_dataset
+from pathforge.core.experiments.combinations import ComboConfig
 
 
 def _make_combo() -> ComboConfig:

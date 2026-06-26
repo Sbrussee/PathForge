@@ -51,8 +51,8 @@ def test_sklearn_logistic_regression_classification_smoke(
     tmp_path: Path,
 ) -> None:
     """Logistic regression on slide-level mean-pooled features."""
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
@@ -95,8 +95,8 @@ def test_sklearn_random_forest_classification_smoke(
     tmp_path: Path,
 ) -> None:
     """Random forest classifier on slide-level mean-pooled features."""
-    from pathbench.core.models.sklearn_slide import SklearnRandomForestClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnRandomForestClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
@@ -121,8 +121,8 @@ def test_sklearn_multiclass_classification_heatmap_smoke(
     tmp_path: Path,
 ) -> None:
     """Multiclass (3+) logistic regression; verifies confusion-matrix heatmap."""
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     num_classes = int(metadata_df["multiclass_label"].nunique())
@@ -158,8 +158,8 @@ def test_sklearn_ridge_regression_smoke(
     tmp_path: Path,
 ) -> None:
     """Ridge regression on a synthetic continuous target derived from labels."""
-    from pathbench.core.models.sklearn_slide import SklearnRidgeRegressor
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnRidgeRegressor
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
@@ -184,8 +184,8 @@ def test_sklearn_gradient_boosting_regression_smoke(
     tmp_path: Path,
 ) -> None:
     """Gradient boosting regressor on slide-level mean-pooled features."""
-    from pathbench.core.models.sklearn_slide import SklearnGradientBoostingRegressor
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnGradientBoostingRegressor
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
@@ -209,8 +209,8 @@ def test_sklearn_factory_gradient_boosting_classification_smoke(
     tmp_path: Path,
 ) -> None:
     """make_sklearn_slide_model factory with GradientBoostingClassifier."""
-    from pathbench.core.models.sklearn_slide import make_sklearn_slide_model
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import make_sklearn_slide_model
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
@@ -241,8 +241,8 @@ def test_sklearn_cox_ph_survival_smoke(
     """CoxPH survival model on TCGA READ slide-level features."""
     pytest.importorskip("sksurv", reason="scikit-survival not installed")
 
-    from pathbench.core.models.sklearn_slide import SklearnCoxPH
-    from pathbench.training.sklearn_trainer import SklearnSlideTrainer
+    from pathforge.core.models.sklearn_slide import SklearnCoxPH
+    from pathforge.training.sklearn_trainer import SklearnSlideTrainer
 
     metadata_df = pd.read_csv(survival_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()

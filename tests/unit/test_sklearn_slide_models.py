@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import torch
 
-from pathbench.core.models.base import ScikitBase
+from pathforge.core.models.base import ScikitBase
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +68,7 @@ def test_scikit_base_save_creates_parent_dirs(tmp_path: Path):
 
 
 def test_sklearn_logistic_regression_predict_as_tensor_shape():
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
 
     rng = np.random.default_rng(0)
     X_train = rng.standard_normal((20, 4)).astype(np.float32)
@@ -86,7 +86,7 @@ def test_sklearn_logistic_regression_predict_as_tensor_shape():
 
 def test_sklearn_logistic_regression_predict_as_tensor_is_log_probabilities():
     """softmax(log_proba) must recover probabilities summing to 1."""
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
 
     rng = np.random.default_rng(1)
     X_train = rng.standard_normal((20, 4)).astype(np.float32)
@@ -110,7 +110,7 @@ def test_sklearn_logistic_regression_predict_as_tensor_is_log_probabilities():
 
 
 def test_sklearn_ridge_predict_as_tensor_shape():
-    from pathbench.core.models.sklearn_slide import SklearnRidgeRegressor
+    from pathforge.core.models.sklearn_slide import SklearnRidgeRegressor
 
     rng = np.random.default_rng(2)
     X_train = rng.standard_normal((15, 8)).astype(np.float32)
@@ -132,7 +132,7 @@ def test_sklearn_ridge_predict_as_tensor_shape():
 
 
 def test_gradient_boosting_classifier_predict_as_tensor_shape():
-    from pathbench.core.models.sklearn_slide import SklearnGradientBoostingClassifier
+    from pathforge.core.models.sklearn_slide import SklearnGradientBoostingClassifier
 
     rng = np.random.default_rng(3)
     X = rng.standard_normal((20, 4)).astype(np.float32)
@@ -147,7 +147,7 @@ def test_gradient_boosting_classifier_predict_as_tensor_shape():
 
 
 def test_linear_regressor_predict_as_tensor_shape():
-    from pathbench.core.models.sklearn_slide import SklearnLinearRegressor
+    from pathforge.core.models.sklearn_slide import SklearnLinearRegressor
 
     rng = np.random.default_rng(4)
     X = rng.standard_normal((20, 6)).astype(np.float32)
@@ -162,7 +162,7 @@ def test_linear_regressor_predict_as_tensor_shape():
 
 
 def test_gradient_boosting_regressor_predict_as_tensor_shape():
-    from pathbench.core.models.sklearn_slide import SklearnGradientBoostingRegressor
+    from pathforge.core.models.sklearn_slide import SklearnGradientBoostingRegressor
 
     rng = np.random.default_rng(5)
     X = rng.standard_normal((20, 4)).astype(np.float32)
@@ -176,7 +176,7 @@ def test_gradient_boosting_regressor_predict_as_tensor_shape():
 
 
 def test_svm_regressor_predict_as_tensor_shape():
-    from pathbench.core.models.sklearn_slide import SklearnSVMRegressor
+    from pathforge.core.models.sklearn_slide import SklearnSVMRegressor
 
     rng = np.random.default_rng(6)
     X = rng.standard_normal((20, 4)).astype(np.float32)
@@ -195,7 +195,7 @@ def test_svm_regressor_predict_as_tensor_shape():
 
 
 def test_sklearn_estimator_catalog_has_required_models():
-    from pathbench.core.models.sklearn_slide import SKLEARN_ESTIMATOR_CATALOG
+    from pathforge.core.models.sklearn_slide import SKLEARN_ESTIMATOR_CATALOG
 
     required = {
         "SklearnLogisticRegressionClassifier",
@@ -213,7 +213,7 @@ def test_sklearn_estimator_catalog_has_required_models():
 
 
 def test_list_sklearn_slide_models_returns_sklearn_entries():
-    from pathbench.core.models.sklearn_slide import list_sklearn_slide_models
+    from pathforge.core.models.sklearn_slide import list_sklearn_slide_models
 
     all_models = list_sklearn_slide_models()
     # sklearn is always present — at minimum classification + regression models
@@ -223,7 +223,7 @@ def test_list_sklearn_slide_models_returns_sklearn_entries():
 
 
 def test_list_sklearn_slide_models_task_filter():
-    from pathbench.core.models.sklearn_slide import list_sklearn_slide_models
+    from pathforge.core.models.sklearn_slide import list_sklearn_slide_models
 
     clf_models = list_sklearn_slide_models(task="classification")
     reg_models = list_sklearn_slide_models(task="regression")
@@ -237,7 +237,7 @@ def test_list_sklearn_slide_models_task_filter():
 
 
 def test_make_sklearn_slide_model_classification():
-    from pathbench.core.models.sklearn_slide import (
+    from pathforge.core.models.sklearn_slide import (
         SklearnSlideClassifier,
         make_sklearn_slide_model,
     )
@@ -256,7 +256,7 @@ def test_make_sklearn_slide_model_classification():
 
 
 def test_make_sklearn_slide_model_regression():
-    from pathbench.core.models.sklearn_slide import (
+    from pathforge.core.models.sklearn_slide import (
         SklearnSlideRegressor,
         make_sklearn_slide_model,
     )
@@ -273,7 +273,7 @@ def test_make_sklearn_slide_model_regression():
 
 
 def test_make_sklearn_slide_model_unknown_name_raises():
-    from pathbench.core.models.sklearn_slide import make_sklearn_slide_model
+    from pathforge.core.models.sklearn_slide import make_sklearn_slide_model
 
     with pytest.raises(ValueError, match="Unknown sklearn slide model"):
         make_sklearn_slide_model("NotARealModel")
@@ -281,7 +281,7 @@ def test_make_sklearn_slide_model_unknown_name_raises():
 
 def test_make_sklearn_slide_model_svm_classifier_uses_probability():
     """SVC in catalog must have probability=True so predict_proba works."""
-    from pathbench.core.models.sklearn_slide import make_sklearn_slide_model
+    from pathforge.core.models.sklearn_slide import make_sklearn_slide_model
 
     rng = np.random.default_rng(9)
     X = rng.standard_normal((20, 4)).astype(np.float32)
@@ -300,7 +300,7 @@ def test_make_sklearn_slide_model_svm_classifier_uses_probability():
 
 
 def test_sklearn_slide_model_names_derived_from_catalog():
-    from pathbench.core.models.sklearn_slide import (
+    from pathforge.core.models.sklearn_slide import (
         SKLEARN_ESTIMATOR_CATALOG,
         SKLEARN_SLIDE_MODEL_NAMES,
     )
@@ -309,7 +309,7 @@ def test_sklearn_slide_model_names_derived_from_catalog():
 
 
 def test_slide_level_model_names_includes_mlp():
-    from pathbench.core.models.sklearn_slide import SLIDE_LEVEL_MODEL_NAMES
+    from pathforge.core.models.sklearn_slide import SLIDE_LEVEL_MODEL_NAMES
 
     assert "SlideVectorMLP" in SLIDE_LEVEL_MODEL_NAMES
 
@@ -320,7 +320,7 @@ def test_slide_level_model_names_includes_mlp():
 
 
 def test_make_survival_structured_array_dtype():
-    from pathbench.core.models.sklearn_slide import make_survival_structured_array
+    from pathforge.core.models.sklearn_slide import make_survival_structured_array
 
     time = np.array([1.0, 2.0, 3.0])
     event = np.array([1, 0, 1])
@@ -346,7 +346,7 @@ def _make_clf_data(n: int = 20, d: int = 6, seed: int = 0):
 
 
 def test_normalization_scaler_fitted_after_fit():
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
 
     X, y = _make_clf_data()
     model = SklearnLogisticRegressionClassifier(max_iter=200, normalize=True)
@@ -356,7 +356,7 @@ def test_normalization_scaler_fitted_after_fit():
 
 
 def test_normalization_disabled_no_scaler():
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
 
     X, y = _make_clf_data()
     model = SklearnLogisticRegressionClassifier(max_iter=200, normalize=False)
@@ -366,7 +366,7 @@ def test_normalization_disabled_no_scaler():
 
 def test_normalization_scaler_applied_in_predict_as_tensor():
     """Prediction with normalize=True must apply the same scaler as fitted."""
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
 
     X, y = _make_clf_data()
     model = SklearnLogisticRegressionClassifier(max_iter=200, normalize=True)
@@ -382,7 +382,7 @@ def test_normalization_scaler_applied_in_predict_as_tensor():
 
 
 def test_normalization_regression_scaler_applied():
-    from pathbench.core.models.sklearn_slide import SklearnRidgeRegressor
+    from pathforge.core.models.sklearn_slide import SklearnRidgeRegressor
 
     rng = np.random.default_rng(10)
     X = (rng.standard_normal((20, 4)) * 100).astype(np.float32)
@@ -400,11 +400,11 @@ def test_normalization_regression_scaler_applied():
 
 def test_normalization_logs_info_message(caplog):
     import logging
-    from pathbench.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
+    from pathforge.core.models.sklearn_slide import SklearnLogisticRegressionClassifier
 
     X, y = _make_clf_data()
     model = SklearnLogisticRegressionClassifier(max_iter=200, normalize=True)
-    with caplog.at_level(logging.INFO, logger="pathbench.core.models.sklearn_slide"):
+    with caplog.at_level(logging.INFO, logger="pathforge.core.models.sklearn_slide"):
         model.fit(X, y)
 
     assert any("StandardScaler" in r.message for r in caplog.records)
@@ -412,7 +412,7 @@ def test_normalization_logs_info_message(caplog):
 
 
 def test_normalization_factory_normalize_false():
-    from pathbench.core.models.sklearn_slide import make_sklearn_slide_model
+    from pathforge.core.models.sklearn_slide import make_sklearn_slide_model
 
     rng = np.random.default_rng(11)
     X = rng.standard_normal((20, 4)).astype(np.float32)
@@ -431,7 +431,7 @@ def test_normalization_factory_normalize_false():
 
 
 def _make_surv_data(n: int = 30, d: int = 6, seed: int = 0):
-    from pathbench.core.models.sklearn_slide import make_survival_structured_array
+    from pathforge.core.models.sklearn_slide import make_survival_structured_array
 
     rng = np.random.default_rng(seed)
     X = rng.standard_normal((n, d)).astype(np.float32)
@@ -446,7 +446,7 @@ def _make_surv_data(n: int = 30, d: int = 6, seed: int = 0):
     reason="scikit-survival not installed",
 )
 def test_sklearn_coxph_normalizes_and_predicts():
-    from pathbench.core.models.sklearn_slide import SklearnCoxPH
+    from pathforge.core.models.sklearn_slide import SklearnCoxPH
 
     X, y = _make_surv_data()
     model = SklearnCoxPH(alpha=0.1, normalize=True)
@@ -462,7 +462,7 @@ def test_sklearn_coxph_normalizes_and_predicts():
     reason="scikit-survival not installed",
 )
 def test_sklearn_coxnet_normalizes_and_predicts():
-    from pathbench.core.models.sklearn_slide import SklearnCoxnet
+    from pathforge.core.models.sklearn_slide import SklearnCoxnet
 
     X, y = _make_surv_data()
     model = SklearnCoxnet(l1_ratio=0.5, normalize=True)
@@ -476,7 +476,7 @@ def test_sklearn_coxnet_normalizes_and_predicts():
     reason="scikit-survival not installed",
 )
 def test_sklearn_ipc_ridge_normalizes_and_predicts():
-    from pathbench.core.models.sklearn_slide import SklearnIPCRidge
+    from pathforge.core.models.sklearn_slide import SklearnIPCRidge
 
     X, y = _make_surv_data()
     model = SklearnIPCRidge(alpha=1.0, normalize=True)
@@ -490,7 +490,7 @@ def test_sklearn_ipc_ridge_normalizes_and_predicts():
     reason="scikit-survival not installed",
 )
 def test_sklearn_survival_tree_normalizes_and_predicts():
-    from pathbench.core.models.sklearn_slide import SklearnSurvivalTree
+    from pathforge.core.models.sklearn_slide import SklearnSurvivalTree
 
     X, y = _make_surv_data()
     model = SklearnSurvivalTree(max_depth=3, normalize=True)
@@ -504,7 +504,7 @@ def test_sklearn_survival_tree_normalizes_and_predicts():
     reason="scikit-survival not installed",
 )
 def test_sklearn_hinge_loss_svm_normalizes_and_predicts():
-    from pathbench.core.models.sklearn_slide import SklearnHingeLossSurvivalSVM
+    from pathforge.core.models.sklearn_slide import SklearnHingeLossSurvivalSVM
 
     X, y = _make_surv_data()
     model = SklearnHingeLossSurvivalSVM(alpha=1.0, normalize=True)
@@ -518,7 +518,7 @@ def test_sklearn_hinge_loss_svm_normalizes_and_predicts():
     reason="scikit-survival not installed",
 )
 def test_sklearn_naive_survival_svm_normalizes_and_predicts():
-    from pathbench.core.models.sklearn_slide import SklearnNaiveSurvivalSVM
+    from pathforge.core.models.sklearn_slide import SklearnNaiveSurvivalSVM
 
     X, y = _make_surv_data()
     model = SklearnNaiveSurvivalSVM(alpha=1.0, normalize=True)
@@ -532,7 +532,7 @@ def test_sklearn_naive_survival_svm_normalizes_and_predicts():
     reason="scikit-survival not installed",
 )
 def test_list_sklearn_slide_models_includes_all_sksurv():
-    from pathbench.core.models.sklearn_slide import list_sklearn_slide_models
+    from pathforge.core.models.sklearn_slide import list_sklearn_slide_models
 
     survival = list_sklearn_slide_models(task="survival")
     expected = {

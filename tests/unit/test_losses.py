@@ -1,5 +1,5 @@
 import torch
-from pathbench.utils.registries import LOSSES
+from pathforge.utils.registries import LOSSES
 
 
 def test_cross_entropy():

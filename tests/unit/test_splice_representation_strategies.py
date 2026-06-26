@@ -7,15 +7,15 @@ import numpy as np
 import torch
 import pytest
 
-from pathbench.core.datasets.bag_dataset import BagSample
-from pathbench.core.io.slide_artifacts import tiles as tiles_io
-from pathbench.core.io.slide_artifacts.base import FileHandleH5
-from pathbench.slide_retrieval.representation_strategies.registry import (
+from pathforge.core.datasets.bag_dataset import BagSample
+from pathforge.core.io.slide_artifacts import tiles as tiles_io
+from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
     import_representation_strategy_modules,
     is_representation_strategy_available,
 )
-from pathbench.slide_retrieval.representation_strategies.strategies.splice import (
+from pathforge.slide_retrieval.representation_strategies.strategies.splice import (
     SPLICEFeatures,
     SPLICERGB,
 )

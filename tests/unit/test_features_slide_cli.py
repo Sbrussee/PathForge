@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from pathbench.cli.features_slide import _build_single_slide_wsi
-from pathbench.core.datasets.wsi_dataset import WSI
+from pathforge.cli.features_slide import _build_single_slide_wsi
+from pathforge.core.datasets.wsi_dataset import WSI
 
 
 class DummyDataset:

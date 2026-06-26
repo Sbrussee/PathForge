@@ -1,6 +1,6 @@
 # Testing Guide
 
-This directory contains the main PathBench test layers:
+This directory contains the main PathForge test layers:
 
 - `tests/unit`: fast unit and contract tests
 - `tests/interface`: architecture and interface-boundary tests
@@ -10,7 +10,7 @@ This directory contains the main PathBench test layers:
 All commands below assume you are running from:
 
 ```bash
-cd /exports/path-cutane-lymfomen-hpc/siemen/PathBench_2.0
+cd /exports/path-cutane-lymfomen-hpc/siemen/PathForge
 ```
 
 ## Install Test Dependencies
@@ -60,17 +60,17 @@ uv run pytest tests/interface/test_dependency_boundaries.py -q
 Run the full smoke suite:
 
 ```bash
-export PATHBENCH_SMOKE_CACHE=/path/to/shared/cache/pathbench_smoke
+export PATHFORGE_SMOKE_CACHE=/path/to/shared/cache/pathforge_smoke
 uv run pytest -m smoke tests/smoke -q
 ```
 
-The `PATHBENCH_SMOKE_CACHE` variable is recommended for compute nodes so the
+The `PATHFORGE_SMOKE_CACHE` variable is recommended for compute nodes so the
 Hugging Face sample data is downloaded once and reused across runs.
 
 Run only the Hugging Face-backed realistic smoke workflows:
 
 ```bash
-export PATHBENCH_SMOKE_CACHE=/path/to/shared/cache/pathbench_smoke
+export PATHFORGE_SMOKE_CACHE=/path/to/shared/cache/pathforge_smoke
 uv run pytest -q \
   tests/smoke/test_hf_feature_workflows.py \
   tests/smoke/test_hf_mil_benchmarking.py \
@@ -170,4 +170,4 @@ uv run pytest tests/smoke/test_hf_survival_optuna_inference.py -vv -s
 - The smoke fixtures reuse extracted H5 artifacts and prepared MIL bags within
   a test session to avoid duplicate computation.
 - Additional smoke-specific notes are documented in
-  [tests/smoke/README.md](/exports/path-cutane-lymfomen-hpc/siemen/PathBench_2.0/tests/smoke/README.md).
+  [tests/smoke/README.md](/exports/path-cutane-lymfomen-hpc/siemen/PathForge/tests/smoke/README.md).

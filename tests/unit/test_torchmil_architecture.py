@@ -3,10 +3,10 @@ import ast
 
 
 def test_optional_backend_direct_imports_are_confined_to_adapters_and_optional_guards():
-    src_root = Path("src/pathbench")
+    src_root = Path("src/pathforge")
     allowed_prefixes = {
-        Path("src/pathbench/adapters"),
-        Path("src/pathbench/utils/optional"),
+        Path("src/pathforge/adapters"),
+        Path("src/pathforge/utils/optional"),
     }
     offenders = []
 
@@ -35,7 +35,7 @@ def test_optional_backend_direct_imports_are_confined_to_adapters_and_optional_g
 
 
 def test_torchmil_backend_is_not_registered_by_import_side_effect():
-    backend_path = Path("src/pathbench/adapters/torchmil/backend.py")
+    backend_path = Path("src/pathforge/adapters/torchmil/backend.py")
     text = backend_path.read_text(encoding="utf-8")
 
     assert '@MODELS.register("torchmil")' not in text
@@ -43,7 +43,7 @@ def test_torchmil_backend_is_not_registered_by_import_side_effect():
 
 
 def test_training_layer_uses_adapter_collate_not_torchmil_package():
-    lightning_path = Path("src/pathbench/training/lightning.py")
+    lightning_path = Path("src/pathforge/training/lightning.py")
     tree = ast.parse(lightning_path.read_text(encoding="utf-8"))
     imported_modules = {
         node.module
@@ -51,5 +51,5 @@ def test_training_layer_uses_adapter_collate_not_torchmil_package():
         if isinstance(node, ast.ImportFrom) and node.module is not None
     }
 
-    assert "pathbench.adapters.torchmil.collate" in imported_modules
+    assert "pathforge.adapters.torchmil.collate" in imported_modules
     assert all(not module.startswith("torchmil") for module in imported_modules)

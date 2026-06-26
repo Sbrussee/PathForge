@@ -1,4 +1,4 @@
-"""Interface tests for PathBench base-to-concrete inheritance contracts."""
+"""Interface tests for PathForge base-to-concrete inheritance contracts."""
 
 from __future__ import annotations
 
@@ -9,50 +9,50 @@ from typing import Any
 
 import pytest
 
-from pathbench.core.annotations.base import AnnotationsBase
-from pathbench.core.datasets.base import BagDatasetBase, DatasetBase
-from pathbench.core.models.base import ModelBase, ScikitBase
-from pathbench.core.models.mil_base import MILModelBase
-from pathbench.core.models.slide_base import SlideLevelModel
-from pathbench.policy.base import PolicyBase
-from pathbench.training.base import TrainerBase
+from pathforge.core.annotations.base import AnnotationsBase
+from pathforge.core.datasets.base import BagDatasetBase, DatasetBase
+from pathforge.core.models.base import ModelBase, ScikitBase
+from pathforge.core.models.mil_base import MILModelBase
+from pathforge.core.models.slide_base import SlideLevelModel
+from pathforge.policy.base import PolicyBase
+from pathforge.training.base import TrainerBase
 
 
 OPTIONAL_MODULE_DEPS = {
-    "pathbench.core.models.mamba_mil": ("mamba",),
+    "pathforge.core.models.mamba_mil": ("mamba",),
 }
 
 CONCRETE_CLASS_BASES: dict[str, dict[str, tuple[type[Any], ...]]] = {
-    "pathbench.core.annotations.csv": {
+    "pathforge.core.annotations.csv": {
         "CSVAnnotations": (AnnotationsBase,),
     },
-    "pathbench.core.datasets.bag_dataset": {
+    "pathforge.core.datasets.bag_dataset": {
         "BagDataset": (BagDatasetBase,),
     },
-    "pathbench.core.datasets.wsi_dataset": {
+    "pathforge.core.datasets.wsi_dataset": {
         "WSIDataset": (DatasetBase,),
     },
-    "pathbench.training.lightning": {
+    "pathforge.training.lightning": {
         "LightningTrainer": (TrainerBase,),
     },
-    "pathbench.training.sklearn_trainer": {
+    "pathforge.training.sklearn_trainer": {
         "SklearnSlideTrainer": (TrainerBase,),
     },
 }
 
 DISCOVERED_MODULE_BASES: dict[str, tuple[type[Any], ...]] = {
-    "pathbench.policy.benchmarking": (PolicyBase,),
-    "pathbench.policy.feature_extraction": (PolicyBase,),
-    "pathbench.policy.optimization": (PolicyBase,),
-    "pathbench.core.models.mamba_mil": (MILModelBase, ModelBase),
-    "pathbench.core.models.mil_ens": (MILModelBase, ModelBase),
-    "pathbench.core.models.mil_graph": (MILModelBase, ModelBase),
-    "pathbench.core.models.mil_mm": (MILModelBase, ModelBase),
-    "pathbench.core.models.perceiver_mil": (MILModelBase, ModelBase),
-    "pathbench.core.models.prototype_mil": (MILModelBase, ModelBase),
-    "pathbench.core.models.slide_mlp": (SlideLevelModel, MILModelBase, ModelBase),
-    "pathbench.core.models.sklearn_slide": (ScikitBase, ModelBase),
-    "pathbench.core.models.var_mil": (MILModelBase, ModelBase),
+    "pathforge.policy.benchmarking": (PolicyBase,),
+    "pathforge.policy.feature_extraction": (PolicyBase,),
+    "pathforge.policy.optimization": (PolicyBase,),
+    "pathforge.core.models.mamba_mil": (MILModelBase, ModelBase),
+    "pathforge.core.models.mil_ens": (MILModelBase, ModelBase),
+    "pathforge.core.models.mil_graph": (MILModelBase, ModelBase),
+    "pathforge.core.models.mil_mm": (MILModelBase, ModelBase),
+    "pathforge.core.models.perceiver_mil": (MILModelBase, ModelBase),
+    "pathforge.core.models.prototype_mil": (MILModelBase, ModelBase),
+    "pathforge.core.models.slide_mlp": (SlideLevelModel, MILModelBase, ModelBase),
+    "pathforge.core.models.sklearn_slide": (ScikitBase, ModelBase),
+    "pathforge.core.models.var_mil": (MILModelBase, ModelBase),
 }
 
 

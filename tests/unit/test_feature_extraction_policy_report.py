@@ -10,10 +10,10 @@ import h5py
 import numpy as np
 import pytest
 
-import pathbench.policy.feature_extraction as fe_mod
-from pathbench.core.datasets.wsi_dataset import WSI
-from pathbench.core.experiments.combinations import ComboConfig
-from pathbench.policy.feature_extraction import FeatureExtractionPolicy
+import pathforge.policy.feature_extraction as fe_mod
+from pathforge.core.datasets.wsi_dataset import WSI
+from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.policy.feature_extraction import FeatureExtractionPolicy
 
 
 class _FakeFileHandleH5:

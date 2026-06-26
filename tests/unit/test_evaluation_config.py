@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pathbench.config.config import Config
+from pathforge.config.config import Config
 
 
 def test_evaluation_config_rejects_missing_label_column_when_metrics_are_set(

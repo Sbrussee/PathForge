@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import pathbench.cli.benchmark_run as benchmark_cli
+import pathforge.cli.benchmark_run as benchmark_cli
 
 
 def test_main_executes_benchmarking_policy_with_config_path(

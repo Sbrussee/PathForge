@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from pathbench.core.visualization.tiles_overview import render_tiles_overview_image
+from pathforge.core.visualization.tiles_overview import render_tiles_overview_image
 
 
 def _open_image_from_bytes(data: bytes) -> Image.Image:

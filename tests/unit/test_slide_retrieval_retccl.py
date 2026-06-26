@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from pathbench.slide_retrieval.representation_strategies.types import (
+from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.search_strategies.strategies.retccl import RetCCLSearch
-from pathbench.slide_retrieval.types import RetrievalItemMetadata
+from pathforge.slide_retrieval.search_strategies.strategies.retccl import RetCCLSearch
+from pathforge.slide_retrieval.types import RetrievalItemMetadata
 
 
 def _make_representation(

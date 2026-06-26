@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-import pathbench.cli.retrieval_representations as retrieval_repr_cli
+import pathforge.cli.retrieval_representations as retrieval_repr_cli
 
 
 def test_main_executes_representation_precompute_runner(

@@ -30,7 +30,7 @@ from ._smoke_training import (
 
 def _build_slide_mlp(input_dim: int, output_dim: int):
     register_smoke_components()
-    from pathbench.core.models.slide_mlp import SlideVectorMLP
+    from pathforge.core.models.slide_mlp import SlideVectorMLP
 
     return SlideVectorMLP(input_dim=input_dim, hidden_dim=64, output_dim=output_dim)
 
@@ -46,7 +46,7 @@ def test_slide_mlp_binary_classification_smoke(
     tmp_path: Path,
 ) -> None:
     """SlideVectorMLP binary classification through LightningTrainer."""
-    from pathbench.core.datasets.bag_dataset import BagDataset
+    from pathforge.core.datasets.bag_dataset import BagDataset
 
     register_smoke_components()
     dataset = BagDataset(
@@ -65,8 +65,8 @@ def test_slide_mlp_binary_classification_smoke(
             input_dim=extracted_bag_workspace.input_dim, output_dim=2
         )
 
-        from pathbench.training.lightning import LightningTrainer
-        from pathbench.utils.registries import LOSSES
+        from pathforge.training.lightning import LightningTrainer
+        from pathforge.utils.registries import LOSSES
 
         from ._smoke_training import make_training_config
 

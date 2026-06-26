@@ -1,8 +1,8 @@
 Configuration Reference
 =======================
 
-PathBench is driven entirely by YAML configuration files. Every CLI command
-accepts ``--config <path>`` and builds a :class:`~pathbench.config.config.Config`
+PathForge is driven entirely by YAML configuration files. Every CLI command
+accepts ``--config <path>`` and builds a :class:`~pathforge.config.config.Config`
 object via Pydantic v2 validation before any work begins.
 
 Top-Level Structure
@@ -295,10 +295,10 @@ Grid-search axes. All lists are combined exhaustively.
      - List of ``torch.optim`` optimizer class names.
    * - ``retrieval_representation``
      - ``null``
-     - List of retrieval representation strategy names (e.g. ``[mean_pooling]``). Required when ``task: slide_retrieval``.
+     - List of retrieval representation strategy names (e.g. ``[yottixel-features]``). Required when ``task: slide_retrieval``.
    * - ``search_strategy``
      - ``null``
-     - List of search strategy names (e.g. ``[cosine_knn]``). Required when ``task: slide_retrieval``.
+     - List of search strategy names (e.g. ``[yottixel]``). Required when ``task: slide_retrieval``.
 
 ``slide_retrieval``
 -------------------

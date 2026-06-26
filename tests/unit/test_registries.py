@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pathbench.utils.registry import Registry
+from pathforge.utils.registry import Registry
 
 
 def test_registry_register_get_and_list_plugins() -> None:

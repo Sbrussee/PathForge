@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pathbench.core.datasets.wsi_dataset import WSI
-from pathbench.core.slide_processing.lazyslide import LazySlideProcessor
+from pathforge.core.datasets.wsi_dataset import WSI
+from pathforge.core.slide_processing.lazyslide import LazySlideProcessor
 
 
 class _FakeProperties:

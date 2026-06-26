@@ -8,11 +8,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pathbench.config.config import BenchmarkParamEntry, Config
-from pathbench.core.datasets.factory import build_wsi_datasets
-from pathbench.core.experiments.base import Experiment
-from pathbench.core.experiments.combinations import ComboConfig, build_combinations
-from pathbench.utils.registries import FEATURE_EXTRACTORS
+from pathforge.config.config import BenchmarkParamEntry, Config
+from pathforge.core.datasets.factory import build_wsi_datasets
+from pathforge.core.experiments.base import Experiment
+from pathforge.core.experiments.combinations import ComboConfig, build_combinations
+from pathforge.utils.registries import FEATURE_EXTRACTORS
 
 
 # -----------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pathbench.utils.registries import SLIDE_PROCESSORS
+from pathforge.utils.registries import SLIDE_PROCESSORS
 
 
 shapely_geometry = pytest.importorskip("shapely.geometry")
@@ -14,7 +14,7 @@ Polygon = shapely_geometry.Polygon
 
 
 def _get_processor():
-    import_module("pathbench.core.slide_processing.lazyslide")  # registers via decorator
+    import_module("pathforge.core.slide_processing.lazyslide")  # registers via decorator
     ProcessorClass = SLIDE_PROCESSORS.get("lazyslide")
     return ProcessorClass()
 

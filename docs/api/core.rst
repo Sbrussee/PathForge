@@ -1,4 +1,4 @@
-pathbench.core
+pathforge.core
 ==============
 
 The stable domain layer. Framework-agnostic abstractions that all other layers
@@ -7,27 +7,27 @@ depend on. Never imports from policies, CLI, or adapters.
 Models
 ------
 
-.. autoclass:: pathbench.core.models.base.ModelBase
+.. autoclass:: pathforge.core.models.base.ModelBase
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.models.base.TorchModelBase
+.. autoclass:: pathforge.core.models.base.TorchModelBase
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.models.base.ScikitBase
+.. autoclass:: pathforge.core.models.base.ScikitBase
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.models.mil_base.MILModelBase
+.. autoclass:: pathforge.core.models.mil_base.MILModelBase
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.models.slide_base.SlideModelBase
+.. autoclass:: pathforge.core.models.slide_base.SlideModelBase
    :members:
    :undoc-members:
    :show-inheritance:
@@ -35,52 +35,52 @@ Models
 Native MIL Models
 ~~~~~~~~~~~~~~~~~
 
-.. automodule:: pathbench.core.models.layers
+.. automodule:: pathforge.core.models.layers
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.models.perceiver_mil
+.. automodule:: pathforge.core.models.perceiver_mil
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.models.prototype_mil
+.. automodule:: pathforge.core.models.prototype_mil
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.models.var_mil
+.. automodule:: pathforge.core.models.var_mil
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.models.mil_ens
+.. automodule:: pathforge.core.models.mil_ens
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.models.mil_graph
+.. automodule:: pathforge.core.models.mil_graph
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.models.mil_mm
+.. automodule:: pathforge.core.models.mil_mm
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.models.slide_mlp
+.. automodule:: pathforge.core.models.slide_mlp
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.models.sklearn_slide
+.. automodule:: pathforge.core.models.sklearn_slide
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.models.utils
+.. automodule:: pathforge.core.models.utils
    :members:
    :undoc-members:
    :show-inheritance:
@@ -88,27 +88,27 @@ Native MIL Models
 Losses
 ------
 
-.. autoclass:: pathbench.core.losses.base.BaseLoss
+.. autoclass:: pathforge.core.losses.base.BaseLoss
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.losses.base.ClassificationLoss
+.. autoclass:: pathforge.core.losses.base.ClassificationLoss
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.losses.base.RegressionLoss
+.. autoclass:: pathforge.core.losses.base.RegressionLoss
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.losses.base.SurvivalContinuousLoss
+.. autoclass:: pathforge.core.losses.base.SurvivalContinuousLoss
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.losses.base.SurvivalDiscreteLoss
+.. autoclass:: pathforge.core.losses.base.SurvivalDiscreteLoss
    :members:
    :undoc-members:
    :show-inheritance:
@@ -116,17 +116,17 @@ Losses
 Annotations
 -----------
 
-.. automodule:: pathbench.core.annotations.base
+.. automodule:: pathforge.core.annotations.base
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.annotations.binning
+.. automodule:: pathforge.core.annotations.binning
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.annotations.csv
+.. automodule:: pathforge.core.annotations.csv
    :members:
    :undoc-members:
    :show-inheritance:
@@ -134,42 +134,42 @@ Annotations
 Datasets
 --------
 
-.. autoclass:: pathbench.core.datasets.base.DatasetBase
+.. autoclass:: pathforge.core.datasets.base.DatasetBase
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.datasets.base.BagDatasetBase
+.. autoclass:: pathforge.core.datasets.base.BagDatasetBase
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.datasets.base.TileDatasetBase
+.. autoclass:: pathforge.core.datasets.base.TileDatasetBase
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.datasets.wsi_dataset.WSI
+.. autoclass:: pathforge.core.datasets.wsi_dataset.WSI
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.datasets.wsi_dataset.WSIDataset
+.. autoclass:: pathforge.core.datasets.wsi_dataset.WSIDataset
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.datasets.bag_dataset
+.. automodule:: pathforge.core.datasets.bag_dataset
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.datasets.bag_schema
+.. automodule:: pathforge.core.datasets.bag_schema
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.datasets.samplers
+.. automodule:: pathforge.core.datasets.samplers
    :members:
    :undoc-members:
    :show-inheritance:
@@ -177,17 +177,17 @@ Datasets
 Experiments
 -----------
 
-.. autoclass:: pathbench.core.experiments.base.Experiment
+.. autoclass:: pathforge.core.experiments.base.Experiment
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.experiments.base.ComboConfig
+.. autoclass:: pathforge.core.experiments.base.ComboConfig
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.experiments.utils
+.. automodule:: pathforge.core.experiments.utils
    :members:
    :undoc-members:
    :show-inheritance:
@@ -195,32 +195,32 @@ Experiments
 H5 I/O
 ------
 
-.. autoclass:: pathbench.core.io.h5.base.FileHandleH5
+.. autoclass:: pathforge.core.io.h5.base.FileHandleH5
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.io.h5.tiles
+.. automodule:: pathforge.core.io.h5.tiles
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.io.h5.features
+.. automodule:: pathforge.core.io.h5.features
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.io.h5.heatmaps
+.. automodule:: pathforge.core.io.h5.heatmaps
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.io.h5.tissue
+.. automodule:: pathforge.core.io.h5.tissue
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.io.h5.layout
+.. automodule:: pathforge.core.io.h5.layout
    :members:
    :undoc-members:
    :show-inheritance:
@@ -228,17 +228,17 @@ H5 I/O
 Slide Processing
 ----------------
 
-.. autoclass:: pathbench.core.slide_processing.base.SlideProcessorBase
+.. autoclass:: pathforge.core.slide_processing.base.SlideProcessorBase
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.slide_processing.lazyslide
+.. automodule:: pathforge.core.slide_processing.lazyslide
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.slide_processing.utils
+.. automodule:: pathforge.core.slide_processing.utils
    :members:
    :undoc-members:
    :show-inheritance:
@@ -246,7 +246,7 @@ Slide Processing
 Explainability
 --------------
 
-.. autoclass:: pathbench.core.explainer_base.ExplainerBase
+.. autoclass:: pathforge.core.explainer_base.ExplainerBase
    :members:
    :undoc-members:
    :show-inheritance:
@@ -254,18 +254,18 @@ Explainability
 Reports And Visualization
 -------------------------
 
-.. automodule:: pathbench.core.reports.base
+.. automodule:: pathforge.core.reports.base
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.reports.tiles_report_pdf
+.. automodule:: pathforge.core.reports.tiles_report_pdf
    :members:
    :undoc-members:
    :show-inheritance:
 
 
-.. automodule:: pathbench.core.visualization.tiles_overview
+.. automodule:: pathforge.core.visualization.tiles_overview
    :members:
    :undoc-members:
    :show-inheritance:
@@ -273,17 +273,17 @@ Reports And Visualization
 Annotations
 -----------
 
-.. automodule:: pathbench.core.annotations.base
+.. automodule:: pathforge.core.annotations.base
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.annotations.csv
+.. automodule:: pathforge.core.annotations.csv
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: pathbench.core.annotations.binning
+.. automodule:: pathforge.core.annotations.binning
    :members:
    :undoc-members:
    :show-inheritance:
@@ -291,7 +291,7 @@ Annotations
 Reports
 -------
 
-.. automodule:: pathbench.core.reports.tiles_report_pdf
+.. automodule:: pathforge.core.reports.tiles_report_pdf
    :members:
    :undoc-members:
    :show-inheritance:
@@ -299,7 +299,7 @@ Reports
 Registry
 --------
 
-.. automodule:: pathbench.core.registry
+.. automodule:: pathforge.core.registry
    :members:
    :undoc-members:
    :show-inheritance:
@@ -309,12 +309,12 @@ Tasks
 
 Task registry and base class for all benchmarking and retrieval tasks.
 
-.. automodule:: pathbench.core.tasks.registry
+.. automodule:: pathforge.core.tasks.registry
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: pathbench.core.tasks.base.TaskBase
+.. autoclass:: pathforge.core.tasks.base.TaskBase
    :members:
    :undoc-members:
    :show-inheritance:
@@ -322,7 +322,7 @@ Task registry and base class for all benchmarking and retrieval tasks.
 MIL Tasks
 ~~~~~~~~~
 
-.. automodule:: pathbench.core.tasks.mil
+.. automodule:: pathforge.core.tasks.mil
    :members:
    :undoc-members:
    :show-inheritance:
@@ -330,7 +330,7 @@ MIL Tasks
 Slide Retrieval Task
 ~~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: pathbench.core.tasks.slide_retrieval.SlideRetrievalTask
+.. autoclass:: pathforge.core.tasks.slide_retrieval.SlideRetrievalTask
    :members:
    :undoc-members:
    :show-inheritance:

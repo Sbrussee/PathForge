@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pathbench.core.datasets.bag_dataset import (
+from pathforge.core.datasets.bag_dataset import (
     BagSample,
     SlideRetrievalBagDataset,
 )

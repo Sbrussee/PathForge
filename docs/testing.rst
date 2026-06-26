@@ -1,14 +1,14 @@
 Testing
 =======
 
-This page documents the supported PathBench test suites, how to run them, and
+This page documents the supported PathForge test suites, how to run them, and
 what outputs to expect from each one.
 
 All commands below assume you are running from the repository root:
 
 .. code-block:: bash
 
-   cd /exports/path-cutane-lymfomen-hpc/siemen/PathBench_2.0
+   cd /exports/path-cutane-lymfomen-hpc/siemen/PathForge
 
 Install the standard test environment first:
 
@@ -87,7 +87,7 @@ Run the full smoke suite:
 
 .. code-block:: bash
 
-   export PATHBENCH_SMOKE_CACHE=/path/to/shared/cache/pathbench_smoke
+   export PATHFORGE_SMOKE_CACHE=/path/to/shared/cache/pathforge_smoke
    uv run pytest -q -m smoke tests/smoke
 
 Run the lighter CLI smoke checks:
@@ -103,7 +103,7 @@ Run the Hugging Face-backed smoke workflows:
 
 .. code-block:: bash
 
-   export PATHBENCH_SMOKE_CACHE=/path/to/shared/cache/pathbench_smoke
+   export PATHFORGE_SMOKE_CACHE=/path/to/shared/cache/pathforge_smoke
    uv run pytest -q \
      tests/smoke/test_hf_feature_workflows.py \
      tests/smoke/test_hf_mil_benchmarking.py \
@@ -176,5 +176,5 @@ Some suites also produce workflow artifacts while they run:
 - Smoke tests may create temporary experiment folders, slide artifacts, PDF or
   image reports, cached sample data, and JSON summaries before pytest cleans up
   per-test temporary directories.
-- When ``PATHBENCH_SMOKE_CACHE`` is set, downloaded sample data and reused
+- When ``PATHFORGE_SMOKE_CACHE`` is set, downloaded sample data and reused
   smoke intermediates persist in that cache location across runs.

@@ -1,7 +1,7 @@
 Tutorial: Model Packaging After Benchmarking / Optimization
 ===========================================================
 
-After benchmarking or optimization PathBench now writes a self-contained model
+After benchmarking or optimization PathForge now writes a self-contained model
 package next to the best Lightning checkpoint. The package already contains the
 validated config, the architecture selection, the feature-selection metadata,
 and the trained weights required for direct inference or later export.
@@ -9,7 +9,7 @@ and the trained weights required for direct inference or later export.
 Where Checkpoints Are Saved
 ----------------------------
 
-PathBench writes checkpoints to the experiment directory:
+PathForge writes checkpoints to the experiment directory:
 
 .. code-block:: text
 
@@ -36,7 +36,7 @@ weights plus the config required to rebuild the architecture:
 .. code-block:: python
 
    import torch
-   from pathbench.inference.model_package import load_packaged_model, predict_bag
+   from pathforge.inference.model_package import load_packaged_model, predict_bag
 
    loaded = load_packaged_model(
        "/experiments/luad_benchmark/checkpoints/epoch=09-val_loss=0.32_package.pt"
@@ -47,7 +47,7 @@ weights plus the config required to rebuild the architecture:
 
 The serialized payload contains:
 
-- ``config``: full validated PathBench config dump
+- ``config``: full validated PathForge config dump
 - ``model_name``: registry key used to rebuild the model
 - ``input_dim`` and ``output_dim``: bag feature dimension and output channels
 - ``inference_metadata``: default ``bag_id`` and ``feature_extractor`` values
@@ -56,8 +56,8 @@ The serialized payload contains:
 Exporting to TorchScript
 --------------------------
 
-For deployment without a PathBench dependency, trace the underlying
-:class:`~pathbench.core.models.mil_base.MILModelBase`:
+For deployment without a PathForge dependency, trace the underlying
+:class:`~pathforge.core.models.mil_base.MILModelBase`:
 
 .. code-block:: python
 
@@ -69,7 +69,7 @@ For deployment without a PathBench dependency, trace the underlying
    scripted = torch.jit.trace(model, example)
    torch.jit.save(scripted, "model_scripted.pt")
 
-   # Load and run without PathBench
+   # Load and run without PathForge
    scripted_model = torch.jit.load("model_scripted.pt")
    with torch.no_grad():
        logits = scripted_model(example)
@@ -90,7 +90,7 @@ Running Inference from a Bundle
 
 .. code-block:: bash
 
-   pathbench-infer \
+   pathforge-infer \
      --model_path /exports/luad_abmil_bundle/model_package.pt \
      --input /data/artifacts/test/SLIDE_001.h5 \
      --output /data/predictions/SLIDE_001.json

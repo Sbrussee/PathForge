@@ -34,11 +34,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pathbench.core.datasets.bag_dataset import BagSample, SlideRetrievalBagDataset, SlideRetrievalDatasetItem
-from pathbench.core.experiments.combinations import ComboConfig
-from pathbench.core.tasks.slide_retrieval import SlideRetrievalTask
-from pathbench.slide_retrieval.representation_strategies.types import RetrievalRepresentation
-from pathbench.slide_retrieval.search_strategies.types import SearchHit, SearchResult
+from pathforge.core.datasets.bag_dataset import BagSample, SlideRetrievalBagDataset, SlideRetrievalDatasetItem
+from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
+from pathforge.slide_retrieval.representation_strategies.types import RetrievalRepresentation
+from pathforge.slide_retrieval.search_strategies.types import SearchHit, SearchResult
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +250,7 @@ def _full_cache(self, *, bag_dataset, representation_id, aggregation_level, excl
 def test_reference_query_split_produces_results(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
@@ -281,7 +281,7 @@ def test_reference_query_split_produces_results(
 def test_query_reference_included_in_both_sets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
@@ -310,7 +310,7 @@ def test_query_reference_included_in_both_sets(
 def test_exclusion_level_none_assigns_no_exclusion_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
@@ -407,7 +407,7 @@ def test_cached_representations_are_not_recomputed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When all representations are in cache, no computation is triggered."""
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     compute_calls: list[str] = []
 
@@ -439,7 +439,7 @@ def test_missing_representations_are_materialized(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Samples absent from cache must be materialized via the strategy."""
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     compute_calls: list[str] = []
 
@@ -477,7 +477,7 @@ def test_missing_representations_are_materialized(
 def test_incompatible_feature_level_returns_skipped_status(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _IncompatibleRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
@@ -506,7 +506,7 @@ def test_incompatible_feature_level_returns_skipped_status(
 def test_empty_datasets_raises_value_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
@@ -523,7 +523,7 @@ def test_empty_datasets_raises_value_error(
 def test_tiling_id_mismatch_raises_value_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
@@ -546,7 +546,7 @@ def test_tiling_id_mismatch_raises_value_error(
 def test_aggregation_level_mismatch_raises_value_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
@@ -574,7 +574,7 @@ def test_aggregation_level_mismatch_raises_value_error(
 def test_multiple_reference_datasets_are_merged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
@@ -607,7 +607,7 @@ def test_manifest_contains_required_fields(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import json
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
@@ -640,7 +640,7 @@ def test_results_xlsx_has_correct_schema(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from openpyxl import load_workbook
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
@@ -679,7 +679,7 @@ def test_run_directory_hash_is_deterministic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Same config and data produce the same run directory path."""
-    import pathbench.core.tasks.slide_retrieval as mod
+    import pathforge.core.tasks.slide_retrieval as mod
 
     def _make_task_and_run(base: Path) -> str:
         monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())

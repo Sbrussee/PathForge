@@ -1,7 +1,7 @@
 Tutorials
 =========
 
-These tutorials walk through the complete PathBench workflow from raw slides to
+These tutorials walk through the complete PathForge workflow from raw slides to
 trained models and inference heatmaps.
 
 .. toctree::

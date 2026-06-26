@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from pathbench.slide_retrieval.visualization.service import (
+from pathforge.slide_retrieval.visualization.service import (
     SlideRetrievalVisualizationService,
 )
-from pathbench.slide_retrieval.visualization.renderers import (
+from pathforge.slide_retrieval.visualization.renderers import (
     render_retrieval_representation_image,
     render_retrieval_results_image,
 )

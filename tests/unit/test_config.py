@@ -5,8 +5,8 @@ import pytest
 from textwrap import dedent
 from pydantic import ValidationError
 
-from pathbench.config.config import Config
-from pathbench.utils.registries import FEATURE_EXTRACTORS
+from pathforge.config.config import Config
+from pathforge.utils.registries import FEATURE_EXTRACTORS
 from tests.conftest import DUMMY_FE
 
 

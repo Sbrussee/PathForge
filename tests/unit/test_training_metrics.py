@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from pathbench.training.metrics import (
+from pathforge.training.metrics import (
     _discrete_continuous_hazard_scores,
     _survival_kaplan_meier_time,
     _survival_time_axis_label,

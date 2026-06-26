@@ -10,11 +10,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from pathbench.cli.report_tiles import _unique_tiling_ids_from_config as _unique_bag_ids_from_config
-from pathbench.core.datasets.wsi_dataset import WSI
-from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.reports.tiles_report_pdf import (
+from pathforge.cli.report_tiles import _unique_tiling_ids_from_config as _unique_bag_ids_from_config
+from pathforge.core.datasets.wsi_dataset import WSI
+from pathforge.core.io.h5 import tiles as tiles_io
+from pathforge.core.io.h5.base import FileHandleH5
+from pathforge.core.reports.tiles_report_pdf import (
     collect_tiles_overview_entries,
     create_tiles_report_pdf,
 )

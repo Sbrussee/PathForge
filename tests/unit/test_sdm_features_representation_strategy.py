@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 import torch
 
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.slide_retrieval.representation_strategies.strategies.sdm_features import (
+from pathforge.core.io.h5.base import FileHandleH5
+from pathforge.core.io.h5 import tiles as tiles_io
+from pathforge.slide_retrieval.representation_strategies.strategies.sdm_features import (
     SDMFeatures,
 )
 

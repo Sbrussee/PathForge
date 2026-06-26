@@ -15,7 +15,7 @@ def test_capture_smoke_metrics_writes_local_and_aggregated_reports(
     monkeypatch,
 ) -> None:
     report_dir = tmp_path / "report"
-    monkeypatch.setenv("PATHBENCH_SMOKE_REPORT_DIR", str(report_dir))
+    monkeypatch.setenv("PATHFORGE_SMOKE_REPORT_DIR", str(report_dir))
 
     intermediate_path = tmp_path / "intermediate.txt"
     final_path = tmp_path / "final.txt"

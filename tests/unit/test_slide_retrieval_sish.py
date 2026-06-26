@@ -6,17 +6,17 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from pathbench.slide_retrieval.representation_strategies.types import (
+from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.search_strategies.registry import (
+from pathforge.slide_retrieval.search_strategies.registry import (
     get_search_strategy,
     import_search_strategy_modules,
 )
-from pathbench.slide_retrieval.search_strategies.strategies.sish.sish_search import (
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_search import (
     SISHSearch,
 )
-from pathbench.slide_retrieval.types import RetrievalItemMetadata
+from pathforge.slide_retrieval.types import RetrievalItemMetadata
 
 
 def _make_representation(

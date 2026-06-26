@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import torch
 
-from pathbench.adapters.torchmil.backend import TorchMILBackendModel
-from pathbench.training.metrics import save_task_evaluation_artifacts
+from pathforge.adapters.torchmil.backend import TorchMILBackendModel
+from pathforge.training.metrics import save_task_evaluation_artifacts
 
 
 class _FakeTorchMILModel(torch.nn.Module):
@@ -19,11 +19,11 @@ def test_torchmil_backend_outputs_support_visualization_artifacts(
     tmp_path,
 ) -> None:
     monkeypatch.setattr(
-        "pathbench.adapters.torchmil.backend.require_torchmil",
+        "pathforge.adapters.torchmil.backend.require_torchmil",
         lambda feature: None,
     )
     monkeypatch.setattr(
-        "pathbench.adapters.torchmil.backend.build_torchmil_model",
+        "pathforge.adapters.torchmil.backend.build_torchmil_model",
         lambda spec, config_kwargs: _FakeTorchMILModel(),
     )
 

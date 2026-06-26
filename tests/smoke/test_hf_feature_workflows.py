@@ -8,9 +8,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.io.h5 import features as features_io
-from pathbench.core.io.h5.layout import DEFAULT_LAYOUT
+from pathforge.core.io.h5.base import FileHandleH5
+from pathforge.core.io.h5 import features as features_io
+from pathforge.core.io.h5.layout import DEFAULT_LAYOUT
 
 from ._smoke_dataset import (
     ExtractedWsiWorkspace,

@@ -9,7 +9,7 @@ between:
 
 The helpers intentionally avoid importing optional heavy dependencies at module
 import time so that smoke tests can skip cleanly when the runtime environment
-does not include the PathBench extras.
+does not include the PathForge extras.
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ from typing import Any, Iterator
 
 import numpy as np
 
-from pathbench.core.io.h5.base import FileHandleH5
-from pathbench.core.io.h5 import features as features_io
-from pathbench.core.io.h5 import tiles as tiles_io
+from pathforge.core.io.h5.base import FileHandleH5
+from pathforge.core.io.h5 import features as features_io
+from pathforge.core.io.h5 import tiles as tiles_io
 
 
 HF_REPO_ID = "RendeiroLab/LazySlide-data"
@@ -123,7 +123,7 @@ class ExtractedWsiWorkspace:
         slides_dir: Directory containing local slide copies or links.
         artifacts_dir: Directory containing per-slide H5 outputs.
         annotations_csv: Annotation CSV consumed by ``WSIDataset``.
-        artifact_paths: Mapping from slide stem to PathBench slide artifact.
+        artifact_paths: Mapping from slide stem to PathForge slide artifact.
         bag_id: Bag namespace inside each H5 artifact, for example
             ``"224px_1mpp"``.
         extractor_name: Tile-level feature extractor name used for extraction.
@@ -169,22 +169,22 @@ class PreparedBagWorkspace:
 
 def default_smoke_cache_dir() -> Path:
     """Return the default persistent cache directory for smoke-test downloads."""
-    configured_path = os.environ.get("PATHBENCH_SMOKE_CACHE")
+    configured_path = os.environ.get("PATHFORGE_SMOKE_CACHE")
     if configured_path:
         return Path(configured_path).expanduser()
 
-    home_cache_dir = Path("~/.cache/pathbench_smoke").expanduser()
+    home_cache_dir = Path("~/.cache/pathforge_smoke").expanduser()
     home_dir = Path.home()
     if home_dir.exists() and os.access(home_dir, os.W_OK):
         return home_cache_dir
 
     tmp_root = Path(os.environ.get("TMPDIR", "/tmp")).expanduser()
-    return tmp_root / "pathbench_smoke"
+    return tmp_root / "pathforge_smoke"
 
 
 def configured_smoke_report_dir() -> Path | None:
     """Return the optional directory used for aggregated smoke reports."""
-    raw_value = os.environ.get("PATHBENCH_SMOKE_REPORT_DIR")
+    raw_value = os.environ.get("PATHFORGE_SMOKE_REPORT_DIR")
     if not raw_value:
         return None
     return Path(raw_value).expanduser()
@@ -268,7 +268,7 @@ def build_gtex_smoke_annotations(
     slide_ids: list[str],
     strict: bool = True,
 ) -> Any:
-    """Build PathBench-style annotation rows from the full GTEx artery table.
+    """Build PathForge-style annotation rows from the full GTEx artery table.
 
     Args:
         gtex_metadata_csv: Full GTEx artery metadata CSV path.
@@ -490,7 +490,7 @@ def read_h5_feature_matrix(
     """Load one tile-level feature matrix from a slide H5 artifact.
 
     Args:
-        artifact_path: PathBench slide artifact path.
+        artifact_path: PathForge slide artifact path.
         bag_id: Bag namespace such as ``"224px_1mpp"``.
         extractor_name: Feature extractor registry key.
 
@@ -520,7 +520,7 @@ def aggregate_slide_feature_matrix(
     """Aggregate tile features into compact slide-level features.
 
     The smoke suite uses deterministic mean and max pooling to derive a
-    slide-level representation from PathBench tile artifacts without rerunning
+    slide-level representation from PathForge tile artifacts without rerunning
     feature extraction.
 
     Args:
@@ -620,7 +620,7 @@ def smoke_step_artifacts_dir(step_name: str) -> Path | None:
 
     Returns:
         Path | None: Destination directory under ``artifacts/`` when
-        ``PATHBENCH_SMOKE_REPORT_DIR`` is configured, otherwise ``None``.
+        ``PATHFORGE_SMOKE_REPORT_DIR`` is configured, otherwise ``None``.
     """
 
     report_dir = configured_smoke_report_dir()
@@ -777,7 +777,7 @@ def write_smoke_report(report_dir: Path) -> dict[str, Path]:
     )
 
     lines = [
-        "# PathBench Smoke Report",
+        "# PathForge Smoke Report",
         "",
         f"- Generated at: `{summary['generated_at']}`",
         f"- Steps: `{summary['num_steps']}`",

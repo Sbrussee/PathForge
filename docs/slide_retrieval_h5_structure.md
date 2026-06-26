@@ -1,11 +1,11 @@
-# PathBench-MIL Retrieval Representation H5 Structure
+# PathForge-MIL Retrieval Representation H5 Structure
 
 This document defines the current H5 structure used for slide-retrieval representation artifacts.
 
 It is derived from:
-- `src/pathbench/core/io/slide_retrieval/layout.py`
-- `src/pathbench/core/io/slide_retrieval/retrieval_representations.py`
-- `src/pathbench/core/io/slide_retrieval/descriptors.py`
+- `src/pathforge/core/io/slide_retrieval/layout.py`
+- `src/pathforge/core/io/slide_retrieval/retrieval_representations.py`
+- `src/pathforge/core/io/slide_retrieval/descriptors.py`
 
 ---
 
@@ -17,7 +17,7 @@ One retrieval artifact file lives at:
 
 The canonical builder is:
 - `build_retrieval_representation_artifact_path(artifacts_dir, aggregation_level, sample_id)`
-  in `src/pathbench/slide_retrieval/representation_strategies/storage.py`
+  in `src/pathforge/slide_retrieval/representation_strategies/storage.py`
 
 ---
 

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from pathbench.slide_retrieval.representation_strategies.types import (
+from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.search_strategies.strategies.yottixel import (
+from pathforge.slide_retrieval.search_strategies.strategies.yottixel import (
     BoB,
     YottixelSearch,
 )

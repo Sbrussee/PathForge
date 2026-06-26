@@ -1,14 +1,14 @@
-"""Interface-level contract tests for public PathBench base layers."""
+"""Interface-level contract tests for public PathForge base layers."""
 
 from __future__ import annotations
 
 import inspect
 
-from pathbench.core.base import RegistryBase
-from pathbench.core.datasets.base import BagDatasetBase, DatasetBase
-from pathbench.core.slide_processing.base import SlideProcessorBase
-from pathbench.policy.base import PolicyBase
-from pathbench.training.base import TrainerBase
+from pathforge.core.base import RegistryBase
+from pathforge.core.datasets.base import BagDatasetBase, DatasetBase
+from pathforge.core.slide_processing.base import SlideProcessorBase
+from pathforge.policy.base import PolicyBase
+from pathforge.training.base import TrainerBase
 
 
 def test_registry_base_exposes_required_interface_methods() -> None:

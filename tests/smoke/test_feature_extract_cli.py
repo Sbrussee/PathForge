@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from pathbench.core.datasets.wsi_dataset import WSI
-from pathbench.core.io.slide_artifacts import thumbnail as thumbnail_io
-from pathbench.core.io.slide_artifacts.base import FileHandleH5
-from pathbench.policy.feature_extraction import (
+from pathforge.core.datasets.wsi_dataset import WSI
+from pathforge.core.io.slide_artifacts import thumbnail as thumbnail_io
+from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.policy.feature_extraction import (
     FeatureExtractionPolicy,
     _PendingArtifactWrites,
 )

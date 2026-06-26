@@ -1,7 +1,7 @@
 Backends
 ========
 
-PathBench exposes several swappable backends through its registry system. Each
+PathForge exposes several swappable backends through its registry system. Each
 backend is selected by name in the YAML config and resolved at runtime — no
 code changes required to switch implementations.
 
@@ -24,15 +24,15 @@ Configured via ``slide_processing.backend``.
        extractors.
    * - ``openslide``
      - Reserved configuration key for a future dedicated OpenSlide processor.
-       It is documented here for API direction, but PathBench currently ships
+       It is documented here for API direction, but PathForge currently ships
        the Lazyslide processor only.
    * - ``cucim``
      - Reserved configuration key for a future dedicated cuCIM processor.
        GPU-aware WSI acceleration currently comes through the Lazyslide stack
-       rather than a separate registered PathBench processor.
+       rather than a separate registered PathForge processor.
 
-All backends implement :class:`~pathbench.core.slide_processing.base.SlideProcessorBase`
-and are registered in :data:`~pathbench.utils.registries.SLIDE_PROCESSORS`.
+All backends implement :class:`~pathforge.core.slide_processing.base.SlideProcessorBase`
+and are registered in :data:`~pathforge.utils.registries.SLIDE_PROCESSORS`.
 
 Feature Extraction Backends
 ----------------------------
@@ -40,7 +40,7 @@ Feature Extraction Backends
 Configured via ``benchmark_parameters.feature_extraction``.
 
 Feature extractors are identified by name and resolved through
-:data:`~pathbench.utils.registries.FEATURE_EXTRACTORS` and the Lazyslide /
+:data:`~pathforge.utils.registries.FEATURE_EXTRACTORS` and the Lazyslide /
 timm model registries.
 
 Common extractors
@@ -72,7 +72,7 @@ Check available extractors at runtime:
 
 .. code-block:: python
 
-   from pathbench.utils.registries import all_feature_extractor_names
+   from pathforge.utils.registries import all_feature_extractor_names
    print(all_feature_extractor_names())
 
 MIL Backends
@@ -83,8 +83,8 @@ Configured via ``mil.backend``.
 native
 ~~~~~~
 
-The ``native`` backend uses PathBench model classes registered directly in
-:data:`~pathbench.utils.registries.MODELS`. No optional dependencies required.
+The ``native`` backend uses PathForge model classes registered directly in
+:data:`~pathforge.utils.registries.MODELS`. No optional dependencies required.
 
 .. list-table::
    :widths: 30 70
@@ -124,7 +124,7 @@ torchmil
 ~~~~~~~~~
 
 The ``torchmil`` backend wraps any TorchMIL model class through a single
-generic adapter :class:`~pathbench.adapters.torchmil.backend.TorchMILBackendModel`.
+generic adapter :class:`~pathforge.adapters.torchmil.backend.TorchMILBackendModel`.
 Requires the ``mil-backends`` extra.
 
 Available TorchMIL models — see the `TorchMIL model API
@@ -148,7 +148,7 @@ Example config:
      mil: [torchmil]
      loss: [CrossEntropyLoss]
 
-The PathBench registry key is always ``torchmil`` regardless of which
+The PathForge registry key is always ``torchmil`` regardless of which
 TorchMIL model class is selected.
 
 mil-lab
@@ -217,7 +217,7 @@ Configured via ``explainability.heatmap_backend``.
      - Placeholder; no heatmap is rendered.
    * - ``torchmil``
      - Resolves the TorchMIL heatmap explainer through
-       :data:`~pathbench.utils.registries.EXPLAINERS`.
+       :data:`~pathforge.utils.registries.EXPLAINERS`.
        Produces per-instance attention maps normalized to ``[0, 1]``.
 
 Registering a Custom Backend
@@ -227,8 +227,8 @@ All registries follow the same decorator pattern:
 
 .. code-block:: python
 
-   from pathbench.core.models.mil_base import MILModelBase
-   from pathbench.utils.registries import MODELS
+   from pathforge.core.models.mil_base import MILModelBase
+   from pathforge.utils.registries import MODELS
 
    @MODELS.register("MyMIL")
    class MyMIL(MILModelBase):
@@ -239,14 +239,14 @@ All registries follow the same decorator pattern:
        def forward_bag(self, bag: torch.Tensor) -> torch.Tensor:
            ...
 
-Import the module before calling :func:`~pathbench.config.config.Config.from_yaml`
+Import the module before calling :func:`~pathforge.config.config.Config.from_yaml`
 to ensure the registration runs. For optional backends, wrap registration in an
 availability check:
 
 .. code-block:: python
 
-   from pathbench.utils.optional.torchmil import is_torchmil_available
-   from pathbench.utils.registries import MODELS
+   from pathforge.utils.optional.torchmil import is_torchmil_available
+   from pathforge.utils.registries import MODELS
 
    if is_torchmil_available():
        @MODELS.register("my_optional_model")

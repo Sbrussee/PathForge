@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pathbench.config.config import Config
+from pathforge.config.config import Config
 
 
 def test_slide_retrieval_config_does_not_require_mil(tmp_path: Path) -> None:

@@ -6,7 +6,7 @@ import ast
 from pathlib import Path
 
 
-SRC_ROOT = Path("src/pathbench")
+SRC_ROOT = Path("src/pathforge")
 
 
 def _iter_public_top_level_nodes() -> list[tuple[Path, ast.AST]]:

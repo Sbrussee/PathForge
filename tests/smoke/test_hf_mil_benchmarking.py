@@ -22,7 +22,7 @@ from ._smoke_training import make_training_config
 def _build_bag_dataset(workspace: PreparedBagWorkspace, *, target_column: str):
     """Construct a production ``BagDataset`` for one target column."""
     pytest.importorskip("torch")
-    from pathbench.core.datasets.bag_dataset import BagDataset
+    from pathforge.core.datasets.bag_dataset import BagDataset
 
     return BagDataset(
         f"smoke_{target_column}",
@@ -73,7 +73,7 @@ def test_binary_classification_mil_benchmark_grid(
             },
         )
 
-    from pathbench.policy.utils import (
+    from pathforge.policy.utils import (
         collect_run_summary_row,
         metric_should_minimize,
         save_benchmark_visualizations,
@@ -197,10 +197,10 @@ def test_torchmil_backend_mil_benchmark(
     tmp_path: Path,
 ) -> None:
     """Run a binary MIL benchmark using the torchmil backend (ABMIL)."""
-    from pathbench.adapters.torchmil.backend import TorchMILBackendModel, register_torchmil_backend
-    from pathbench.core.datasets.bag_dataset import BagDataset
-    from pathbench.training.lightning import LightningTrainer
-    from pathbench.utils.registries import LOSSES
+    from pathforge.adapters.torchmil.backend import TorchMILBackendModel, register_torchmil_backend
+    from pathforge.core.datasets.bag_dataset import BagDataset
+    from pathforge.training.lightning import LightningTrainer
+    from pathforge.utils.registries import LOSSES
 
     register_torchmil_backend()
 
@@ -260,10 +260,10 @@ def test_mil_lab_backend_mil_benchmark(
 ) -> None:
     """Run a binary MIL benchmark using the mil-lab backend (abmil)."""
     pytest.importorskip("mil_lab")
-    from pathbench.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
-    from pathbench.core.datasets.bag_dataset import BagDataset
-    from pathbench.training.lightning import LightningTrainer
-    from pathbench.utils.registries import LOSSES
+    from pathforge.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
+    from pathforge.core.datasets.bag_dataset import BagDataset
+    from pathforge.training.lightning import LightningTrainer
+    from pathforge.utils.registries import LOSSES
 
     register_mil_lab_backend()
 
@@ -334,11 +334,11 @@ def test_heatmap_overlays_from_benchmark_models(
     rendering path.  All heatmaps are written to the slide H5 artifact and
     exported as PNG overlays.
     """
-    from pathbench.adapters.torchmil.heatmap_explainer import register_torchmil_heatmap_explainer
-    from pathbench.core.datasets.bag_dataset import BagDataset
-    from pathbench.core.io.h5 import heatmaps as heatmap_io
-    from pathbench.core.io.h5.base import FileHandleH5
-    from pathbench.inference.heatmaps import create_inference_heatmap
+    from pathforge.adapters.torchmil.heatmap_explainer import register_torchmil_heatmap_explainer
+    from pathforge.core.datasets.bag_dataset import BagDataset
+    from pathforge.core.io.h5 import heatmaps as heatmap_io
+    from pathforge.core.io.h5.base import FileHandleH5
+    from pathforge.inference.heatmaps import create_inference_heatmap
 
     register_torchmil_heatmap_explainer()
 

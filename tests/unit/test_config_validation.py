@@ -6,8 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 # IMPORTANT: import registries FIRST and register dummy plugins before importing Config
-from pathbench.utils.registries import FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES, MODELS
-from pathbench.core.models.mil_base import MILModelBase
+from pathforge.utils.registries import FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES, MODELS
+from pathforge.core.models.mil_base import MILModelBase
 
 
 # --- Names used in tests ---
@@ -69,7 +69,7 @@ assert MODELS.is_available(TORCHMIL_BACKEND_NAME)
 
 
 # Now import config models (after registration)
-from pathbench.config.config import Config, BenchmarkParameters, SearchSpaceParameter  # noqa: E402
+from pathforge.config.config import Config, BenchmarkParameters, SearchSpaceParameter  # noqa: E402
 
 
 # --- Tests ---
@@ -155,7 +155,7 @@ def test_backend_constraint_success():
 
 
 def test_num_workers_within_available_cpu_limit(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("pathbench.config.config.os.cpu_count", lambda: 4)
+    monkeypatch.setattr("pathforge.config.config.os.cpu_count", lambda: 4)
     cfg_data = {
         "experiment": {
             "project_name": "test",
@@ -178,7 +178,7 @@ def test_num_workers_within_available_cpu_limit(monkeypatch: pytest.MonkeyPatch)
 def test_num_workers_exceeding_available_cpu_limit_fails(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setattr("pathbench.config.config.os.cpu_count", lambda: 4)
+    monkeypatch.setattr("pathforge.config.config.os.cpu_count", lambda: 4)
     cfg_data = {
         "experiment": {
             "project_name": "test",
@@ -200,7 +200,7 @@ def test_num_workers_exceeding_available_cpu_limit_fails(
 
 
 def test_torchmil_backend_requires_package_when_selected(monkeypatch):
-    monkeypatch.setattr("pathbench.config.config.is_torchmil_available", lambda: False)
+    monkeypatch.setattr("pathforge.config.config.is_torchmil_available", lambda: False)
     cfg_data = {
         "experiment": {
             "project_name": "test",
@@ -222,7 +222,7 @@ def test_torchmil_backend_requires_package_when_selected(monkeypatch):
 
 
 def test_torchmil_backend_requires_model_name_when_available(monkeypatch):
-    monkeypatch.setattr("pathbench.config.config.is_torchmil_available", lambda: True)
+    monkeypatch.setattr("pathforge.config.config.is_torchmil_available", lambda: True)
     cfg_data = {
         "experiment": {
             "project_name": "test",
@@ -244,9 +244,9 @@ def test_torchmil_backend_requires_model_name_when_available(monkeypatch):
 
 
 def test_classification_metrics_backend_requires_torchmetrics(monkeypatch):
-    monkeypatch.setattr("pathbench.config.config.is_torchmil_available", lambda: True)
+    monkeypatch.setattr("pathforge.config.config.is_torchmil_available", lambda: True)
     monkeypatch.setattr(
-        "pathbench.config.config.is_torchmetrics_available", lambda: False
+        "pathforge.config.config.is_torchmetrics_available", lambda: False
     )
     cfg_data = {
         "experiment": {
@@ -270,9 +270,9 @@ def test_classification_metrics_backend_requires_torchmetrics(monkeypatch):
 
 
 def test_native_backend_does_not_require_optional_backend_packages(monkeypatch):
-    monkeypatch.setattr("pathbench.config.config.is_torchmil_available", lambda: False)
+    monkeypatch.setattr("pathforge.config.config.is_torchmil_available", lambda: False)
     monkeypatch.setattr(
-        "pathbench.config.config.is_torchmetrics_available", lambda: False
+        "pathforge.config.config.is_torchmetrics_available", lambda: False
     )
     cfg_data = {
         "experiment": {

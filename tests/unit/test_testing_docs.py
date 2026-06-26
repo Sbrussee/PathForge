@@ -45,7 +45,7 @@ def test_testing_pages_describe_pytest_outputs() -> None:
         "failed",
         "traceback",
         "artifacts",
-        "pathbench_smoke_cache",
+        "pathforge_smoke_cache",
     ):
         assert snippet in text
 

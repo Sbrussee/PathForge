@@ -15,15 +15,15 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from pathbench.core.io.slide_artifacts.base import FileHandleH5
-from pathbench.core.io.slide_artifacts import thumbnail as thumbnail_io
-from pathbench.slide_retrieval.representation_strategies.types import (
+from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.core.io.slide_artifacts import thumbnail as thumbnail_io
+from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathbench.slide_retrieval.search_strategies.strategies.yottixel import (
+from pathforge.slide_retrieval.search_strategies.strategies.yottixel import (
     YottixelSearch,
 )
-from pathbench.slide_retrieval.visualization.renderers import (
+from pathforge.slide_retrieval.visualization.renderers import (
     render_retrieval_results_image,
     RESULT_THUMB_SIZE,
 )

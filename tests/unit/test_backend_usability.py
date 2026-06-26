@@ -5,20 +5,20 @@ from importlib import import_module
 
 import pytest
 
-import pathbench.config.config as config_module
-import pathbench.utils.registries as registries_module
-from pathbench.adapters.mil_lab.backend import register_mil_lab_backend
-from pathbench.adapters.torchmil.backend import register_torchmil_backend
-from pathbench.config.config import Config
-from pathbench.core.slide_processing.base import SlideProcessorBase
-from pathbench.utils.registries import list_feature_extractors, list_mil_models
+import pathforge.config.config as config_module
+import pathforge.utils.registries as registries_module
+from pathforge.adapters.mil_lab.backend import register_mil_lab_backend
+from pathforge.adapters.torchmil.backend import register_torchmil_backend
+from pathforge.config.config import Config
+from pathforge.core.slide_processing.base import SlideProcessorBase
+from pathforge.utils.registries import list_feature_extractors, list_mil_models
 from tests.conftest import DUMMY_FE, DUMMY_MIL
 
 
 def test_lazyslide_backend_registers_slide_processor() -> None:
-    """PathBench should expose the LazySlide backend via the slide processor registry."""
+    """PathForge should expose the LazySlide backend via the slide processor registry."""
     pytest.importorskip("lazyslide")
-    import_module("pathbench.core.slide_processing.lazyslide")
+    import_module("pathforge.core.slide_processing.lazyslide")
 
     processor_cls = registries_module.SLIDE_PROCESSORS.get("lazyslide")
 
@@ -56,7 +56,7 @@ def test_config_accepts_torchmil_backend_and_heatmap_backend_when_available(
     minimal_benchmark_config: dict[str, object],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TorchMIL should be selectable as a PathBench MIL and heatmap backend."""
+    """TorchMIL should be selectable as a PathForge MIL and heatmap backend."""
     cfg_dict = copy.deepcopy(minimal_benchmark_config)
     cfg_dict["mil"] = {
         "backend": "torchmil",
@@ -81,7 +81,7 @@ def test_config_accepts_mil_lab_backend_when_available(
     minimal_benchmark_config: dict[str, object],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """MIL-Lab should be selectable as a PathBench MIL backend."""
+    """MIL-Lab should be selectable as a PathForge MIL backend."""
     cfg_dict = copy.deepcopy(minimal_benchmark_config)
     cfg_dict["mil"] = {
         "backend": "mil-lab",
@@ -104,7 +104,7 @@ def test_config_accepts_torchmetrics_and_torchsurv_metric_backends_when_availabl
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PathBench metric backend selectors should validate optional backends."""
+    """PathForge metric backend selectors should validate optional backends."""
     ann = tmp_path / "annotations.csv"
     ann.write_text("dataset,slide,patient,category\n", encoding="utf-8")
     slides_dir = tmp_path / "slides"

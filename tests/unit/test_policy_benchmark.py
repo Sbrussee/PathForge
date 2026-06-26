@@ -6,18 +6,18 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-import pathbench.policy.benchmarking as benchmark_mod
-import pathbench.policy.utils as policy_utils
-from pathbench.config.config import Config
-from pathbench.core.experiments.combinations import ComboConfig
-from pathbench.core.models.mil_base import MILModelBase
-from pathbench.policy.benchmarking import BenchmarkingPolicy
-from pathbench.policy.utils import (
+import pathforge.policy.benchmarking as benchmark_mod
+import pathforge.policy.utils as policy_utils
+from pathforge.config.config import Config
+from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.core.models.mil_base import MILModelBase
+from pathforge.policy.benchmarking import BenchmarkingPolicy
+from pathforge.policy.utils import (
     apply_search_params,
     build_mil_model_for_config,
     write_experiment_summary_csv,
 )
-from pathbench.utils.registries import MODELS
+from pathforge.utils.registries import MODELS
 from tests.conftest import DUMMY_FE, DUMMY_MIL
 
 SECOND_DUMMY_MIL = "DummyMIL2"

@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pathbench.core.io.slide_artifacts.base import FileHandleH5
-from pathbench.core.io.slide_artifacts.layout import DEFAULT_LAYOUT
+from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.core.io.slide_artifacts.layout import DEFAULT_LAYOUT
 
 from ._smoke_dataset import ExtractedWsiWorkspace, attach_smoke_outputs, capture_smoke_metrics
 
@@ -17,7 +17,7 @@ def test_smoke_feature_extraction_writes_expected_artifacts(
     """Validate that real tile feature extraction produced correct H5 artifacts.
 
     This test exercises the H5 artifact structure produced by the session-scoped
-    ``extracted_wsi_workspace`` fixture, which runs full PathBench feature
+    ``extracted_wsi_workspace`` fixture, which runs full PathForge feature
     extraction on real GTEx WSIs using resnet18.
     """
     bag_id = extracted_wsi_workspace.bag_id          # e.g. "224px_1mpp"

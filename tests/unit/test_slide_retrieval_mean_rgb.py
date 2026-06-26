@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import pathbench.slide_retrieval.representation_strategies.mean_rgb as mean_rgb_mod
-from pathbench.core.io.h5 import descriptors as descriptors_io
-from pathbench.core.io.h5 import tiles as tiles_io
-from pathbench.core.io.h5.base import FileHandleH5
+import pathforge.slide_retrieval.representation_strategies.mean_rgb as mean_rgb_mod
+from pathforge.core.io.h5 import descriptors as descriptors_io
+from pathforge.core.io.h5 import tiles as tiles_io
+from pathforge.core.io.h5.base import FileHandleH5
 
 
 def _write_artifact(

@@ -8,11 +8,11 @@ import optuna
 import pandas as pd
 import pytest
 
-import pathbench.policy.optimization as opt_mod
-import pathbench.policy.utils as policy_utils
-from pathbench.config.config import Config
-from pathbench.policy.optimization import OptimizationPolicy
-from pathbench.policy.utils import build_bag_dataset_for_task, optimization_search_space
+import pathforge.policy.optimization as opt_mod
+import pathforge.policy.utils as policy_utils
+from pathforge.config.config import Config
+from pathforge.policy.optimization import OptimizationPolicy
+from pathforge.policy.utils import build_bag_dataset_for_task, optimization_search_space
 from tests.conftest import DUMMY_FE
 
 

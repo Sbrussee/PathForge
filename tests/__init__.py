@@ -1,1 +1,1 @@
-"""Test package markers for PathBench's pytest suites."""
+"""Test package markers for PathForge's pytest suites."""

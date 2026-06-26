@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathbench.core.annotations.binning import bin_times
+from pathforge.core.annotations.binning import bin_times
 
 
 def test_bin_times_quantile_returns_expected_bin_count() -> None:

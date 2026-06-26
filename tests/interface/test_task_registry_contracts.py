@@ -6,8 +6,8 @@ import inspect
 
 import pytest
 
-from pathbench.core.tasks.base import TaskBase
-from pathbench.core.tasks.registry import (
+from pathforge.core.tasks.base import TaskBase
+from pathforge.core.tasks.registry import (
     _TASK_REGISTRY,
     _normalize_task_name,
     build_task,

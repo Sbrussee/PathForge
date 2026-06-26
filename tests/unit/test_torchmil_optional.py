@@ -1,6 +1,6 @@
 import pytest
 
-from pathbench.utils.optional import torchmil as optional_torchmil
+from pathforge.utils.optional import torchmil as optional_torchmil
 
 
 def test_require_torchmil_raises_clear_error_when_absent(monkeypatch):

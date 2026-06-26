@@ -1,4 +1,4 @@
-"""Shared fixtures for PathBench tests.
+"""Shared fixtures for PathForge tests.
 
 Registers lightweight dummy plugins once so every test module can rely on
 a known feature-extractor name (_DUMMY_FE) and a known MIL model name
@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from pathbench.utils.registries import FEATURE_EXTRACTORS, MODELS
-from pathbench.core.models.mil_base import MILModelBase
+from pathforge.utils.registries import FEATURE_EXTRACTORS, MODELS
+from pathforge.core.models.mil_base import MILModelBase
 
 # ---------------------------------------------------------------------------
 # Dummy plugin names exposed to tests

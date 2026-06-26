@@ -54,7 +54,7 @@ Feature Extraction
 
 .. code-block:: bash
 
-   pathbench-features --config features.yaml
+   pathforge-features --config features.yaml
 
 Benchmarking
 ------------
@@ -99,7 +99,7 @@ Benchmarking
 
 .. code-block:: bash
 
-   pathbench-benchmark --config benchmark.yaml
+   pathforge-benchmark --config benchmark.yaml
 
 Hyperparameter Optimization
 ----------------------------
@@ -146,25 +146,25 @@ Hyperparameter Optimization
 
 .. code-block:: bash
 
-   pathbench-optimize --config optimize.yaml
+   pathforge-optimize --config optimize.yaml
 
 Inference
 ---------
 
-Run inference with a saved checkpoint:
+Run a packaged checkpoint on one feature artifact:
 
 .. code-block:: bash
 
-   pathbench-infer \
+   pathforge-infer-model \
      --model_path /experiments/my_benchmark/checkpoints/best.ckpt \
      --input /data/artifacts/train/SLIDE_001.h5 \
      --output predictions.json
 
-Generate attention heatmap alongside inference:
+Generate an attention heatmap alongside the prediction:
 
 .. code-block:: bash
 
-   pathbench-infer \
+   pathforge-infer-model \
      --model_path /experiments/my_benchmark/checkpoints/best.ckpt \
      --input /data/artifacts/train/SLIDE_001.h5 \
      --output predictions.json \
@@ -173,3 +173,79 @@ Generate attention heatmap alongside inference:
      --scores attention_scores.npy \
      --heatmap-name abmil_attention \
      --heatmap-output heatmap.json
+
+For config-driven inference over many slides (``experiment.mode='inference'``),
+use ``pathforge-infer --config inference.yaml --input-csv slides.csv``.
+
+End-to-End Example
+------------------
+
+A typical classification project chains four commands. Reusing the configs above:
+
+.. code-block:: bash
+
+   # 1. Extract tile features into per-slide H5 artifacts.
+   pathforge-features --config features.yaml
+
+   # 2. Train + evaluate the MIL grid (writes a results CSV + visualizations).
+   pathforge-benchmark --config benchmark.yaml
+
+   # 3. (Optional) Re-run metrics/visualizations from saved predictions.
+   pathforge-evaluate --config benchmark.yaml
+
+   # 4. Predict on one slide with the best checkpoint.
+   pathforge-infer-model \
+     --model_path /experiments/my_benchmark/checkpoints/best.ckpt \
+     --input /data/artifacts/train/SLIDE_001.h5 \
+     --output predictions.json
+
+The same steps work through the unified command, e.g.
+``pathforge features run --config features.yaml`` and
+``pathforge benchmark run --config benchmark.yaml``.
+
+Slide Retrieval
+---------------
+
+Rank reference slides against query slides using bag-level representations and a
+search strategy.
+
+**Config** (``retrieval.yaml``):
+
+.. code-block:: yaml
+
+   experiment:
+     project_name: my_retrieval
+     annotation_file: /data/annotations.csv
+     mode: benchmark
+     task: slide_retrieval
+     aggregation_level: slide
+
+   slide_retrieval:
+     exclusion_level: patient
+
+   datasets:
+     - name: ReferenceSet
+       slides_dir: /data/slides/reference
+       artifacts_dir: /data/artifacts/reference
+       used_for: reference
+     - name: QuerySet
+       slides_dir: /data/slides/query
+       artifacts_dir: /data/artifacts/query
+       used_for: query
+
+   benchmark_parameters:
+     tile_px: [256]
+     tile_mpp: [0.5]
+     feature_extraction: [resnet18]
+     retrieval_representation: [yottixel-features]
+     search_strategy: [yottixel]
+
+**Run** (precompute representations, then the retrieval benchmark):
+
+.. code-block:: bash
+
+   pathforge-slide-retrieval-representations --config retrieval.yaml
+   pathforge-benchmark --config retrieval.yaml
+
+Each combination writes a ranked ``query_results.xlsx`` and ``manifest.json``
+under the project root; see :doc:`/slide-retrieval-results-and-metrics`.

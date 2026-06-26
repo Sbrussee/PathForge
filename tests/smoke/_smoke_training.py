@@ -15,8 +15,8 @@ from typing import Any
 import pandas as pd
 
 
-DEFAULT_SMOKE_EPOCHS = int(os.environ.get("PATHBENCH_SMOKE_EPOCHS", "5"))
-DEFAULT_SMOKE_BATCH_SIZE = int(os.environ.get("PATHBENCH_SMOKE_BATCH_SIZE", "2"))
+DEFAULT_SMOKE_EPOCHS = int(os.environ.get("PATHFORGE_SMOKE_EPOCHS", "5"))
+DEFAULT_SMOKE_BATCH_SIZE = int(os.environ.get("PATHFORGE_SMOKE_BATCH_SIZE", "2"))
 
 
 @dataclass(frozen=True)
@@ -27,9 +27,9 @@ class SmokeTrainingResult:
         best_model_path: Best checkpoint returned by ``LightningTrainer.fit``.
         best_score: Scalar validation score selected by the checkpoint callback.
         output_dim: Number of output channels produced by the trained model.
-        task_name: PathBench task name used for the run.
+        task_name: PathForge task name used for the run.
         artifacts_dir: Directory containing post-training metric JSON and plots.
-        config: Optional PathBench Config used during training.
+        config: Optional PathForge Config used during training.
     """
 
     best_model_path: str
@@ -130,7 +130,7 @@ class SurvivalBagDataset:
 def register_smoke_components() -> None:
     """Register production components required by the smoke suite once."""
 
-    from pathbench.utils.registries import populate_dynamic_registries
+    from pathforge.utils.registries import populate_dynamic_registries
 
     populate_dynamic_registries()
 
@@ -158,7 +158,7 @@ def _build_real_smoke_model(
         Any: Configured production MIL model instance.
     """
 
-    from pathbench.utils.registries import MODELS
+    from pathforge.utils.registries import MODELS
 
     ModelClass = MODELS.get("VarMIL")
     return ModelClass(input_dim=input_dim, hidden_dim=64, output_dim=output_dim)
@@ -167,7 +167,7 @@ def _build_real_smoke_model(
 def _smoke_batch_size(task: str, dataset: Any) -> int:
     """Choose a stable batch size for real smoke training.
 
-    Native PathBench MIL training now reuses the padded collate adapter when
+    Native PathForge MIL training now reuses the padded collate adapter when
     ``batch_size > 1``. Classification smoke runs can therefore use a small
     multi-bag batch, while survival smoke still benefits from a full-batch
     Cox/discrete-survival objective.
@@ -187,8 +187,8 @@ def make_training_config(
     dropout: float,
     batch_size: int = 1,
 ) -> Any:
-    """Create a minimal writable PathBench config for trainer smoke tests."""
-    from pathbench.config.config import Config
+    """Create a minimal writable PathForge config for trainer smoke tests."""
+    from pathforge.config.config import Config
 
     root_dir.mkdir(parents=True, exist_ok=True)
     annotations_csv = root_dir / "annotations.csv"
@@ -257,8 +257,8 @@ def fit_smoke_model(
     """Train one tiny MIL model through the production Lightning trainer."""
     import torch
 
-    from pathbench.training.lightning import LightningTrainer
-    from pathbench.utils.registries import LOSSES
+    from pathforge.training.lightning import LightningTrainer
+    from pathforge.utils.registries import LOSSES
 
     register_smoke_components()
     batch_size = _smoke_batch_size(task, dataset_train)

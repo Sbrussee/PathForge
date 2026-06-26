@@ -5,9 +5,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pathbench"
+name = "pathforge"
 version = "0.1.0"
-description = "PathBench 2.0"
+description = "PathForge 2.0"
 authors = [{ name = "Siemen Brussee" }]
 readme = "README.md"
 requires-python = ">=3.11"
@@ -35,7 +35,6 @@ dependencies = [
     "plotly",
     "kaleido",
     "typer",
-    "openpyxl",
 ]
 
 [project.optional-dependencies]
@@ -75,19 +74,21 @@ docs = [
 dev = [
     "pytest>=8.4.2",
     "pytest-cov>=7.0.0",
+    "pytest-mock>=3.14",
+    "ruff>=0.6",
 ]
 
 [project.scripts]
-pathbench = "pathbench.cli.app:main"
-pathbench-benchmark = "pathbench.cli.benchmark_run:main"
-pathbench-evaluate = "pathbench.cli.evaluate_run:main"
-pathbench-optimize = "pathbench.cli.optimize_run:main"
-pathbench-features = "pathbench.cli.features_run:main"
-pathbench-mean-rgb = "pathbench.cli.retrieval_mean_rgb:main"
-pathbench-infer = "pathbench.cli.infer_run:main"
-pathbench-infer-model = "pathbench.cli.inference:main"
-pathbench-visualize = "pathbench.cli.visualize_run:main"
-pathbench-slide-retrieval-representations = "pathbench.cli.retrieval_representations:main"
+pathforge = "pathforge.cli.app:main"
+pathforge-benchmark = "pathforge.cli.benchmark_run:main"
+pathforge-evaluate = "pathforge.cli.evaluate_run:main"
+pathforge-optimize = "pathforge.cli.optimize_run:main"
+pathforge-features = "pathforge.cli.features_run:main"
+pathforge-mean-rgb = "pathforge.cli.retrieval_mean_rgb:main"
+pathforge-infer = "pathforge.cli.infer_run:main"
+pathforge-infer-model = "pathforge.cli.inference:main"
+pathforge-visualize = "pathforge.cli.visualize_run:main"
+pathforge-slide-retrieval-representations = "pathforge.cli.retrieval_representations:main"
 
 [tool.pytest.ini_options]
 minversion = "7.0"

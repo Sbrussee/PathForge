@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from pathbench.core.models.mil_base import MILModelBase
-from pathbench.core.models.slide_base import SlideLevelModel
+from pathforge.core.models.mil_base import MILModelBase
+from pathforge.core.models.slide_base import SlideLevelModel
 
 
 class _ToyMILModel(MILModelBase):
