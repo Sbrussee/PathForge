@@ -7,37 +7,15 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 import pandas as pd
 
 from ...config.config import Config
 from ...utils.constants import EXPERIMENTS_DIR
-from pathbench.core.datasets.wsi_dataset import WSIDataset
+from .combinations import ComboConfig
 
 logger = logging.getLogger(__name__)
-
-
-class ComboConfig:
-    """
-    Generic, dynamically-populated combo.
-
-    Any key you pass in becomes an attribute:
-        Combo(feature_extraction="virchow", tile_px=256)
-        -> combo.feature_extraction, combo.tile_px
-    """
-
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-    @classmethod
-    def from_keys_values(cls, keys: list[str], values: list[object]) -> "ComboConfig":
-        data = {k: v for k, v in zip(keys, values)}
-        return cls(**data)
-
-    def to_dict(self) -> dict[str, object]:
-        return dict(self.__dict__)
 
 
 @dataclass(slots=True)
@@ -49,8 +27,11 @@ class Experiment:
     - project.json
     - annotations.csv (copied into project_root)
 
-    Provides helpers to load annotations, build parameter combos, and build datasets.
-    Dataset-scoped artifacts (per-slide .h5) are managed via dataset config, not here.
+    Provides helpers to load annotations.
+    Search-space materialization lives in
+    ``pathbench.core.experiments.combinations`` and dataset construction lives
+    in ``pathbench.core.datasets.factory`` so this layer stays focused on
+    project-scoped metadata.
     """
 
     cfg: Config
@@ -206,7 +187,7 @@ class Experiment:
 
         return pd.read_csv(ann_path)
 
-    def build_combinations(self, keys: List[str]) -> List[ComboConfig]:
+    def build_combinations(self, keys: list[str]) -> list[ComboConfig]:
         """
         Build all combinations of benchmark parameters for the given keys.
         Args:
@@ -216,36 +197,21 @@ class Experiment:
         """
         bp = self.cfg.benchmark_parameters
 
-        value_lists: List[list[Any]] = []
+        value_lists: list[list[Any]] = []
         for key in keys:
             if not hasattr(bp, key):
                 raise AttributeError(f"benchmark_parameters has no field '{key}'")
-            values = getattr(bp, key)
+            values = bp.get_entries(key)
+            if key == "color_norm" and not values:
+                value_lists.append([None])
+                continue
 
             if not values:
                 raise ValueError(f"benchmark_parameters.{key} is empty; cannot build grid.")
             value_lists.append(values)
 
-        combos: List[ComboConfig] = []
+        combos: list[ComboConfig] = []
         for vals in product(*value_lists):
             combos.append(ComboConfig.from_keys_values(keys, list(vals)))
 
         return combos
-
-    def build_datasets(self) -> list[WSIDataset]:
-        """
-        Build WSIDataset instances for all datasets in cfg.datasets.
-        Returns:
-            List of SlideDataset instances.
-        """
-        if self.project_root is None:
-            raise RuntimeError("project_root is not set.")
-
-        annotations = self.load_annotations()
-
-        datasets: list[WSIDataset] = []
-        for ds in self.cfg.datasets:
-            if ds.used_for == "ignore":
-                continue
-            datasets.append(WSIDataset(ds, annotations))
-        return datasets

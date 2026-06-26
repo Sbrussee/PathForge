@@ -7,14 +7,18 @@ All PathBench workflows are driven by CLI commands. Every command accepts a
 Entry Points
 ------------
 
-When the package is installed, four commands are available globally:
+When the package is installed, these commands are available globally:
 
 .. code-block:: bash
 
    pathbench-features   --config features.yaml
    pathbench-benchmark  --config benchmark.yaml
+   pathbench-evaluate   --config benchmark.yaml
    pathbench-optimize   --config optimize.yaml
+   pathbench-mean-rgb   --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
    pathbench-infer      --model_path ckpt --input h5 --output json
+   pathbench-visualize  --config benchmark.yaml
+   pathbench-slide-retrieval-representations --config retrieval.yaml
 
 All commands can also be invoked as Python modules (useful during development):
 
@@ -22,8 +26,12 @@ All commands can also be invoked as Python modules (useful during development):
 
    python -m pathbench.cli.feature_extraction  --config features.yaml
    python -m pathbench.cli.benchmark           --config benchmark.yaml
+   python -m pathbench.cli.evaluate            --config benchmark.yaml
    python -m pathbench.cli.optimize            --config optimize.yaml
+   python -m pathbench.cli.mean_rgb           --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
    python -m pathbench.cli.inference           --model_path ckpt --input h5 --output json
+   python -m pathbench.cli.visualize           --config benchmark.yaml
+   python -m pathbench.cli.slide_retrieval_representations --config retrieval.yaml
    python -m pathbench.cli.feature_extraction_slide \
      --config features.yaml --dataset TrainingSet --input /path/to/slide.svs
    python -m pathbench.cli.tiles_report        --config features.yaml
@@ -76,6 +84,42 @@ Example:
 .. code-block:: bash
 
    pathbench-optimize --config optimize.yaml
+
+``pathbench-evaluate``
+----------------------
+
+Run post-hoc metrics and visualization workflows from the ``evaluation`` block.
+
+.. code-block:: text
+
+   usage: pathbench-evaluate [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
+
+Example:
+
+.. code-block:: bash
+
+   pathbench-evaluate --config benchmark.yaml
+
+``pathbench-mean-rgb``
+----------------------
+
+Precompute patch mean RGB descriptors used by RGB-based slide retrieval representations.
+
+.. code-block:: text
+
+   usage: pathbench-mean-rgb [-h] --config CONFIG --dataset DATASET --slide-id SLIDE_ID
+                             [--input INPUT] [--bag-id BAG_ID] [--artifact-path ARTIFACT_PATH]
+                             [--log-level {DEBUG,INFO,WARNING,ERROR}]
+
+Example:
+
+.. code-block:: bash
+
+   pathbench-mean-rgb \
+     --config retrieval.yaml \
+     --dataset ReferenceSet \
+     --slide-id SLIDE_001 \
+     --bag-id 256px_0.5mpp
 
 ``pathbench-infer``
 --------------------
@@ -130,6 +174,37 @@ Example (with heatmap):
      --scores scores/SLIDE_001.npy \
      --heatmap-name abmil_attention \
      --heatmap-output predictions/SLIDE_001_heatmap.json
+
+``pathbench-visualize``
+-----------------------
+
+Run visualization workflows configured in the ``evaluation`` block.
+
+.. code-block:: text
+
+   usage: pathbench-visualize [-h] --config CONFIG [--log-level {DEBUG,INFO,WARNING,ERROR}]
+
+Example:
+
+.. code-block:: bash
+
+   pathbench-visualize --config benchmark.yaml
+
+``pathbench-slide-retrieval-representations``
+---------------------------------------------
+
+Materialize slide retrieval representations without running the full benchmark stage.
+
+.. code-block:: text
+
+   usage: pathbench-slide-retrieval-representations [-h] --config CONFIG
+                                                    [--log-level {DEBUG,INFO,WARNING,ERROR}]
+
+Example:
+
+.. code-block:: bash
+
+   pathbench-slide-retrieval-representations --config retrieval.yaml
 
 ``feature_extraction_slide`` (module only)
 ------------------------------------------

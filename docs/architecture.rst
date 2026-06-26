@@ -81,6 +81,14 @@ frameworks are swapped.
    * - ``core.experiments``
      - :class:`~pathbench.core.experiments.base.Experiment`,
        :class:`~pathbench.core.experiments.base.ComboConfig`
+   * - ``core.tasks``
+     - :class:`~pathbench.core.tasks.base.TaskBase`, task registry
+       (:func:`~pathbench.core.tasks.registry.register_task`,
+       :func:`~pathbench.core.tasks.registry.build_task`,
+       :func:`~pathbench.core.tasks.registry.import_task_modules`),
+       MIL tasks (``ClassificationMilTask``, ``RegressionMilTask``,
+       ``SurvivalMilTask``, ``SurvivalDiscreteMilTask``),
+       :class:`~pathbench.core.tasks.slide_retrieval.SlideRetrievalTask`
    * - ``core.io.h5``
      - :class:`~pathbench.core.io.h5.base.FileHandleH5`, coordinate/feature/tissue I/O helpers
    * - ``core.slide_processing``
@@ -106,6 +114,7 @@ Thin shells that parse arguments and delegate to policies.
 - :func:`~pathbench.cli.benchmark.main` → ``pathbench-benchmark``
 - :func:`~pathbench.cli.optimize.main` → ``pathbench-optimize``
 - :func:`~pathbench.cli.inference.main` → ``pathbench-infer``
+- :func:`~pathbench.cli.slide_retrieval_representations.main` → ``pathbench-slide-retrieval-representations``
 
 Infrastructure / Adapters (``pathbench.adapters``, ``pathbench.training``)
 ---------------------------------------------------------------------------

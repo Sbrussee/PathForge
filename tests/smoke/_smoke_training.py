@@ -29,7 +29,7 @@ class SmokeTrainingResult:
         output_dim: Number of output channels produced by the trained model.
         task_name: PathBench task name used for the run.
         artifacts_dir: Directory containing post-training metric JSON and plots.
-        config: PathBench Config used during training.
+        config: Optional PathBench Config used during training.
     """
 
     best_model_path: str
@@ -37,7 +37,7 @@ class SmokeTrainingResult:
     output_dim: int
     task_name: str
     artifacts_dir: str
-    config: Any
+    config: Any | None = None
 
 
 def training_artifact_outputs(result: SmokeTrainingResult) -> dict[str, Path]:
@@ -47,14 +47,13 @@ def training_artifact_outputs(result: SmokeTrainingResult) -> dict[str, Path]:
         result: Completed smoke-training result.
 
     Returns:
-        dict[str, Path]: Named artifact files plus the root training artifact
-        directory. Classification tasks expose ROC and confusion-matrix plots;
-        survival tasks expose TD-AUC and concordance plots.
+        dict[str, Path]: Named metric files and plots. Classification tasks
+        expose ROC and confusion-matrix plots; survival tasks expose TD-AUC
+        and concordance plots.
     """
 
     artifacts_dir = Path(result.artifacts_dir)
     outputs = {
-        "training_artifacts_dir": artifacts_dir,
         "val_metrics_json": artifacts_dir / "val_metrics.json",
         "val_curves_json": artifacts_dir / "val_curves.json",
     }
@@ -120,6 +119,11 @@ class SurvivalBagDataset:
             ),
             "event": self._torch.tensor(float(event_value), dtype=self._torch.float32),
         }
+        if self.discrete_time and "os_months" in row.index:
+            target["continuous_time"] = self._torch.tensor(
+                float(row["os_months"]),
+                dtype=self._torch.float32,
+            )
         return {"X": bag.float(), "Y": target}
 
 

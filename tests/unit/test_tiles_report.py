@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from pathbench.cli.tiles_report import _unique_bag_ids_from_config
+from pathbench.cli.report_tiles import _unique_tiling_ids_from_config as _unique_bag_ids_from_config
 from pathbench.core.datasets.wsi_dataset import WSI
 from pathbench.core.io.h5 import tiles as tiles_io
 from pathbench.core.io.h5.base import FileHandleH5

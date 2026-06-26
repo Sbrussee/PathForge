@@ -139,6 +139,7 @@ def _normalize_model_names(items: Any) -> set[str]:
 
 @lru_cache(maxsize=1)
 def timm_model_names() -> set[str]:
+    """Return the TIMM model names visible in the current Python environment."""
     timm = _timm_module()
     if timm is None:
         return set()
@@ -150,6 +151,7 @@ def timm_model_names() -> set[str]:
 
 @lru_cache(maxsize=1)
 def lazyslide_model_names() -> set[str]:
+    """Return the LazySlide model names visible in the current Python environment."""
     zs = _lazyslide_module()
     if zs is None:
         return set()
@@ -182,6 +184,7 @@ def registered_feature_extractor_names() -> set[str]:
 
 
 def available_feature_extractor_names() -> dict[str, set[str]]:
+    """Return extractor names grouped by the backend that provides them."""
     return {
         "pathbench": registered_feature_extractor_names(),
         "timm": timm_model_names(),
@@ -190,6 +193,7 @@ def available_feature_extractor_names() -> dict[str, set[str]]:
 
 
 def all_feature_extractor_names() -> set[str]:
+    """Return the union of PathBench-native and dynamically discovered extractors."""
     grouped = available_feature_extractor_names()
     return grouped["pathbench"] | grouped["timm"] | grouped["lazyslide"]
 

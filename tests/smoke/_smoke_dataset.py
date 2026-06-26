@@ -169,9 +169,17 @@ class PreparedBagWorkspace:
 
 def default_smoke_cache_dir() -> Path:
     """Return the default persistent cache directory for smoke-test downloads."""
-    return Path(
-        os.environ.get("PATHBENCH_SMOKE_CACHE", "~/.cache/pathbench_smoke")
-    ).expanduser()
+    configured_path = os.environ.get("PATHBENCH_SMOKE_CACHE")
+    if configured_path:
+        return Path(configured_path).expanduser()
+
+    home_cache_dir = Path("~/.cache/pathbench_smoke").expanduser()
+    home_dir = Path.home()
+    if home_dir.exists() and os.access(home_dir, os.W_OK):
+        return home_cache_dir
+
+    tmp_root = Path(os.environ.get("TMPDIR", "/tmp")).expanduser()
+    return tmp_root / "pathbench_smoke"
 
 
 def configured_smoke_report_dir() -> Path | None:
@@ -393,7 +401,9 @@ def merge_survival_metadata(
 
     obs_df = feature_observations.copy().reset_index(drop=True)
     survival_df = load_tabular_smoke_metadata(survival_metadata_csv).copy()
-    obs_slide_column = _first_present_column(obs_df, ("FILE_NAME", "file_name", "slide"))
+    obs_slide_column = _first_present_column(
+        obs_df, ("FILE_NAME", "file_name", "slide")
+    )
     survival_slide_column = _first_present_column(
         survival_df,
         ("FILE_NAME", "file_name", "slide", "slide_id"),
@@ -775,9 +785,7 @@ def write_smoke_report(report_dir: Path) -> dict[str, Path]:
     ]
     for payload in step_payloads:
         lines.append(f"## {payload['step_name']}")
-        lines.append(
-            f"- Elapsed seconds: `{payload.get('elapsed_seconds', 'n/a')}`"
-        )
+        lines.append(f"- Elapsed seconds: `{payload.get('elapsed_seconds', 'n/a')}`")
         lines.append(f"- Peak RSS MB: `{payload.get('ru_maxrss_mb', 'n/a')}`")
         if payload.get("intermediate_outputs"):
             lines.append("- Intermediate outputs:")

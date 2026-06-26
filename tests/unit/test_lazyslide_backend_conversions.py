@@ -145,3 +145,41 @@ def test_validate_tile_spec() -> None:
 
     # If no config is provided, only structural validation is checked
     assert proc.validate_tile_spec(valid_spec, None) is True
+
+
+def test_read_patch_region_returns_rgb_uint8_array() -> None:
+    proc = _get_processor()
+
+    class _FakeWSIObject:
+        def __init__(self) -> None:
+            self.calls: list[tuple[int, int, int, int, int]] = []
+
+        def read_region(self, x: int, y: int, width: int, height: int, *, level: int):
+            self.calls.append((x, y, width, height, level))
+            red = np.full((height, width), 255, dtype=np.uint8)
+            green = np.full((height, width), 128 if x == 0 else 0, dtype=np.uint8)
+            blue = np.zeros((height, width), dtype=np.uint8)
+            return np.stack([red, green, blue], axis=-1)
+
+    fake_wsi = type(
+        "FakeWSI",
+        (),
+        {"_obj": _FakeWSIObject(), "obj": None},
+    )()
+    fake_wsi.obj = fake_wsi._obj
+
+    patch = proc.read_patch_region(
+        fake_wsi,
+        x=10,
+        y=20,
+        width=2,
+        height=2,
+        level=1,
+    )
+
+    assert patch.dtype == np.uint8
+    assert patch.shape == (2, 2, 3)
+    np.testing.assert_array_equal(patch[..., 0], np.full((2, 2), 255, dtype=np.uint8))
+    np.testing.assert_array_equal(patch[..., 1], np.zeros((2, 2), dtype=np.uint8))
+    np.testing.assert_array_equal(patch[..., 2], np.zeros((2, 2), dtype=np.uint8))
+    assert fake_wsi.obj.calls == [(10, 20, 2, 2, 1)]

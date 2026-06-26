@@ -420,7 +420,7 @@ class _ToyBagDataset:
         return len(self._bags)
 
     def __getitem__(self, idx):
-        return self._bags[idx], self._labels[idx]
+        return {"X": self._bags[idx], "Y": self._labels[idx]}
 
 
 def _make_trainer_config(tmp_path: Path):

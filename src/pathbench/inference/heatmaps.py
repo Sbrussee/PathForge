@@ -278,6 +278,8 @@ def create_inference_heatmap(
 
 
 def _resolve_heatmap_explainer_key(heatmap_backend: str) -> str:
+    """Map one user-facing backend selector to a registry explainer key."""
+
     if heatmap_backend == "torchmil":
         return "torchmil_heatmap"
     return heatmap_backend
@@ -346,6 +348,18 @@ def _resolve_source_slide_path(tiling_spec: dict[str, Any]) -> Path | None:
 def _load_array(
     path: str | Path | None, *, expected_ndim: int, name: str
 ) -> np.ndarray:
+    """Load one numeric array from disk and validate rank/finite values.
+
+    Args:
+        path: Input file path. Supported formats are ``.npy``, ``.npz``, and
+            JSON lists.
+        expected_ndim: Required array rank.
+        name: Human-readable field name used in validation errors.
+
+    Returns:
+        np.ndarray: Loaded array with exactly ``expected_ndim`` dimensions.
+    """
+
     if path is None:
         raise ValueError(f"{name}_path is required.")
     p = Path(path)
@@ -373,6 +387,8 @@ def _load_array(
 
 
 def _tensor_to_numpy(value: torch.Tensor) -> np.ndarray:
+    """Detach one tensor and move it to CPU NumPy storage."""
+
     return value.detach().cpu().numpy()
 
 
@@ -383,6 +399,15 @@ def _write_json_sidecar(
     scores: np.ndarray,
     metadata: dict[str, Any],
 ) -> None:
+    """Write one JSON heatmap sidecar for non-HDF5 consumers.
+
+    Args:
+        output_path: Output JSON path.
+        coords: Coordinate array shaped ``(N, 2)``.
+        scores: Score array shaped ``(N,)``.
+        metadata: JSON-serializable metadata dictionary.
+    """
+
     import json
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -724,7 +749,7 @@ def _plot_exact_tile_heatmap(
     title: str,
     colormap: str,
     tile_alpha: float,
-):
+) -> Any:
     """Plot the exact square-tile heatmap in thumbnail pixel space."""
 
     from matplotlib import cm
@@ -777,7 +802,7 @@ def _plot_smoothed_heatmap(
     colormap: str,
     smoothed_alpha: float,
     smoothing_sigma_scale: float,
-):
+) -> Any:
     """Plot a blurred cloud rendering of the tile heatmap."""
 
     from matplotlib import cm
@@ -841,7 +866,7 @@ def _plot_top_k_tiles_table(
     tile_images: list[np.ndarray] | None,
     top_k_tiles: int,
     title: str,
-):
+) -> Any:
     """Render a top-K tiles gallery with full-resolution previews when available."""
 
     num_tiles = max(1, min(int(top_k_tiles), int(scores.shape[0])))
@@ -1090,6 +1115,8 @@ def _gaussian_blur_2d(array: np.ndarray, *, sigma: float) -> np.ndarray:
 
 
 def _load_matplotlib_pyplot():
+    """Load matplotlib pyplot in headless ``Agg`` mode for artifact rendering."""
+
     import matplotlib
 
     matplotlib.use("Agg")

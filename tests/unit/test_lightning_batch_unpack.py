@@ -49,3 +49,54 @@ def test_native_trainer_uses_padded_collate_for_multi_bag_batches(tmp_path):
     trainer = LightningTrainer(cfg)
 
     assert trainer._collate_fn() is not None
+
+
+class _SingleBagDataset(torch.utils.data.Dataset):
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, index):
+        del index
+        return {
+            "X": torch.zeros(2, 4, dtype=torch.float32),
+            "Y": torch.tensor(1.25, dtype=torch.float32),
+        }
+
+
+class _ToyTrainModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.bias = torch.nn.Parameter(torch.zeros(1))
+
+    def forward_bag(self, bag, mask=None, coords=None, label=None):
+        del mask, coords, label
+        return self.bias.expand(bag.shape[0], 1)
+
+
+def test_lightning_trainer_fit_supports_non_classification_without_classification_config(
+    monkeypatch, tmp_path
+):
+    cfg = make_training_config(
+        tmp_path / "regression_training",
+        task="regression",
+        epochs=1,
+        lr=1e-3,
+        dropout=0.0,
+        batch_size=1,
+    )
+    cfg.classification = None
+    trainer = LightningTrainer(cfg)
+    trainer.trainer.fit = lambda *args, **kwargs: None
+    trainer._save_validation_artifacts = lambda *args, **kwargs: None
+    trainer.checkpoint_callback.best_model_path = ""
+    trainer.checkpoint_callback.best_model_score = torch.tensor(0.25)
+
+    best_path, best_score = trainer.fit(
+        _ToyTrainModel(),
+        _SingleBagDataset(),
+        _SingleBagDataset(),
+        _ToyLoss(),
+    )
+
+    assert best_path == ""
+    assert best_score == 0.25

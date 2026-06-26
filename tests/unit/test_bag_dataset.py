@@ -99,6 +99,7 @@ def test_bag_dataset_infers_discrete_survival_output_dim_from_annotation_bins(
         {
             "slide": ["S1", "S2", "S3"],
             "time_bin": [0, 2, 3],
+            "os_months": [6.0, 18.0, 30.0],
             "status": [1.0, 0.0, 1.0],
             "category": [0, 0, 0],
         }
@@ -117,6 +118,8 @@ def test_bag_dataset_infers_discrete_survival_output_dim_from_annotation_bins(
     target = dataset[1]["Y"]
     assert target["time"].dtype == torch.long
     assert target["event"].dtype == torch.float32
+    assert target["continuous_time"].dtype == torch.float32
+    assert target["continuous_time"].item() == 18.0
     assert dataset.feature_dim == 5
     assert dataset.output_dim() == 4
 
@@ -175,3 +178,32 @@ def test_bag_dataset_materializes_fixed_bag_size_deterministically(tmp_path: Pat
     assert smaller_bag.shape == (4, 3)
     assert torch.equal(larger_bag[:, 0], torch.tensor([0.0, 6.0, 9.0, 15.0]))
     assert torch.equal(smaller_bag[:, 0], torch.tensor([0.0, 3.0, 0.0, 3.0]))
+
+
+def test_prepared_bag_dataset_filters_annotations_to_requested_dataset(
+    tmp_path: Path,
+) -> None:
+    feature_dir = tmp_path / "features"
+    feature_dir.mkdir()
+    annotations_path = tmp_path / "annotations.csv"
+    pd.DataFrame(
+        {
+            "dataset": ["train_ds", "train_ds", "val_ds"],
+            "slide_id": ["S1", "S2", "S3"],
+            "category": [0, 1, 2],
+        }
+    ).to_csv(annotations_path, index=False)
+    for slide_id in ("S1", "S2", "S3"):
+        torch.save(torch.ones(2, 4, dtype=torch.float32), feature_dir / f"{slide_id}.pt")
+
+    dataset = BagDataset(
+        "prepared_subset",
+        str(feature_dir),
+        str(annotations_path),
+        "category",
+        annotations_df=pd.read_csv(annotations_path),
+        dataset_name="train_ds",
+    )
+
+    assert dataset.num_bags == 2
+    assert dataset.annotations["slide_id"].tolist() == ["S1", "S2"]

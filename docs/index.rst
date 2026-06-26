@@ -22,6 +22,7 @@ third-party packages live in adapter modules.
    :caption: Getting Started
 
    installation
+   data_preparation
    quickstart
 
 .. toctree::

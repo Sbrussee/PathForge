@@ -125,3 +125,23 @@ def test_write_tiles_overview_rejects_non_bytes(tmp_path: Path) -> None:
     with FileHandleH5(h5_path, mode="a") as f:
         with pytest.raises((TypeError, ValueError)):
             tiles_io.write_tiles_overview(f, bag_id, "not-bytes")  # type: ignore[arg-type]
+
+
+def test_write_array_dataset_allows_scalar_utf8_values(tmp_path: Path) -> None:
+    h5_path = tmp_path / "S1.h5"
+    dataset_path = "bags/256px_0.5mpp/retrieval_representations/repr_1/additional_data/dataset_name"
+
+    with FileHandleH5(h5_path, mode="a") as f:
+        write_array_dataset(
+            f.h5,
+            dataset_path,
+            np.asarray("dataset-a"),
+            dtype=np.asarray("dataset-a").dtype,
+        )
+
+        dset = f.h5[dataset_path]
+        assert tuple(dset.shape) == ()
+        raw = dset[()]
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        assert str(raw) == "dataset-a"

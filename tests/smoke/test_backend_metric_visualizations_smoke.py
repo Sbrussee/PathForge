@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-import torch
 
 from pathbench.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
 from pathbench.adapters.torchmil.backend import (
@@ -27,44 +26,6 @@ from ._smoke_training import (
 )
 
 
-class _FakeTorchMILModel(torch.nn.Module):
-    def __init__(self, input_dim: int) -> None:
-        super().__init__()
-        self.head = torch.nn.Linear(input_dim, 2, bias=False)
-        with torch.no_grad():
-            self.head.weight.zero_()
-            self.head.weight[0, 0] = 1.0
-            self.head.weight[1, 1] = 1.0
-
-    def forward(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        pooled = batch["X"].float().mean(dim=1)
-        return {"logits": self.head(pooled)}
-
-
-class _FakeMILLabModel(torch.nn.Module):
-    def __init__(self, input_dim: int) -> None:
-        super().__init__()
-        self.head = torch.nn.Linear(input_dim, 2, bias=False)
-        with torch.no_grad():
-            self.head.weight.zero_()
-            self.head.weight[0, 0] = 1.0
-            self.head.weight[1, 1] = 1.0
-
-    def forward(
-        self,
-        bag: torch.Tensor,
-        *,
-        loss_fn=None,
-        label=None,
-        return_attention: bool = False,
-        return_slide_feats: bool = False,
-    ):
-        _ = (loss_fn, label, return_attention, return_slide_feats)
-        pooled = bag.float().mean(dim=1)
-        logits = self.head(pooled)
-        return {"logits": logits}, {"ignored": True}
-
-
 def _make_dataset(workspace: PreparedBagWorkspace) -> BagDataset:
     return BagDataset(
         "backend_visualization_smoke",
@@ -78,17 +39,8 @@ def _make_dataset(workspace: PreparedBagWorkspace) -> BagDataset:
 def test_torchmil_backend_classification_visualizations_smoke(
     extracted_bag_workspace: PreparedBagWorkspace,
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
     register_torchmil_backend()
-    monkeypatch.setattr(
-        "pathbench.adapters.torchmil.backend.require_torchmil",
-        lambda feature: None,
-    )
-    monkeypatch.setattr(
-        "pathbench.adapters.torchmil.backend.build_torchmil_model",
-        lambda spec, config_kwargs: _FakeTorchMILModel(config_kwargs["in_shape"][0]),
-    )
 
     dataset = _make_dataset(extracted_bag_workspace)
     cfg = make_training_config(
@@ -101,14 +53,14 @@ def test_torchmil_backend_classification_visualizations_smoke(
     )
     cfg.mil.backend = "torchmil"
     cfg.mil.torchmil_model = "ABMIL"
-    cfg.mil.torchmil_model_kwargs = {"in_shape": (extracted_bag_workspace.input_dim,), "out_shape": 2}
+    cfg.mil.torchmil_model_kwargs = {"in_shape": (extracted_bag_workspace.input_dim,)}
     cfg.mil.best_epoch_based_on = "balanced_accuracy"
     cfg.mil.use_torchmil_collate = False
 
     model = TorchMILBackendModel(
         torchmil_model="ABMIL",
         task="classification",
-        torchmil_model_kwargs={"in_shape": (extracted_bag_workspace.input_dim,), "out_shape": 2},
+        torchmil_model_kwargs={"in_shape": (extracted_bag_workspace.input_dim,)},
     )
     trainer = LightningTrainer(cfg)
     loss_fn = LOSSES.get("CrossEntropyLoss")()
@@ -201,19 +153,9 @@ def test_multiclass_classification_heatmap_smoke(
 def test_mil_lab_backend_classification_visualizations_smoke(
     extracted_bag_workspace: PreparedBagWorkspace,
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
+    pytest.importorskip("mil_lab")
     register_mil_lab_backend()
-    monkeypatch.setattr(
-        "pathbench.adapters.mil_lab.backend.require_mil_lab",
-        lambda feature: None,
-    )
-    monkeypatch.setattr(
-        "pathbench.adapters.mil_lab.backend.build_mil_lab_model",
-        lambda spec, config_kwargs, from_pretrained=False: _FakeMILLabModel(
-            int(config_kwargs["input_dim"])
-        ),
-    )
 
     dataset = _make_dataset(extracted_bag_workspace)
     cfg = make_training_config(

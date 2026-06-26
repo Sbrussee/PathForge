@@ -35,6 +35,9 @@ CONCRETE_CLASS_BASES: dict[str, dict[str, tuple[type[Any], ...]]] = {
     "pathbench.training.lightning": {
         "LightningTrainer": (TrainerBase,),
     },
+    "pathbench.training.sklearn_trainer": {
+        "SklearnSlideTrainer": (TrainerBase,),
+    },
 }
 
 DISCOVERED_MODULE_BASES: dict[str, tuple[type[Any], ...]] = {

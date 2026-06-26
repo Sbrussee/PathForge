@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -24,6 +27,16 @@ from ._smoke_dataset import (
     write_smoke_report,
 )
 from ._smoke_training import register_smoke_components
+
+
+@dataclass(frozen=True)
+class RetrievalDatasets:
+    """Real SlideRetrievalBagDataset instances for slide retrieval smoke tests."""
+
+    reference: Any
+    query: Any
+    single_ref: Any
+    all_slide_ids: list[str]
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -88,6 +101,7 @@ def extracted_wsi_workspace(
                 "project_root": str(project_root.resolve()),
                 "mode": "feature_extraction",
                 "report": True,
+                "thumbnail": True,
             },
             "slide_processing": {
                 "backend": "lazyslide",
@@ -369,4 +383,44 @@ def gtex_survival_workspace(
         input_dim=extracted_bag_workspace.input_dim,
         bag_lengths=extracted_bag_workspace.bag_lengths,
         metrics_path=metrics_dir / "hf_prepare_gtex_survival_bags.metrics.json",
+    )
+
+
+@pytest.fixture(scope="session")
+def retrieval_wsi_datasets(extracted_wsi_workspace: ExtractedWsiWorkspace) -> RetrievalDatasets:
+    """Pre-built real SlideRetrievalBagDataset instances from GTEx H5 artifacts."""
+    from pathbench.config.config import DatasetEntry
+    from pathbench.core.experiments.combinations import ComboConfig
+    from pathbench.core.datasets.bag_dataset import SlideRetrievalBagDataset
+
+    annotations_df = pd.read_csv(extracted_wsi_workspace.annotations_csv)
+    all_slide_ids = annotations_df["slide"].astype(str).tolist()
+
+    combo_cfg = ComboConfig(
+        tile_px=224,
+        tile_mpp=1.0,
+        feature_extraction="resnet18",
+    )
+
+    def _make(name: str, slide_ids: list[str]) -> SlideRetrievalBagDataset:
+        filtered = annotations_df[annotations_df["slide"].isin(slide_ids)].copy()
+        filtered = filtered.copy()
+        filtered["dataset"] = name
+        ds_cfg = DatasetEntry(
+            name=name,
+            slides_dir=str(extracted_wsi_workspace.slides_dir),
+            artifacts_dir=str(extracted_wsi_workspace.artifacts_dir),
+            used_for="all",
+        )
+        return SlideRetrievalBagDataset(ds_cfg, filtered, combo_cfg)
+
+    ref_ids = all_slide_ids[:10]
+    qry_ids = all_slide_ids[10:20]
+    single_id = all_slide_ids[:1]
+
+    return RetrievalDatasets(
+        reference=_make("gtex_ref", ref_ids),
+        query=_make("gtex_qry", qry_ids),
+        single_ref=_make("gtex_single", single_id),
+        all_slide_ids=all_slide_ids,
     )

@@ -1,9 +1,13 @@
 from __future__ import annotations
+import copy
+import logging
 from typing import Optional
+
 import optuna
-import pandas as pd
+
 from pathbench.policy.base import PolicyBase
 from pathbench.config.config import Config
+from pathbench.config.config import DatasetEntry
 from pathbench.utils.registries import LOSSES, TRAINERS
 from pathbench.training.base import TrainerBase
 from pathbench.policy.utils import (
@@ -18,6 +22,8 @@ from pathbench.policy.utils import (
     suggest_parameter,
     write_experiment_summary_csv,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class OptimizationPolicy(PolicyBase):
@@ -41,9 +47,10 @@ class OptimizationPolicy(PolicyBase):
         elif name == "CmaEsSampler":
             return optuna.samplers.CmaEsSampler(seed=seed)
         elif name == "GridSampler":
+            #TODO: Specify a default grid here if not in config
             # GridSampler requires search space to be known at init,
             # which is complex for this dynamic setup. defaulting to TPE.
-            print(
+            logger.warning(
                 "Warning: GridSampler not fully supported in dynamic mode. Using TPE."
             )
             return optuna.samplers.TPESampler(seed=seed)
@@ -61,7 +68,7 @@ class OptimizationPolicy(PolicyBase):
         elif name == "HyperbandPruner":
             return optuna.pruners.HyperbandPruner()
         else:
-            print(f"Warning: Pruner {name} not found, defaulting to NopPruner.")
+            logger.warning("Pruner %s not found, defaulting to NopPruner.", name)
             return optuna.pruners.NopPruner()
 
     def _get_direction(self) -> str:
@@ -79,21 +86,22 @@ class OptimizationPolicy(PolicyBase):
             return "maximize"
 
     def objective(self, trial: optuna.Trial) -> float:
+        trial_cfg = copy.deepcopy(self.config)
         suggested_params = {
             name: suggest_parameter(trial, name=name, spec=spec)
-            for name, spec in optimization_search_space(self.config).items()
+            for name, spec in optimization_search_space(trial_cfg).items()
         }
-        apply_search_params(self.config, suggested_params)
-        self.config.mil.best_epoch_based_on = self.config.optimization.objective_metric
+        apply_search_params(trial_cfg, suggested_params)
+        trial_cfg.mil.best_epoch_based_on = trial_cfg.optimization.objective_metric
         model_name = getattr(
-            self.config,
+            trial_cfg,
             "_active_model_name",
-            self.config.benchmark_parameters.mil[0],
+            trial_cfg.benchmark_parameters.mil[0],
         )
         loss_name = getattr(
-            self.config,
+            trial_cfg,
             "_active_loss_name",
-            self.config.benchmark_parameters.loss[0],
+            trial_cfg.benchmark_parameters.loss[0],
         )
 
         # 2. Instantiate Components
@@ -101,25 +109,26 @@ class OptimizationPolicy(PolicyBase):
         TrainerClass = TRAINERS.get("lightning")
         LossClass = LOSSES.get(loss_name)
 
-        train_entry = self.config.datasets[0]
-        val_entry = self.config.datasets[min(1, len(self.config.datasets) - 1)]
+        train_entry, val_entry = self._resolve_train_val_entries(trial_cfg)
         ds_train = build_bag_dataset_for_task(
-            self.config,
+            trial_cfg,
             feature_dir=resolve_dataset_feature_dir(train_entry),
             name="train",
+            dataset_entry=train_entry,
         )
         ds_val = build_bag_dataset_for_task(
-            self.config,
+            trial_cfg,
             feature_dir=resolve_dataset_feature_dir(val_entry),
             name="val",
+            dataset_entry=val_entry,
         )
         input_dim, output_dim = infer_model_dimensions(ds_train)
         model = build_mil_model_for_config(
-            self.config,
+            trial_cfg,
             model_name=model_name,
             input_dim=input_dim,
             output_dim=output_dim,
-            extra_kwargs={"dropout": self.config.mil.dropout_p},
+            extra_kwargs={"dropout": trial_cfg.mil.dropout_p},
         )
         loss_fn = LossClass()
 
@@ -128,26 +137,28 @@ class OptimizationPolicy(PolicyBase):
         from optuna.integration import PyTorchLightningPruningCallback
 
         pruning_callback = PyTorchLightningPruningCallback(
-            trial, monitor=self.config.optimization.objective_metric
+            trial, monitor=trial_cfg.optimization.objective_metric
         )
 
         trainer: TrainerBase = TrainerClass(
-            self.config, extra_callbacks=[pruning_callback]
+            trial_cfg, extra_callbacks=[pruning_callback]
         )
 
         try:
             best_path, best_score = trainer.fit(model, ds_train, ds_val, loss_fn)
+            _ = best_path
             return best_score
         except Exception as e:
-            # Handle pruning or NaN errors
-            print(f"Trial failed: {e}")
-            # Return worst possible score depending on direction
+            logger.exception("Optimization trial failed: %s", e)
             return (
                 float("inf") if self._get_direction() == "minimize" else float("-inf")
             )
 
     def execute(self) -> None:
-        print(f"Starting Optimization Study: {self.config.optimization.study_name}")
+        logger.info(
+            "Starting optimization study '%s'.",
+            self.config.optimization.study_name,
+        )
 
         sampler = self._get_sampler()
         pruner = self._get_pruner()
@@ -163,12 +174,35 @@ class OptimizationPolicy(PolicyBase):
 
         study.optimize(self.objective, n_trials=self.config.optimization.trials)
 
-        print(f"Best Params: {study.best_params}")
-        print(
-            f"Best Value ({self.config.optimization.objective_metric}): {study.best_value}"
+        logger.info("Best Params: %s", study.best_params)
+        logger.info(
+            "Best Value (%s): %s",
+            self.config.optimization.objective_metric,
+            study.best_value,
         )
 
         self._save_study_outputs(study)
+
+    def _resolve_train_val_entries(
+        self,
+        config: Config,
+    ) -> tuple[DatasetEntry, DatasetEntry]:
+        if not config.datasets:
+            raise ValueError("optimization requires at least one configured dataset.")
+
+        training_candidates = [
+            dataset
+            for dataset in config.datasets
+            if str(dataset.used_for) in {"training", "all"}
+        ]
+        validation_candidates = [
+            dataset
+            for dataset in config.datasets
+            if str(dataset.used_for) in {"validation", "testing", "all"}
+        ]
+        train_entry = training_candidates[0] if training_candidates else config.datasets[0]
+        val_entry = validation_candidates[0] if validation_candidates else train_entry
+        return train_entry, val_entry
 
     def _save_study_outputs(self, study: optuna.Study) -> None:
         output_root = experiment_output_root(self.config)

@@ -19,6 +19,9 @@ All workflows need an annotation CSV. At minimum:
 - ``slide`` is matched against files in ``slides_dir`` using ``{slide}.*``.
 - Supported suffixes: ``.svs``, ``.ndpi``, ``.tiff``, ``.tif``, ``.mrxs``.
 
+See :doc:`data_preparation` for the complete column reference, per-task
+annotation examples, slide naming rules, and a validation checklist.
+
 Feature Extraction
 ------------------
 

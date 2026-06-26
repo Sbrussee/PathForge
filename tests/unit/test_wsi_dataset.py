@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from pathbench.config.config import DatasetEntry
 from pathbench.core.datasets.wsi_dataset import WSIDataset
@@ -64,7 +66,7 @@ def test_find_wsi_path_ignores_disallowed_suffix(tmp_path: Path) -> None:
     assert found is None
 
 
-def test_find_wsi_path_multiple_matches_returns_one_allowed(tmp_path: Path) -> None:
+def test_find_wsi_path_multiple_matches_returns_none(tmp_path: Path) -> None:
     ds, slides_dir, _ = _make_ds(tmp_path)
 
     sufs = _suffixes()
@@ -78,14 +80,12 @@ def test_find_wsi_path_multiple_matches_returns_one_allowed(tmp_path: Path) -> N
         suf2 = sufs[1]
         p2 = slides_dir / f"S1{suf2}"
         p2.write_bytes(b"")
-        expected = {p1.resolve(), p2.resolve()}
     else:
         p2 = slides_dir / f"S1{suf1.upper()}"
         p2.write_bytes(b"")
-        expected = {p1.resolve(), p2.resolve()}
 
     found = ds._find_wsi_path("S1")
-    assert found in expected
+    assert found is None
 
 
 def test_build_samples_filters_by_dataset_and_skips_missing_slides(

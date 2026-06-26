@@ -88,6 +88,38 @@ class SlideProcessorBase(ABC):
             tile_spec: JSON string returned by extract_patches() (backend-defined)
         """
         pass
+
+    @abstractmethod
+    def read_patch_region(
+        self,
+        wsi: WSI,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        level: int,
+    ) -> np.ndarray:
+        """
+        Read one patch region from the source slide as an RGB image array.
+
+        Inputs:
+        - `wsi`: loaded slide wrapper.
+        - `x`: level-0 left coordinate.
+        - `y`: level-0 top coordinate.
+        - `width`: region width in pixels at `level`.
+        - `height`: region height in pixels at `level`.
+        - `level`: slide pyramid level used for the read.
+
+        Returns:
+        - `np.ndarray[uint8]` with shape `(H, W, 3)` containing the RGB patch
+          pixels.
+
+        Example:
+        ```python
+        patch = processor.read_patch_region(wsi, 0, 0, 256, 256, 0)
+        ```
+        """
+        pass
     
     @abstractmethod
     def extract_cells(self, wsi: WSI, config: Optional[Dict[str, Any]] = None) -> Any:

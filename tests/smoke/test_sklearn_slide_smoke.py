@@ -78,6 +78,7 @@ def test_sklearn_logistic_regression_classification_smoke(
             final={
                 "model_pickle": Path(model_path),
                 "val_confusion_matrix": artifacts_dir / "val_confusion_matrix.png",
+                "val_roc_auc_curve": artifacts_dir / "val_roc_auc_curve.png",
                 "val_metrics_json": artifacts_dir / "val_metrics.json",
             },
         )

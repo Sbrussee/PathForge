@@ -408,12 +408,13 @@ def _compute_survival_metrics(
     task: str,
 ) -> dict[str, float]:
     time, event = _survival_target_arrays(target)
-    risk = _survival_risk_scores(predictions, task=task, time=time)
+    risk = _survival_risk_scores(predictions, task=task, time=time, target=target)
     eval_times, td_auc = _time_dependent_auc_curve(
         predictions,
         time=time,
         event=event,
         task=task,
+        target=target,
     )
     brier_times, brier_scores = _survival_brier_score_curve(
         predictions,
@@ -541,6 +542,7 @@ def _save_kaplan_meier_plot(
     *,
     output_dir: Path,
     prefix: str,
+    x_axis_label: str = "Time",
 ) -> tuple[Path | None, dict[str, Any]]:
     """Save a Kaplan-Meier plot with high/low risk groups split at the median.
 
@@ -579,7 +581,7 @@ def _save_kaplan_meier_plot(
     ax.step(t_low, s_low, where="post", color="#4477AA", label=f"Low risk (n={n_low})")
     ax.set_xlim(left=0.0)
     ax.set_ylim(0.0, 1.05)
-    ax.set_xlabel("Time")
+    ax.set_xlabel(x_axis_label)
     ax.set_ylabel("Survival probability")
     ax.set_title("Kaplan-Meier Survival Curves (Median Split)")
     ax.legend()
@@ -613,12 +615,16 @@ def _save_survival_artifacts(
 ) -> tuple[dict[str, Any], dict[str, Path]]:
     plt = _load_matplotlib_pyplot()
     time, event = _survival_target_arrays(target)
-    risk = _survival_risk_scores(predictions, task=task, time=time)
+    km_time = _survival_kaplan_meier_time(target, fallback_time=time, task=task)
+    risk = _survival_risk_scores(predictions, task=task, time=time, target=target)
+    x_axis_label = _survival_time_axis_label(task)
+    km_x_axis_label = "Time"
     eval_times, td_auc = _time_dependent_auc_curve(
         predictions,
         time=time,
         event=event,
         task=task,
+        target=target,
     )
     brier_times, brier_scores = _survival_brier_score_curve(
         predictions,
@@ -631,8 +637,8 @@ def _save_survival_artifacts(
 
     td_auc_path = output_dir / f"{prefix}_td_auc_curve.png"
     fig, ax = plt.subplots(figsize=(5, 4))
-    ax.plot(eval_times, td_auc, marker="o")
-    ax.set_xlabel("Evaluation time")
+    _plot_survival_curve(ax, eval_times, td_auc, discrete=task == "survival_discrete")
+    ax.set_xlabel(x_axis_label)
     ax.set_ylabel("TD-AUC")
     ax.set_ylim(0.0, 1.0)
     ax.set_title("Time-Dependent AUC")
@@ -642,8 +648,14 @@ def _save_survival_artifacts(
 
     brier_path = output_dir / f"{prefix}_brier_score_curve.png"
     fig, ax = plt.subplots(figsize=(5, 4))
-    ax.plot(brier_times, brier_scores, marker="o", color="#228833")
-    ax.set_xlabel("Evaluation time")
+    _plot_survival_curve(
+        ax,
+        brier_times,
+        brier_scores,
+        discrete=task == "survival_discrete",
+        color="#228833",
+    )
+    ax.set_xlabel(x_axis_label)
     ax.set_ylabel("Brier score")
     ax.set_ylim(bottom=0.0)
     ax.set_title("Time-Dependent Brier Score")
@@ -653,14 +665,20 @@ def _save_survival_artifacts(
 
     c_index_path = output_dir / f"{prefix}_concordance_index.png"
     fig, ax = plt.subplots(figsize=(5, 4))
-    ax.plot(c_index_times, c_index_curve, marker="o", color="#4477AA")
+    c_index_plot_x = _plot_survival_curve(
+        ax,
+        c_index_times,
+        c_index_curve,
+        discrete=task == "survival_discrete",
+        color="#4477AA",
+    )
     ax.set_ylim(0.0, 1.0)
-    ax.set_xlabel("Evaluation time")
+    ax.set_xlabel(x_axis_label)
     ax.set_ylabel("Concordance index")
     ax.set_title("Concordance Over Time")
     if c_index_times.size:
         ax.text(
-            float(c_index_times[-1]),
+            float(c_index_plot_x[-1]),
             float(c_index_curve[-1]),
             f"overall={c_index_value:.3f}",
             ha="right",
@@ -671,7 +689,12 @@ def _save_survival_artifacts(
     plt.close(fig)
 
     km_path, km_payload = _save_kaplan_meier_plot(
-        time, event, risk, output_dir=output_dir, prefix=prefix
+        km_time,
+        event,
+        risk,
+        output_dir=output_dir,
+        prefix=prefix,
+        x_axis_label=km_x_axis_label,
     )
 
     payload: dict[str, Any] = {
@@ -697,6 +720,36 @@ def _save_survival_artifacts(
     return payload, figure_paths
 
 
+def _survival_time_axis_label(task: str) -> str:
+    return "Time bins" if task == "survival_discrete" else "Evaluation time"
+
+
+def _plot_survival_curve(
+    ax: Any,
+    x_values: np.ndarray,
+    y_values: np.ndarray,
+    *,
+    discrete: bool,
+    color: str | None = None,
+) -> np.ndarray:
+    if not discrete:
+        ax.plot(x_values, y_values, marker="o", color=color)
+        return x_values
+    positions = np.arange(len(x_values), dtype=np.float32)
+    ax.plot(positions, y_values, marker="o", color=color)
+    ax.set_xticks(
+        positions,
+        labels=[_format_discrete_time_bin_label(value) for value in x_values],
+    )
+    return positions
+
+
+def _format_discrete_time_bin_label(value: float) -> str:
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{float(value):g}"
+
+
 def _survival_target_arrays(target: Any) -> tuple[np.ndarray, np.ndarray]:
     if not isinstance(target, dict) or "time" not in target or "event" not in target:
         raise ValueError(
@@ -705,6 +758,38 @@ def _survival_target_arrays(target: Any) -> tuple[np.ndarray, np.ndarray]:
     time = target["time"].detach().cpu().float().reshape(-1).numpy()
     event = target["event"].detach().cpu().float().reshape(-1).numpy()
     return time, event
+
+
+def _optional_survival_target_array(target: Any, *keys: str) -> np.ndarray | None:
+    if not isinstance(target, dict):
+        return None
+    for key in keys:
+        value = target.get(key)
+        if value is None:
+            continue
+        if isinstance(value, torch.Tensor):
+            return value.detach().cpu().float().reshape(-1).numpy()
+        return np.asarray(value, dtype=np.float32).reshape(-1)
+    return None
+
+
+def _survival_kaplan_meier_time(
+    target: Any,
+    *,
+    fallback_time: np.ndarray,
+    task: str,
+) -> np.ndarray:
+    if task != "survival_discrete":
+        return fallback_time
+    continuous_time = _optional_survival_target_array(
+        target,
+        "continuous_time",
+        "time_continuous",
+        "raw_time",
+    )
+    if continuous_time is None or continuous_time.shape != fallback_time.shape:
+        return fallback_time
+    return continuous_time
 
 
 def _regression_arrays(
@@ -733,15 +818,156 @@ def _survival_risk_scores(
     *,
     task: str,
     time: np.ndarray,
+    target: Any | None = None,
 ) -> np.ndarray:
     pred = predictions.detach().cpu().float()
     if task == "survival":
         return pred.reshape(-1).numpy()
     assert pred.ndim == 2, "Discrete survival predictions must have shape [B, T]."
-    hazard = torch.sigmoid(pred).numpy()
-    max_index = int(min(hazard.shape[1] - 1, max(int(np.nanmax(time)), 0)))
-    survival = np.cumprod(1.0 - np.clip(hazard, 1.0e-6, 1.0 - 1.0e-6), axis=1)
-    return 1.0 - survival[:, max_index]
+    return _discrete_continuous_hazard_scores(
+        pred,
+        time=time,
+        target=target,
+    ).sum(axis=1)
+
+
+def _discrete_continuous_hazard_scores(
+    predictions: torch.Tensor,
+    *,
+    time: np.ndarray,
+    target: Any | None = None,
+) -> np.ndarray:
+    """Map discrete survival bin probabilities to piecewise-constant hazards.
+
+    For bin ``j = [t_j, t_{j+1})``, PathBench discrete survival heads model the
+    conditional event probability ``p_j = P(T in bin j | T >= t_j, x)``. The
+    continuous-time hazard that is constant over that bin is therefore
+    ``lambda_j(x) = -log(1 - p_j) / (t_{j+1} - t_j)``.
+
+    The implementation uses ``np.log1p(-p_j)`` for numerical stability and does
+    not use ``p_j / width_j`` except as the small-probability approximation that
+    this exact mapping avoids.
+    """
+
+    probability = torch.sigmoid(predictions).numpy()
+    probability = np.clip(probability, 1.0e-7, 1.0 - 1.0e-7)
+    widths = _discrete_survival_bin_widths(
+        target,
+        time=time,
+        num_bins=probability.shape[1],
+    )
+    return -np.log1p(-probability) / widths.reshape(1, -1)
+
+
+def _discrete_survival_bin_widths(
+    target: Any | None,
+    *,
+    time: np.ndarray,
+    num_bins: int,
+) -> np.ndarray:
+    explicit_widths = _optional_survival_target_array(
+        target,
+        "bin_widths",
+        "time_bin_widths",
+    )
+    if explicit_widths is not None:
+        return _coerce_discrete_bin_widths(explicit_widths, num_bins=num_bins)
+
+    explicit_edges = _optional_survival_target_array(
+        target,
+        "bin_edges",
+        "time_bin_edges",
+    )
+    if explicit_edges is not None:
+        if explicit_edges.size == num_bins + 1:
+            return _coerce_discrete_bin_widths(np.diff(explicit_edges), num_bins=num_bins)
+        if explicit_edges.size % (num_bins + 1) == 0:
+            repeated_edges = explicit_edges.reshape(-1, num_bins + 1)
+            return _coerce_discrete_bin_widths(
+                np.diff(repeated_edges[0]),
+                num_bins=num_bins,
+            )
+
+    continuous_time = _optional_survival_target_array(
+        target,
+        "continuous_time",
+        "time_continuous",
+        "raw_time",
+    )
+    if continuous_time is not None and continuous_time.shape == time.shape:
+        inferred = _infer_discrete_bin_widths_from_continuous_time(
+            discrete_time=time,
+            continuous_time=continuous_time,
+            num_bins=num_bins,
+        )
+        if inferred is not None:
+            return inferred
+
+    return np.ones(num_bins, dtype=np.float32)
+
+
+def _coerce_discrete_bin_widths(widths: np.ndarray, *, num_bins: int) -> np.ndarray:
+    values = np.asarray(widths, dtype=np.float32).reshape(-1)
+    if values.size == num_bins:
+        result = values
+    elif values.size % num_bins == 0:
+        result = values.reshape(-1, num_bins)[0]
+    else:
+        raise ValueError(
+            f"Discrete survival bin widths must have {num_bins} values. Got {values.size}."
+        )
+    if np.any(~np.isfinite(result)) or np.any(result <= 0.0):
+        raise ValueError("Discrete survival bin widths must be finite and positive.")
+    return result.astype(np.float32)
+
+
+def _infer_discrete_bin_widths_from_continuous_time(
+    *,
+    discrete_time: np.ndarray,
+    continuous_time: np.ndarray,
+    num_bins: int,
+) -> np.ndarray | None:
+    discrete_indices = np.rint(discrete_time).astype(int)
+    if discrete_indices.size == 0:
+        return None
+
+    bin_mins = np.full(num_bins, np.nan, dtype=np.float64)
+    bin_maxs = np.full(num_bins, np.nan, dtype=np.float64)
+    for bin_index in range(num_bins):
+        values = continuous_time[discrete_indices == bin_index]
+        values = values[np.isfinite(values)]
+        if values.size:
+            bin_mins[bin_index] = float(np.min(values))
+            bin_maxs[bin_index] = float(np.max(values))
+    if np.all(np.isnan(bin_mins)):
+        return None
+
+    fallback_width = _positive_fallback_width(continuous_time)
+    edges = np.zeros(num_bins + 1, dtype=np.float64)
+    first_min = bin_mins[np.isfinite(bin_mins)][0]
+    edges[0] = min(0.0, float(first_min))
+    for bin_index in range(1, num_bins):
+        previous_max = bin_maxs[bin_index - 1]
+        current_min = bin_mins[bin_index]
+        if np.isfinite(previous_max) and np.isfinite(current_min):
+            edges[bin_index] = (previous_max + current_min) / 2.0
+        else:
+            edges[bin_index] = edges[bin_index - 1] + fallback_width
+    last_max = bin_maxs[np.isfinite(bin_maxs)][-1]
+    edges[-1] = max(float(last_max), edges[-2] + fallback_width)
+
+    widths = np.diff(edges)
+    widths[~np.isfinite(widths) | (widths <= 0.0)] = fallback_width
+    return widths.astype(np.float32)
+
+
+def _positive_fallback_width(values: np.ndarray) -> float:
+    finite_values = np.sort(np.unique(values[np.isfinite(values)]))
+    diffs = np.diff(finite_values)
+    positive_diffs = diffs[diffs > 0.0]
+    if positive_diffs.size:
+        return float(np.median(positive_diffs))
+    return 1.0
 
 
 def _time_dependent_auc_curve(
@@ -750,6 +976,7 @@ def _time_dependent_auc_curve(
     time: np.ndarray,
     event: np.ndarray,
     task: str,
+    target: Any | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     eval_times = _select_eval_times(time, event)
     if eval_times.size == 0:
@@ -762,11 +989,14 @@ def _time_dependent_auc_curve(
     else:
         pred = predictions.detach().cpu().float()
         assert pred.ndim == 2, "Discrete survival predictions must have shape [B, T]."
-        hazard = torch.sigmoid(pred).numpy()
-        survival = np.cumprod(1.0 - np.clip(hazard, 1.0e-6, 1.0 - 1.0e-6), axis=1)
+        hazard = _discrete_continuous_hazard_scores(
+            pred,
+            time=time,
+            target=target,
+        )
         for tau in eval_times:
-            tau_index = int(min(max(round(float(tau)), 0), survival.shape[1] - 1))
-            risk = 1.0 - survival[:, tau_index]
+            tau_index = int(min(max(round(float(tau)), 0), hazard.shape[1] - 1))
+            risk = hazard[:, : tau_index + 1].sum(axis=1)
             auc_values.append(_td_auc_at_time(risk, time, event, float(tau)))
     return eval_times.astype(np.float32), np.asarray(auc_values, dtype=np.float32)
 

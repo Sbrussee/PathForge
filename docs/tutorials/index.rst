@@ -9,6 +9,7 @@ trained models and inference heatmaps.
 
    feature_extraction
    benchmarking
+   slide_retrieval
    optimization
    inference
    model_packaging
@@ -26,6 +27,8 @@ Workflow Overview
           │
           ▼
    2. Benchmarking         ──►  Result CSVs + checkpoints
+    ─ or ─
+   2. Slide Retrieval      ──►  Ranked retrieval CSVs + manifests
     ─ or ─
    2. Optimization         ──►  Optuna study + best checkpoint
           │

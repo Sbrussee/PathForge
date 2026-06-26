@@ -213,3 +213,11 @@ The rows are sorted by performance. Metrics such as accuracy, AUROC, and
 ``c_index`` are ranked highest-first, while loss/error metrics are ranked
 lowest-first. The HTML visualizations are generated from this same CSV so the
 experiment-wide ranking remains auditable from a single artifact.
+
+Slide Retrieval
+---------------
+
+Slide retrieval is a separate task type. See :doc:`slide_retrieval` for the
+dedicated tutorial. In brief, use ``task: slide_retrieval`` with
+``benchmark_parameters.retrieval_representation`` and
+``benchmark_parameters.search_strategy`` instead of ``mil`` and ``loss``.

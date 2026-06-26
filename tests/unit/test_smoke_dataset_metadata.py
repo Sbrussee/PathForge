@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -7,8 +8,24 @@ import pytest
 
 from tests.smoke._smoke_dataset import (
     build_gtex_smoke_annotations,
+    default_smoke_cache_dir,
     merge_survival_metadata,
 )
+
+
+def test_default_smoke_cache_dir_falls_back_to_tmp_for_unwritable_home_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PATHBENCH_SMOKE_CACHE", raising=False)
+    monkeypatch.setenv("TMPDIR", "/tmp/pathbench-tests")
+    monkeypatch.setattr(
+        os,
+        "access",
+        lambda path, mode: False if str(path).startswith("/readonly-home") else True,
+    )
+    monkeypatch.setenv("HOME", "/readonly-home")
+
+    assert default_smoke_cache_dir() == Path("/tmp/pathbench-tests/pathbench_smoke")
 
 
 def test_build_gtex_smoke_annotations_uses_requested_slide_ids(tmp_path: Path) -> None:
@@ -55,7 +72,9 @@ def test_build_gtex_smoke_annotations_raises_for_missing_slide(tmp_path: Path) -
         )
 
 
-def test_build_gtex_smoke_annotations_can_fallback_to_dataset_level(tmp_path: Path) -> None:
+def test_build_gtex_smoke_annotations_can_fallback_to_dataset_level(
+    tmp_path: Path,
+) -> None:
     metadata_csv = tmp_path / "GTEx_artery_dataset.csv.gz"
     pd.DataFrame(
         {

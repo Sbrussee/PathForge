@@ -5,6 +5,8 @@ from typing import Callable, Dict, Sequence, TypeVar
 T = TypeVar('T')
 
 class Registry(RegistryBase):
+    """Minimal string-to-callable registry used for runtime plugin lookup."""
+
     def __init__(self) -> None:
         self._f: Dict[str, Callable[..., T]] = {}
 

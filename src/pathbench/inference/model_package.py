@@ -270,6 +270,17 @@ def select_inference_feature_metadata(
 
 
 def _build_inference_metadata(config: Config) -> dict[str, Any]:
+    """Build packaged feature-selection metadata for inference-time defaults.
+
+    Args:
+        config: PathBench config used to infer the active bag source and
+            feature extractor selection.
+
+    Returns:
+        dict[str, Any]: JSON-serializable metadata containing optional
+        ``bag_id``, ``feature_extractor``, ``tile_px``, and ``tile_mpp``.
+    """
+
     search_params = getattr(config, "_active_search_params", {})
     if not isinstance(search_params, dict):
         search_params = {}
@@ -299,12 +310,16 @@ def _build_inference_metadata(config: Config) -> dict[str, Any]:
 
 
 def _optional_str(value: Any) -> str | None:
+    """Convert an optional value to string while preserving ``None``."""
+
     if value is None:
         return None
     return str(value)
 
 
 def _pathbench_version() -> str:
+    """Return the installed PathBench package version when available."""
+
     try:
         return version("pathbench")
     except PackageNotFoundError:
@@ -312,6 +327,18 @@ def _pathbench_version() -> str:
 
 
 def _validate_model_package_payload(payload: Any, path: Path) -> None:
+    """Validate the structural invariants of a serialized model package.
+
+    Args:
+        payload: Object deserialized from ``torch.load``.
+        path: Package path used for error reporting.
+
+    Raises:
+        TypeError: If the payload is not dictionary-like.
+        ValueError: If the payload format marker is invalid.
+        KeyError: If required fields are missing.
+    """
+
     if not isinstance(payload, dict):
         raise TypeError(f"Model package at {path} must deserialize to a dict.")
     if payload.get("format") != "pathbench_model_package":

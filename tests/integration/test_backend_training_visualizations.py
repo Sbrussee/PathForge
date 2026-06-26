@@ -34,7 +34,7 @@ class _ToyClassificationDataset:
         return len(self._bags)
 
     def __getitem__(self, index: int):
-        return self._bags[index], self._labels[index]
+        return {"X": self._bags[index], "Y": self._labels[index]}
 
 
 class _FakeTorchMILModel(torch.nn.Module):

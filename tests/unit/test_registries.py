@@ -8,7 +8,6 @@ from pathbench.utils.registry import Registry
 
 
 def test_registry_register_get_and_list_plugins() -> None:
-    """Registry should return registered callables and list their keys."""
     registry = Registry()
 
     @registry.register("plugin_a")
@@ -21,7 +20,6 @@ def test_registry_register_get_and_list_plugins() -> None:
 
 
 def test_registry_rejects_duplicate_registration() -> None:
-    """Registry keys must remain unique."""
     registry = Registry()
 
     @registry.register("plugin_a")
@@ -36,7 +34,6 @@ def test_registry_rejects_duplicate_registration() -> None:
 
 
 def test_registry_get_raises_for_missing_plugin() -> None:
-    """Missing registry lookups should fail clearly."""
     registry = Registry()
 
     with pytest.raises(KeyError, match="not found in registry"):

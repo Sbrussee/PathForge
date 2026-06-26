@@ -29,6 +29,9 @@ Rules:
 - ``slide`` is matched against files using ``{slide}.*`` — no extension needed.
 - Add a ``fallback_mpp`` column for slides missing valid MPP metadata.
 
+See :doc:`/data_preparation` for the complete annotation format reference,
+slide naming rules, and per-task examples.
+
 Step 2 — Write the Config
 --------------------------
 

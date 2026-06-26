@@ -11,8 +11,11 @@ Top-Level Structure
 .. code-block:: yaml
 
    experiment: ...
+   classification: ...        # for task: classification
+   slide_retrieval: ...       # for task: slide_retrieval
    mil: ...
    slide_processing: ...
+   evaluation: ...
    datasets: [...]
    benchmark_parameters: ...
    metrics: ...
@@ -47,13 +50,13 @@ Universal project lifecycle settings.
      - One of ``feature_extraction``, ``benchmark``, ``optimization``.
    * - ``task``
      - ``null``
-     - One of ``classification``, ``regression``, ``survival``, ``survival_discrete``. Required unless ``mode`` is ``feature_extraction``.
+     - One of ``classification``, ``regression``, ``survival``, ``survival_discrete``, ``slide_retrieval``. Required unless ``mode`` is ``feature_extraction``.
    * - ``prediction_level``
      - ``mil``
      - ``mil`` for bag-level prediction or ``slide`` for slide-level aggregation.
    * - ``aggregation_level``
      - ``slide``
-     - ``slide`` or ``patient`` — group level for metrics computation.
+     - ``slide``, ``case``, or ``patient`` — group level for metrics computation.
    * - ``label_column``
      - ``category``
      - Column in the annotation CSV holding the target label.
@@ -66,21 +69,40 @@ Universal project lifecycle settings.
    * - ``survival_event_column``
      - ``null``
      - Column with event indicator (0 = censored, 1 = event; required for survival tasks).
-   * - ``split_technique``
-     - ``k-fold``
-     - ``k-fold``, ``k-fold-stratified``, or ``fixed``.
-   * - ``val_fraction``
-     - ``0.1``
-     - Fraction of training data held out for validation.
    * - ``num_workers``
      - ``0``
      - DataLoader worker processes.
    * - ``report``
      - ``false``
      - When true, writes tile overview images to H5 and enables PDF report generation.
+   * - ``thumbnail``
+     - ``false``
+     - When true, stores slide thumbnails in the per-slide H5 artifact.
    * - ``mixed_precision``
      - ``false``
      - Enable 16-bit mixed precision training.
+   * - ``visualization`` / ``evaluation`` / ``custom_metrics``
+     - ``[]``
+     - Compatibility lists preserved on the experiment block for legacy configs.
+
+``classification``
+------------------
+
+Classification-only settings used when ``experiment.task: classification``.
+
+.. list-table::
+   :widths: 25 15 60
+   :header-rows: 1
+
+   * - Field
+     - Default
+     - Description
+   * - ``split_technique``
+     - ``k-fold``
+     - One of ``k-fold``, ``k-fold-stratified``, or ``fixed``.
+   * - ``val_fraction``
+     - ``0.1``
+     - Validation fraction used by fixed-split workflows.
 
 ``mil``
 -------
@@ -177,8 +199,8 @@ WSI loading and tissue segmentation settings.
      - ``lazyslide``
      - WSI loading backend: ``lazyslide``, ``openslide``, or ``cucim``.
    * - ``segmentation_method``
-     - ``otsu``
-     - Tissue segmentation algorithm. ``otsu`` is the default; backends may support additional methods.
+     - ``null``
+     - Optional tissue segmentation algorithm name such as ``otsu``.
    * - ``save_tiles``
      - ``false``
      - Write extracted tile images to disk alongside H5 artifacts.
@@ -207,9 +229,14 @@ A list of dataset entries. Each entry:
    * - ``artifacts_dir``
      - *required*
      - Directory to write (or read) H5 feature files. Created if absent.
+   * - ``features_dir``
+     - ``null``
+     - Optional external feature directory for workflows that read precomputed features.
    * - ``used_for``
      - *required*
-     - Role: ``training``, ``validation``, or ``testing``.
+     - Role: ``training``, ``validation``, or ``testing`` for MIL tasks. For
+       ``slide_retrieval``, use ``reference``, ``query``, or
+       ``query_reference`` (shared by both reference pool and query set).
    * - ``tissue_annotations_dir``
      - ``null``
      - Optional directory with pre-computed tissue polygon annotations.
@@ -261,11 +288,36 @@ Grid-search axes. All lists are combined exhaustively.
      - ``[]``
      - List of loss function registry keys (e.g. ``[CrossEntropyLoss]``).
    * - ``activation_function``
-     - ``[ReLU]``
+     - ``[]``
      - List of ``torch.nn`` activation class names.
    * - ``optimizer``
-     - ``[Adam]``
+     - ``[]``
      - List of ``torch.optim`` optimizer class names.
+   * - ``retrieval_representation``
+     - ``null``
+     - List of retrieval representation strategy names (e.g. ``[mean_pooling]``). Required when ``task: slide_retrieval``.
+   * - ``search_strategy``
+     - ``null``
+     - List of search strategy names (e.g. ``[cosine_knn]``). Required when ``task: slide_retrieval``.
+
+``slide_retrieval``
+-------------------
+
+Slide retrieval task settings (only used when ``task: slide_retrieval``).
+
+.. list-table::
+   :widths: 25 15 60
+   :header-rows: 1
+
+   * - Field
+     - Default
+     - Description
+   * - ``exclusion_level``
+     - ``patient``
+     - Self-retrieval exclusion granularity. One of ``none`` (no exclusion),
+       ``slide`` (exclude exact slide), ``case`` (exclude same case),
+       ``patient`` (exclude same patient). ``slide`` requires
+       ``experiment.aggregation_level: slide``.
 
 ``metrics``
 -----------
@@ -287,7 +339,7 @@ Grid-search axes. All lists are combined exhaustively.
      - ``[accuracy, balanced_accuracy, f1, auroc, pr_auc]``
      - Metrics to compute. Allowed: ``accuracy``, ``balanced_accuracy``, ``f1``, ``auroc``, ``pr_auc``, ``brier_score``.
    * - ``survival_metrics``
-     - ``[c_index, td_auc, num_eval_times]``
+     - ``[c_index, td_auc, brier_score, num_eval_times]``
      - Survival metrics to compute.
    * - ``regression_metrics``
      - ``[mae, mse]``

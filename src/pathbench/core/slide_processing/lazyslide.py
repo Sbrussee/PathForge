@@ -1,7 +1,7 @@
 # src/pathbench/core/slide_processing/lazyslide.py
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Optional, Tuple
 import logging
 
 import lazyslide as zs
@@ -19,6 +19,13 @@ from spatialdata.models import ShapesModel
 from pathbench.core.slide_processing.base import SlideProcessorBase
 from pathbench.utils.registries import SLIDE_PROCESSORS
 from pathbench.core.datasets.wsi_dataset import WSI
+from pathbench.utils.constants import LZS_ABS_MPP_TOL, LZS_REL_MPP_TOL
+
+from pathbench.core.slide_processing.lazyslide_patch import (
+    apply_lazyslide_feature_extraction_patch,
+)
+
+apply_lazyslide_feature_extraction_patch()
 
 logger = logging.getLogger(__name__)
 
@@ -453,6 +460,19 @@ class LazySlideProcessor(SlideProcessorBase):
 
         return arr
 
+    def _region_to_rgb_uint8_numpy(self, region_obj: Any) -> np.ndarray:
+        """
+        Convert one backend region read into an `HxWx3 uint8` RGB array.
+
+        Inputs:
+        - `region_obj`: backend-native region payload returned by
+          `wsi.obj.read_region(...)`.
+
+        Returns:
+        - `np.ndarray` with shape `(H, W, 3)` and dtype `uint8`.
+        """
+        return self._thumbnail_to_rgb_uint8_numpy(region_obj)
+
     # ---------------------------------------------------------------------
     # SlideProcessorBase API
     # ---------------------------------------------------------------------
@@ -564,7 +584,7 @@ class LazySlideProcessor(SlideProcessorBase):
 
         return self._backend_tissues_to_policy(wsi.obj["tissues"])
 
-    def extract_patches(self, wsi: WSI, tissues: list[list[list[list[float]]]], config: Dict[str, Any]):
+    def extract_patches(self, wsi: WSI, tissues: list[list[list[list[float]]]], config: Dict[str, Any]) -> Tuple[np.ndarray, dict]:
         """
         Produce:
         - coords: (N,5) int32 [x0,y0,read_w,read_h,level]
@@ -584,6 +604,35 @@ class LazySlideProcessor(SlideProcessorBase):
 
         params.setdefault("slide_mpp", self.get_base_mpp(wsi))
 
+        # ---- Allow tiny nominal MPP mismatches ----
+        requested_mpp = params.get("mpp")
+        slide_mpp = float(params["slide_mpp"])
+
+        if requested_mpp is not None:
+            requested_mpp = float(requested_mpp)
+
+            if requested_mpp < slide_mpp:
+                abs_diff = slide_mpp - requested_mpp
+                rel_diff = abs_diff / slide_mpp
+
+                if abs_diff <= LZS_ABS_MPP_TOL and rel_diff <= LZS_REL_MPP_TOL:
+                    logger.warning(
+                        "[LazySlide] Requested mpp %.4f is slightly smaller than slide mpp %.4f; "
+                        "overriding slide_mpp to %.4f (abs diff=%.6f, rel diff=%.6f).",
+                        requested_mpp,
+                        slide_mpp,
+                        requested_mpp,
+                        abs_diff,
+                        rel_diff,
+                    )
+                    params["slide_mpp"] = requested_mpp
+                else:
+                    raise ValueError(
+                        f"[LazySlide] Requested mpp={requested_mpp} is smaller than "
+                        f"slide mpp={slide_mpp} beyond allowed tolerance "
+                        f"(abs diff={abs_diff}, rel diff={rel_diff})."
+                    )
+
         logger.info("[LazySlide] Tiling tissues with params=%s", params)
         zs.pp.tile_tissues(wsi=wsi.obj, **params)
 
@@ -594,9 +643,15 @@ class LazySlideProcessor(SlideProcessorBase):
             raise RuntimeError("[LazySlide] Tiling finished but wsi.obj.attrs['tile_spec'] is missing.")
 
         tile_spec_obj = wsi.obj.attrs["tile_spec"]
-        coords = self._backend_tiles_to_policy_coords(wsi.obj["tiles"], tile_spec_obj=tile_spec_obj)
+        coords = self._backend_tiles_to_policy_coords(
+            wsi.obj["tiles"],
+            tile_spec_obj=tile_spec_obj,
+        )
 
-        tiling_spec_h5 = self._backend_tile_spec_to_policy_tiling_spec(config=config, tile_spec_obj=tile_spec_obj)
+        tiling_spec_h5 = self._backend_tile_spec_to_policy_tiling_spec(
+            config=config,
+            tile_spec_obj=tile_spec_obj,
+        )
 
         return coords, tiling_spec_h5
 
@@ -658,6 +713,8 @@ class LazySlideProcessor(SlideProcessorBase):
         # ---- Device default ----
         if "device" not in params and torch.cuda.is_available():
             params["device"] = "cuda"
+        if config.get("color_norm") is not None:
+            params["color_norm"] = config["color_norm"]
 
         # ---- Validate model availability ----
         available = zs.models.list_models() + timm.list_models()
@@ -695,6 +752,46 @@ class LazySlideProcessor(SlideProcessorBase):
             )
 
         return features_matrix
+
+    def read_patch_region(
+        self,
+        wsi: WSI,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        level: int,
+    ) -> np.ndarray:
+        """
+        Read one patch region from the LazySlide backend as an RGB uint8 array.
+
+        Inputs:
+        - `wsi`: loaded slide wrapper exposing `wsi.obj.read_region(...)`.
+        - `x`: level-0 left coordinate.
+        - `y`: level-0 top coordinate.
+        - `width`: region width in pixels at `level`.
+        - `height`: region height in pixels at `level`.
+        - `level`: slide pyramid level used for the read.
+
+        Returns:
+        - `np.ndarray[uint8]` with shape `(H, W, 3)`.
+        """
+        if getattr(wsi, "_obj", None) is None:
+            raise RuntimeError("[LazySlide] WSI not loaded. Call load_wsi(wsi) first.")
+
+        if not hasattr(wsi.obj, "read_region"):
+            raise RuntimeError(
+                "[LazySlide] Loaded WSI object does not expose read_region(...)."
+            )
+
+        region = wsi.obj.read_region(
+            int(x),
+            int(y),
+            int(width),
+            int(height),
+            level=int(level),
+        )
+        return self._region_to_rgb_uint8_numpy(region)
 
 
     def extract_cells(self, wsi: WSI, config: Dict[str, Any]) -> Any:

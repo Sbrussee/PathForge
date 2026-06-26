@@ -303,3 +303,34 @@ Registry
    :members:
    :undoc-members:
    :show-inheritance:
+
+Tasks
+-----
+
+Task registry and base class for all benchmarking and retrieval tasks.
+
+.. automodule:: pathbench.core.tasks.registry
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: pathbench.core.tasks.base.TaskBase
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+MIL Tasks
+~~~~~~~~~
+
+.. automodule:: pathbench.core.tasks.mil
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Slide Retrieval Task
+~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: pathbench.core.tasks.slide_retrieval.SlideRetrievalTask
+   :members:
+   :undoc-members:
+   :show-inheritance:

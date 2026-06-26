@@ -43,4 +43,4 @@ Package Map
    * - :doc:`inference`
      - Heatmap generation and H5-backed inference visualization helpers.
    * - :doc:`optimization`
-     - Optuna study construction and search-space suggestion utilities.
+     - Optuna helpers removed; see :doc:`policy` (``OptimizationPolicy``) and ``pathbench.policy.utils``.

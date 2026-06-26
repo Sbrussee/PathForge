@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Sequence
 from typing import Any
 import torch
 from torch import nn
@@ -6,6 +7,8 @@ from .mil_base import MILBase
 
 #REmove as not implemented yet.
 class MultimodalMILModel(MILBase):
+    """Minimal multimodal MIL placeholder that fuses bag and tabular embeddings."""
+
     def __init__(self, embed_dim: int = 256):
         super().__init__()
         self.embed_dim = embed_dim

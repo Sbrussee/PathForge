@@ -42,5 +42,6 @@ class PrototypeMIL(MILModelBase):
         if return_attention:
             results["attention"] = sim 
             
-        if len(results) == 1: return logits
+        if len(results) == 1:
+            return logits
         return results

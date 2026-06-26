@@ -1,9 +1,11 @@
 
-from typing import Optional
 import torch
-import torch.nn as nn  
 
-def perform_kmeans(x: torch.Tensor, num_clusters: int, n_iter: int = 10):
+def perform_kmeans(
+    x: torch.Tensor,
+    num_clusters: int,
+    n_iter: int = 10,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Simple differentiable K-Means for RRT-MIL.
     x: (N, D)

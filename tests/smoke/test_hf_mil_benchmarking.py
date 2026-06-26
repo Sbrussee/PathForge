@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 
@@ -14,8 +15,8 @@ from ._smoke_dataset import (
     attach_smoke_outputs,
     capture_smoke_metrics,
 )
-from ._smoke_training import DEFAULT_SMOKE_EPOCHS, SmokeTrainingResult, fit_smoke_model
-from ._smoke_training import make_training_config, training_artifact_outputs
+from ._smoke_training import DEFAULT_SMOKE_EPOCHS, fit_smoke_model
+from ._smoke_training import make_training_config
 
 
 def _build_bag_dataset(workspace: PreparedBagWorkspace, *, target_column: str):
@@ -65,11 +66,59 @@ def test_binary_classification_mil_benchmark_grid(
             step_name="hf_binary_classification_benchmark",
             intermediate={"bag_metadata_csv": extracted_bag_workspace.metadata_csv},
             final={
-                **training_artifact_outputs(runs[0]),
                 **{
                     f"run_{index}_checkpoint": Path(run.best_model_path)
                     for index, run in enumerate(runs)
                 },
+            },
+        )
+
+    from pathbench.policy.utils import (
+        collect_run_summary_row,
+        metric_should_minimize,
+        save_benchmark_visualizations,
+        write_experiment_summary_csv,
+    )
+
+    objective_metric = "balanced_accuracy"
+    minimize = metric_should_minimize(objective_metric)
+    summary_rows = [
+        collect_run_summary_row(
+            run.config,
+            run_index=idx,
+            status="success",
+            objective_metric=objective_metric,
+            objective_value=run.best_score,
+            checkpoint_path=run.best_model_path,
+        )
+        for idx, run in enumerate(runs)
+    ]
+    agg_csv = tmp_path / "benchmark_results.csv"
+    vis_dir = tmp_path / "benchmark_visualizations"
+    with capture_smoke_metrics(
+        tmp_path / "agg_metrics",
+        step_name="smoke_benchmark_policy_aggregate",
+        metadata={"grid_size": len(runs), "task": "classification"},
+    ) as agg_meta:
+        write_experiment_summary_csv(
+            summary_rows,
+            output_path=agg_csv,
+            objective_metric=objective_metric,
+            minimize=minimize,
+        )
+        save_benchmark_visualizations(
+            agg_csv,
+            output_dir=vis_dir,
+            objective_metric=objective_metric,
+            minimize=minimize,
+        )
+        attach_smoke_outputs(
+            agg_meta,
+            step_name="smoke_benchmark_policy_aggregate",
+            final={
+                "benchmark_results_csv": agg_csv,
+                "benchmark_performance_ranked_html": vis_dir / "benchmark_performance_ranked.html",
+                "benchmark_rank_scatter_html": vis_dir / "benchmark_rank_scatter.html",
             },
         )
 
@@ -79,6 +128,13 @@ def test_binary_classification_mil_benchmark_grid(
     assert Path(runs[0].artifacts_dir, "val_roc_auc_curve.png").exists()
     assert Path(runs[0].artifacts_dir, "val_pr_auc_curve.png").exists()
     assert Path(runs[0].artifacts_dir, "val_calibration_curve.png").exists()
+
+    df = pd.read_csv(agg_csv)
+    assert {"run_index", "status", "objective_metric", "objective_value", "rank"}.issubset(df.columns)
+    assert len(df) == 2
+    assert df["objective_value"].dropna().is_monotonic_decreasing
+    successful = df[df["status"] == "success"]
+    assert successful["rank"].dropna().tolist() == list(range(1, len(successful) + 1))
 
 
 @pytest.mark.smoke
@@ -118,7 +174,6 @@ def test_multiclass_classification_mil_benchmark_grid(
             step_name="hf_multiclass_classification_benchmark",
             intermediate={"bag_metadata_csv": extracted_bag_workspace.metadata_csv},
             final={
-                **training_artifact_outputs(runs[0]),
                 **{
                     f"run_{index}_checkpoint": Path(run.best_model_path)
                     for index, run in enumerate(runs)
@@ -136,48 +191,10 @@ def test_multiclass_classification_mil_benchmark_grid(
     assert metadata_df["multiclass_label"].nunique() == 5
 
 
-class _FakeTorchMILModel(torch.nn.Module):
-    def __init__(self, input_dim: int) -> None:
-        super().__init__()
-        self.head = torch.nn.Linear(input_dim, 2, bias=False)
-        with torch.no_grad():
-            self.head.weight.zero_()
-            self.head.weight[0, 0] = 1.0
-            self.head.weight[1, 1] = 1.0
-
-    def forward(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        pooled = batch["X"].float().mean(dim=1)
-        return {"logits": self.head(pooled)}
-
-
-class _FakeMILLabModel(torch.nn.Module):
-    def __init__(self, input_dim: int) -> None:
-        super().__init__()
-        self.head = torch.nn.Linear(input_dim, 2, bias=False)
-        with torch.no_grad():
-            self.head.weight.zero_()
-            self.head.weight[0, 0] = 1.0
-            self.head.weight[1, 1] = 1.0
-
-    def forward(
-        self,
-        bag: torch.Tensor,
-        *,
-        loss_fn=None,
-        label=None,
-        return_attention: bool = False,
-        return_slide_feats: bool = False,
-    ):
-        _ = (loss_fn, label, return_attention, return_slide_feats)
-        pooled = bag.float().mean(dim=1)
-        return {"logits": self.head(pooled)}, {"ignored": True}
-
-
 @pytest.mark.smoke
 def test_torchmil_backend_mil_benchmark(
     extracted_bag_workspace: PreparedBagWorkspace,
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
     """Run a binary MIL benchmark using the torchmil backend (ABMIL)."""
     from pathbench.adapters.torchmil.backend import TorchMILBackendModel, register_torchmil_backend
@@ -186,14 +203,6 @@ def test_torchmil_backend_mil_benchmark(
     from pathbench.utils.registries import LOSSES
 
     register_torchmil_backend()
-    monkeypatch.setattr(
-        "pathbench.adapters.torchmil.backend.require_torchmil",
-        lambda feature: None,
-    )
-    monkeypatch.setattr(
-        "pathbench.adapters.torchmil.backend.build_torchmil_model",
-        lambda spec, config_kwargs: _FakeTorchMILModel(config_kwargs["in_shape"][0]),
-    )
 
     dataset = BagDataset(
         "smoke_torchmil_binary",
@@ -211,20 +220,14 @@ def test_torchmil_backend_mil_benchmark(
     )
     cfg.mil.backend = "torchmil"
     cfg.mil.torchmil_model = "ABMIL"
-    cfg.mil.torchmil_model_kwargs = {
-        "in_shape": (extracted_bag_workspace.input_dim,),
-        "out_shape": 2,
-    }
+    cfg.mil.torchmil_model_kwargs = {"in_shape": (extracted_bag_workspace.input_dim,)}
     cfg.mil.best_epoch_based_on = "balanced_accuracy"
     cfg.mil.use_torchmil_collate = False
 
     model = TorchMILBackendModel(
         torchmil_model="ABMIL",
         task="classification",
-        torchmil_model_kwargs={
-            "in_shape": (extracted_bag_workspace.input_dim,),
-            "out_shape": 2,
-        },
+        torchmil_model_kwargs={"in_shape": (extracted_bag_workspace.input_dim,)},
     )
     trainer = LightningTrainer(cfg)
     loss_fn = LOSSES.get("CrossEntropyLoss")()
@@ -234,24 +237,13 @@ def test_torchmil_backend_mil_benchmark(
         step_name="hf_torchmil_mil_benchmark",
         metadata={"num_bags": len(dataset), "backend": "torchmil", "model": "ABMIL"},
     ) as metadata:
-        best_model_path, best_score = trainer.fit(model, dataset, dataset, loss_fn)
+        best_model_path, _ = trainer.fit(model, dataset, dataset, loss_fn)
         artifacts_dir = Path(cfg.experiment.project_root) / "training_artifacts"
         attach_smoke_outputs(
             metadata,
             step_name="hf_torchmil_mil_benchmark",
             intermediate={"bag_metadata_csv": extracted_bag_workspace.metadata_csv},
-            final={
-                "best_model_path": Path(best_model_path),
-                **training_artifact_outputs(
-                    SmokeTrainingResult(
-                        best_model_path=str(best_model_path),
-                        best_score=float(best_score),
-                        output_dim=2,
-                        task_name="classification",
-                        artifacts_dir=str(artifacts_dir),
-                    )
-                ),
-            },
+            final={"best_model_path": Path(best_model_path)},
         )
 
     assert Path(best_model_path).exists()
@@ -265,25 +257,15 @@ def test_torchmil_backend_mil_benchmark(
 def test_mil_lab_backend_mil_benchmark(
     extracted_bag_workspace: PreparedBagWorkspace,
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
     """Run a binary MIL benchmark using the mil-lab backend (abmil)."""
+    pytest.importorskip("mil_lab")
     from pathbench.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
     from pathbench.core.datasets.bag_dataset import BagDataset
     from pathbench.training.lightning import LightningTrainer
     from pathbench.utils.registries import LOSSES
 
     register_mil_lab_backend()
-    monkeypatch.setattr(
-        "pathbench.adapters.mil_lab.backend.require_mil_lab",
-        lambda feature: None,
-    )
-    monkeypatch.setattr(
-        "pathbench.adapters.mil_lab.backend.build_mil_lab_model",
-        lambda spec, config_kwargs, from_pretrained=False: _FakeMILLabModel(
-            int(config_kwargs["input_dim"])
-        ),
-    )
 
     dataset = BagDataset(
         "smoke_mil_lab_binary",
@@ -323,24 +305,13 @@ def test_mil_lab_backend_mil_benchmark(
         step_name="hf_mil_lab_mil_benchmark",
         metadata={"num_bags": len(dataset), "backend": "mil-lab", "model": "abmil"},
     ) as metadata:
-        best_model_path, best_score = trainer.fit(model, dataset, dataset, loss_fn)
+        best_model_path, _ = trainer.fit(model, dataset, dataset, loss_fn)
         artifacts_dir = Path(cfg.experiment.project_root) / "training_artifacts"
         attach_smoke_outputs(
             metadata,
             step_name="hf_mil_lab_mil_benchmark",
             intermediate={"bag_metadata_csv": extracted_bag_workspace.metadata_csv},
-            final={
-                "best_model_path": Path(best_model_path),
-                **training_artifact_outputs(
-                    SmokeTrainingResult(
-                        best_model_path=str(best_model_path),
-                        best_score=float(best_score),
-                        output_dim=2,
-                        task_name="classification",
-                        artifacts_dir=str(artifacts_dir),
-                    )
-                ),
-            },
+            final={"best_model_path": Path(best_model_path)},
         )
 
     assert Path(best_model_path).exists()
@@ -355,14 +326,13 @@ def test_heatmap_overlays_from_benchmark_models(
     extracted_bag_workspace: PreparedBagWorkspace,
     extracted_wsi_workspace: ExtractedWsiWorkspace,
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
     """Generate tile-level heatmap overlays for all three MIL benchmark backends.
 
     Uses real VarMIL attention scores for the lightning/native backend and
-    deterministic synthetic scores for the torchmil and mil-lab backends (whose
-    smoke models are mean-pool fakes without per-instance outputs).  All three
-    heatmaps are written to the slide H5 artifact and exported as PNG overlays.
+    random scores for the torchmil and mil-lab backends to cover the heatmap
+    rendering path.  All heatmaps are written to the slide H5 artifact and
+    exported as PNG overlays.
     """
     from pathbench.adapters.torchmil.heatmap_explainer import register_torchmil_heatmap_explainer
     from pathbench.core.datasets.bag_dataset import BagDataset
@@ -371,14 +341,6 @@ def test_heatmap_overlays_from_benchmark_models(
     from pathbench.inference.heatmaps import create_inference_heatmap
 
     register_torchmil_heatmap_explainer()
-    monkeypatch.setattr(
-        "pathbench.inference.heatmaps.require_torchmil",
-        lambda feature: None,
-    )
-    monkeypatch.setattr(
-        "pathbench.adapters.torchmil.heatmap_explainer.require_torchmil",
-        lambda feature: None,
-    )
 
     dataset = BagDataset(
         "smoke_heatmap",

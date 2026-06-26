@@ -10,18 +10,19 @@ import pandas as pd
 import pytest
 
 from pathbench.config.config import Config
+from ._smoke_dataset import PreparedBagWorkspace
 
 
 @pytest.mark.smoke
 def test_benchmark_cli_importable():
     """The benchmark CLI module must be importable without side-effects."""
-    from pathbench.cli import benchmark  # noqa: F401
+    from pathbench.cli import benchmark_run  # noqa: F401
 
 
 @pytest.mark.smoke
 def test_benchmark_cli_missing_config_exits(monkeypatch, tmp_path):
     """main() with a nonexistent config path must raise FileNotFoundError."""
-    from pathbench.cli.benchmark import main
+    from pathbench.cli.benchmark_run import main
 
     monkeypatch.setattr(
         sys, "argv", ["pathbench-benchmark", "--config", str(tmp_path / "missing.yaml")]
@@ -41,43 +42,26 @@ def test_benchmark_config_validates(minimal_benchmark_config):
 
 @pytest.mark.smoke
 def test_benchmark_cli_writes_summary_and_visualizations(
-    monkeypatch, tmp_path: Path
+    monkeypatch,
+    tmp_path: Path,
+    extracted_bag_workspace: PreparedBagWorkspace,
 ) -> None:
-    """CLI smoke run should emit the benchmark summary CSV and HTML reports."""
-    from pathbench.cli.benchmark import main
+    """CLI smoke run should emit the benchmark summary CSV and HTML reports.
+
+    Uses real VarMIL training on extracted GTEx bags and real plotly for visualizations.
+    """
+    from pathbench.cli.benchmark_run import main
+    from pathbench.cli.base import load_config
+    from pathbench.core.datasets.bag_dataset import BagDataset
+    from types import SimpleNamespace
     import pathbench.policy.benchmarking as bench_mod
-    import pathbench.policy.utils as policy_utils
 
-    class _FakeDataset:
-        feature_dim = 8
-
-        def output_dim(self) -> int:
-            return 2
-
-    class _FakeTrainer:
-        def __init__(self, cfg):
-            self.cfg = cfg
-
-        def fit(self, model, ds_train, ds_val, loss_fn):
-            _ = (model, ds_train, ds_val, loss_fn)
-            score = 0.9 if self.cfg.mil.batch_size == 1 else 0.6
-            return f"batch_{self.cfg.mil.batch_size}.ckpt", score
-
-    class _FakeFigure:
-        def update_layout(self, **kwargs):
-            _ = kwargs
-
-        def write_html(self, path: str) -> None:
-            Path(path).write_text("<html></html>", encoding="utf-8")
-
-    class _FakePX:
-        def bar(self, *args, **kwargs):
-            _ = (args, kwargs)
-            return _FakeFigure()
-
-        def scatter(self, *args, **kwargs):
-            _ = (args, kwargs)
-            return _FakeFigure()
+    real_dataset = BagDataset(
+        "smoke_cli_ds",
+        str(extracted_bag_workspace.feature_dir),
+        str(extracted_bag_workspace.metadata_csv),
+        "binary_label",
+    )
 
     cfg_path = tmp_path / "benchmark.yaml"
     project_root = (tmp_path / "project").resolve()
@@ -93,44 +77,59 @@ def test_benchmark_cli_writes_summary_and_visualizations(
                 f"  project_root: {project_root}",
                 "  mode: benchmark",
                 "  task: classification",
+                "  num_workers: 0",
                 "slide_processing:",
                 "  backend: lazyslide",
                 "mil:",
                 "  backend: native",
                 "  best_epoch_based_on: balanced_accuracy",
+                "  epochs: 3",
+                "  patience: 2",
                 "metrics:",
                 "  classification_backend: native",
                 "datasets:",
-                "  - name: smoke_ds",
+                "  - name: smoke_cli_ds",
                 f"    slides_dir: {slides_dir}",
                 f"    artifacts_dir: {artifacts_dir}",
                 "    used_for: all",
                 "benchmark_parameters:",
-                "  tile_px: [256]",
-                "  tile_mpp: [0.5]",
+                "  tile_px: [224]",
+                "  tile_mpp: [1.0]",
                 "  feature_extraction: [resnet18]",
-                "  mil: [DummyMIL]",
+                "  mil: [VarMIL]",
                 "  loss: [CrossEntropyLoss]",
-                "  batch_size: [1, 4]",
+                "  batch_size: [1, 2]",
+                "  seeds: [1]",
             ]
         ),
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(bench_mod, "build_bag_dataset_for_task", lambda *args, **kwargs: _FakeDataset())
-    monkeypatch.setattr(bench_mod, "resolve_dataset_feature_dir", lambda dataset_entry: tmp_path)
-    monkeypatch.setattr(bench_mod, "infer_model_dimensions", lambda dataset: (dataset.feature_dim, dataset.output_dim()))
-    monkeypatch.setattr(bench_mod.LOSSES, "get", lambda name: (lambda: object()))
-    monkeypatch.setattr(bench_mod.TRAINERS, "get", lambda name: _FakeTrainer)
-    monkeypatch.setattr(policy_utils, "_load_plotly_modules", lambda: (_FakePX(), object()))
+    # Bypass real experiment loading (no real WSIs / H5 artifacts needed for
+    # benchmarking policy test — we provide the dataset via monkeypatch below).
+    monkeypatch.setattr(
+        "pathbench.cli.benchmark_run.Experiment",
+        lambda cfg: SimpleNamespace(cfg=cfg),
+    )
+    monkeypatch.setattr(
+        bench_mod,
+        "build_bag_dataset_for_task",
+        lambda *args, **kwargs: real_dataset,
+    )
+    monkeypatch.setattr(
+        bench_mod,
+        "infer_model_dimensions",
+        lambda dataset: (extracted_bag_workspace.input_dim, 2),
+    )
 
     exit_code = main(["--config", str(cfg_path)])
 
     assert exit_code == 0
     summary_path = project_root / "benchmark_results.csv"
     vis_dir = project_root / "benchmark_visualizations"
-    assert summary_path.exists()
+    assert summary_path.exists(), "benchmark_results.csv not written by CLI"
     summary_df = pd.read_csv(summary_path)
-    assert set(summary_df["objective_value"].dropna().tolist()) == {0.6, 0.9}
+    assert {"run_index", "status", "objective_value", "rank"}.issubset(summary_df.columns)
+    assert len(summary_df) == 2, "Expected one row per batch_size config"
     assert (vis_dir / "benchmark_performance_ranked.html").exists()
     assert (vis_dir / "benchmark_rank_scatter.html").exists()

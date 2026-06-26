@@ -5,8 +5,10 @@ from pathlib import Path
 from tests.smoke._smoke_training import (
     DEFAULT_SMOKE_BATCH_SIZE,
     DEFAULT_SMOKE_EPOCHS,
+    SmokeTrainingResult,
     _smoke_batch_size,
     make_training_config,
+    training_artifact_outputs,
 )
 
 
@@ -57,3 +59,19 @@ def test_smoke_defaults_increase_epochs_and_classification_batch_size() -> None:
         len(dataset),
     )
     assert _smoke_batch_size("survival", dataset) == len(dataset)
+
+
+def test_training_artifact_outputs_excludes_parent_artifacts_directory() -> None:
+    result = SmokeTrainingResult(
+        best_model_path="/tmp/model.ckpt",
+        best_score=1.0,
+        output_dim=2,
+        task_name="classification",
+        artifacts_dir="/tmp/training_artifacts",
+    )
+
+    outputs = training_artifact_outputs(result)
+
+    assert "training_artifacts_dir" not in outputs
+    assert outputs["val_metrics_json"].name == "val_metrics.json"
+    assert outputs["val_roc_auc_curve_png"].name == "val_roc_auc_curve.png"

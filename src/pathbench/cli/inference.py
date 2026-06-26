@@ -16,6 +16,7 @@ from pathbench.inference.model_package import (
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run packaged-model inference and optional heatmap generation from the CLI."""
     p = argparse.ArgumentParser(description="Run PathBench-MIL inference utilities.")
     p.add_argument(
         "--model_path", required=True, help="Path to a trained model checkpoint."

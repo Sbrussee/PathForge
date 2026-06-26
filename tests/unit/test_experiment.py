@@ -8,8 +8,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pathbench.config.config import Config
+from pathbench.config.config import BenchmarkParamEntry, Config
+from pathbench.core.datasets.factory import build_wsi_datasets
 from pathbench.core.experiments.base import Experiment
+from pathbench.core.experiments.combinations import ComboConfig, build_combinations
 from pathbench.utils.registries import FEATURE_EXTRACTORS
 
 
@@ -218,7 +220,10 @@ def test_build_combinations_builds_expected_grid(tmp_path: Path) -> None:
     )
     exp = Experiment(cfg)
 
-    combos = exp.build_combinations(["feature_extraction", "tile_px", "tile_mpp"])
+    combos = build_combinations(
+        cfg=exp.cfg,
+        keys=["feature_extraction", "tile_px", "tile_mpp"],
+    )
     assert len(combos) == 2 * 2 * 2  # 8
 
     # spot-check attributes exist
@@ -226,6 +231,8 @@ def test_build_combinations_builds_expected_grid(tmp_path: Path) -> None:
     assert hasattr(c0, "feature_extraction")
     assert hasattr(c0, "tile_px")
     assert hasattr(c0, "tile_mpp")
+    assert c0.get("tile_px") in {256, 512}
+    assert c0.get_hyperparams("tile_px") == {}
 
 
 def test_build_combinations_missing_key_raises(tmp_path: Path) -> None:
@@ -239,7 +246,7 @@ def test_build_combinations_missing_key_raises(tmp_path: Path) -> None:
     exp = Experiment(cfg)
 
     with pytest.raises(AttributeError):
-        exp.build_combinations(["does_not_exist"])
+        build_combinations(cfg=exp.cfg, keys=["does_not_exist"])
 
 
 def test_build_combinations_empty_values_raises(tmp_path: Path) -> None:
@@ -261,11 +268,63 @@ def test_build_combinations_empty_values_raises(tmp_path: Path) -> None:
     exp = Experiment(cfg)
 
     with pytest.raises(ValueError) as excinfo:
-        exp.build_combinations(["tile_px"])
+        build_combinations(cfg=exp.cfg, keys=["tile_px"])
     assert "is empty" in str(excinfo.value)
 
 
-def test_build_datasets_skips_ignore(tmp_path: Path) -> None:
+def test_build_combinations_preserves_hyperparams_on_combo_cfg(tmp_path: Path) -> None:
+    ann_src = tmp_path / "ann.csv"
+    _write_annotations_csv(
+        ann_src,
+        [{"dataset": "ds", "slide": "S1", "patient": "P1", "category": "C1"}],
+    )
+
+    cfg = _make_cfg(
+        tmp_path=tmp_path,
+        annotation_file=ann_src,
+        mode="feature_extraction",
+        benchmark_parameters={
+            "tile_px": [256],
+            "tile_mpp": [0.5],
+            "feature_extraction": [EXTRACTOR_1],
+            "search_strategy": [
+                {"yottixel": {"k": 3}},
+                {"yottixel": {"k": 5}},
+            ],
+            "retrieval_representation": [
+                "sdm-features",
+                {"hshr-features": {"n_patches": 10}},
+            ],
+        },
+    )
+    exp = Experiment(cfg)
+
+    combos = build_combinations(
+        cfg=exp.cfg,
+        keys=["search_strategy", "retrieval_representation"],
+    )
+
+    assert len(combos) == 4
+    assert {combo.get_hyperparams("search_strategy")["k"] for combo in combos} == {3, 5}
+    assert {
+        tuple(sorted(combo.get_hyperparams("retrieval_representation").items()))
+        for combo in combos
+    } == {(), (("n_patches", 10),)}
+
+
+def test_combo_cfg_get_and_get_hyperparams_round_trip() -> None:
+    combo_cfg = ComboConfig.from_keys_values(
+        ["feature_extraction"],
+        [BenchmarkParamEntry(value="uni", hyperparams={"family": "foundation"})],
+    )
+
+    assert combo_cfg.get("feature_extraction") == "uni"
+    assert combo_cfg.get("missing", "fallback") == "fallback"
+    assert combo_cfg.get_hyperparams("feature_extraction") == {"family": "foundation"}
+    assert combo_cfg.get_hyperparams("missing") == {}
+
+
+def test_build_wsi_datasets_skips_ignore(tmp_path: Path) -> None:
     ann_src = tmp_path / "ann.csv"
     _write_annotations_csv(
         ann_src,
@@ -303,7 +362,7 @@ def test_build_datasets_skips_ignore(tmp_path: Path) -> None:
     )
 
     exp = Experiment(cfg)
-    datasets = exp.build_datasets()
+    datasets = build_wsi_datasets(cfg=cfg, annotations_df=exp.load_annotations())
 
     assert len(datasets) == 1
     assert datasets[0].name == "keep"

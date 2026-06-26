@@ -1,6 +1,6 @@
 from __future__ import annotations
 from abc import abstractmethod
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Dict, Iterable, Union
 import torch
 import torch.nn as nn
 from pathbench.core.models.base import TorchModelBase

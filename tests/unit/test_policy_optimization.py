@@ -6,12 +6,13 @@ import types
 
 import optuna
 import pandas as pd
+import pytest
 
 import pathbench.policy.optimization as opt_mod
 import pathbench.policy.utils as policy_utils
 from pathbench.config.config import Config
 from pathbench.policy.optimization import OptimizationPolicy
-from pathbench.policy.utils import optimization_search_space
+from pathbench.policy.utils import build_bag_dataset_for_task, optimization_search_space
 from tests.conftest import DUMMY_FE
 
 
@@ -154,6 +155,142 @@ def test_optimization_objective_uses_mil_lab_user_config_and_inferred_dims(
     }
 
 
+def test_build_bag_dataset_for_task_filters_to_dataset_entry_rows(
+    tmp_path: Path,
+) -> None:
+    annotation_path = tmp_path / "annotations.csv"
+    annotation_path.write_text(
+        "dataset,slide_id,category\ntrain_ds,S1,0\nval_ds,S2,1\n",
+        encoding="utf-8",
+    )
+    feature_dir = tmp_path / "features"
+    feature_dir.mkdir()
+    (tmp_path / "slides").mkdir()
+
+    import torch
+
+    torch.save(torch.zeros(2, 3), feature_dir / "S1.pt")
+    torch.save(torch.ones(2, 3), feature_dir / "S2.pt")
+
+    cfg = Config.model_validate(
+        {
+            "experiment": {
+                "project_name": "opt_filter",
+                "annotation_file": str(annotation_path),
+                "project_root": str((tmp_path / "project").resolve()),
+                "mode": "optimization",
+                "task": "classification",
+            },
+            "slide_processing": {"backend": "lazyslide"},
+            "mil": {"backend": "native"},
+            "metrics": {"classification_backend": "native"},
+            "optimization": {
+                "study_name": "study",
+                "sampler": "TPESampler",
+                "pruner": "MedianPruner",
+                "objective_mode": "max",
+                "objective_metric": "balanced_accuracy",
+                "trials": 1,
+            },
+            "datasets": [
+                {
+                    "name": "train_ds",
+                    "slides_dir": str(tmp_path / "slides"),
+                    "artifacts_dir": str(feature_dir),
+                    "used_for": "training",
+                },
+                {
+                    "name": "val_ds",
+                    "slides_dir": str(tmp_path / "slides"),
+                    "artifacts_dir": str(feature_dir),
+                    "used_for": "validation",
+                },
+            ],
+            "benchmark_parameters": {
+                "tile_px": [256],
+                "tile_mpp": [0.5],
+                "feature_extraction": [DUMMY_FE],
+                "mil": ["DummyMIL"],
+                "loss": ["CrossEntropyLoss"],
+            },
+        }
+    )
+
+    dataset = build_bag_dataset_for_task(
+        cfg,
+        feature_dir=feature_dir,
+        name="train",
+        dataset_entry=cfg.datasets[0],
+    )
+
+    assert dataset.num_bags == 1
+    assert dataset.annotations["dataset"].tolist() == ["train_ds"]
+    assert dataset.annotations["slide_id"].tolist() == ["S1"]
+
+
+def test_optimization_objective_uses_dataset_use_semantics_and_does_not_mutate_base_config(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    captured_calls: list[tuple[str, str]] = []
+
+    class _FakeDataset:
+        feature_dim = 11
+
+        def output_dim(self) -> int:
+            return 2
+
+    class _FakeTrainer:
+        def __init__(self, cfg, extra_callbacks=None):
+            self.cfg = cfg
+            self.extra_callbacks = extra_callbacks or []
+
+        def fit(self, model, ds_train, ds_val, loss_fn):
+            _ = (model, ds_train, ds_val, loss_fn)
+            return "checkpoint.ckpt", 0.5
+
+    fake_integration = types.ModuleType("optuna.integration")
+    fake_integration.PyTorchLightningPruningCallback = (
+        lambda trial, monitor: object()
+    )
+    monkeypatch.setitem(sys.modules, "optuna.integration", fake_integration)
+
+    cfg = _make_cfg(tmp_path)
+    cfg.datasets = [
+        cfg.datasets[0].model_copy(update={"name": "val_ds", "used_for": "validation"}),
+        cfg.datasets[0].model_copy(update={"name": "train_ds", "used_for": "training"}),
+    ]
+    cfg.benchmark_parameters.mil = ["DummyMIL", "DummyMIL2"]
+    cfg.optimization.search_space = {
+        "mil": {"type": "categorical", "choices": ["DummyMIL", "DummyMIL2"]},
+        "batch_size": {"type": "categorical", "choices": [1, 4]},
+    }
+
+    def _fake_build_bag_dataset_for_task(config, *, feature_dir, name, dataset_entry=None):
+        _ = config, feature_dir
+        captured_calls.append((name, dataset_entry.name))
+        return _FakeDataset()
+
+    monkeypatch.setattr(opt_mod, "build_bag_dataset_for_task", _fake_build_bag_dataset_for_task)
+    monkeypatch.setattr(opt_mod, "resolve_dataset_feature_dir", lambda dataset_entry: tmp_path)
+    monkeypatch.setattr(
+        opt_mod,
+        "infer_model_dimensions",
+        lambda dataset: (dataset.feature_dim, dataset.output_dim()),
+    )
+    monkeypatch.setattr(opt_mod, "build_mil_model_for_config", lambda config, **kwargs: object())
+    monkeypatch.setattr(opt_mod.LOSSES, "get", lambda name: (lambda: object()))
+    monkeypatch.setattr(opt_mod.TRAINERS, "get", lambda name: _FakeTrainer)
+
+    trial = optuna.trial.FixedTrial({"mil": "DummyMIL2", "batch_size": 4})
+    score = OptimizationPolicy(cfg).objective(trial)
+
+    assert score == 0.5
+    assert captured_calls == [("train", "train_ds"), ("val", "val_ds")]
+    assert cfg.benchmark_parameters.mil == ["DummyMIL", "DummyMIL2"]
+    assert cfg.mil.batch_size == 1
+
+
 def test_optimization_search_space_merges_benchmark_component_choices(
     tmp_path: Path,
 ) -> None:
@@ -247,12 +384,18 @@ def test_optimization_execute_writes_summary_csv_and_visualizations(
 def test_save_optuna_visualizations_exports_requested_figures(
     monkeypatch, tmp_path: Path
 ) -> None:
-    written_paths: list[str] = []
+    written_html_paths: list[str] = []
+    written_image_paths: list[str] = []
 
     class _FakeFigure:
         def write_html(self, path: str) -> None:
-            written_paths.append(path)
+            written_html_paths.append(path)
             Path(path).write_text("<html></html>", encoding="utf-8")
+
+        def write_image(self, path: str, format: str = "png") -> None:
+            assert format == "png"
+            written_image_paths.append(path)
+            Path(path).write_bytes(b"png")
 
     class _FakeDirection:
         def __init__(self, label: str) -> None:
@@ -305,9 +448,15 @@ def test_save_optuna_visualizations_exports_requested_figures(
 
     assert sorted(path.name for path in exported) == [
         "plot_hypervolume_history.html",
+        "plot_hypervolume_history.png",
         "plot_optimization_history.html",
+        "plot_optimization_history.png",
         "plot_param_importances.html",
+        "plot_param_importances.png",
         "plot_rank.html",
+        "plot_rank.png",
         "plot_timeline.html",
+        "plot_timeline.png",
     ]
-    assert len(written_paths) == 5
+    assert len(written_html_paths) == 5
+    assert len(written_image_paths) == 5

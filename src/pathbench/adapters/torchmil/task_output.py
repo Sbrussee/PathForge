@@ -40,6 +40,16 @@ def normalize_torchmil_output(output: Any, *, task: TaskName | str) -> torch.Ten
 
     if task == "classification":
         assert tensor.ndim in {1, 2}, "Classification output must have shape [B] or [B, C]."
+        # TorchMIL binary models (e.g. ABMIL in torchmil>=1.0) emit a single
+        # logit per bag. PathBench's classification losses/metrics expect
+        # ``[B, C]`` logits, so expand the single binary logit ``x`` to two-class
+        # logits ``[-x/2, x/2]``. This is equivalent to the binary contract:
+        # ``softmax([-x/2, x/2])[1] == sigmoid(x)``.
+        if tensor.ndim == 1:
+            return torch.stack((-0.5 * tensor, 0.5 * tensor), dim=-1)
+        if tensor.shape[1] == 1:
+            single = tensor.reshape(-1)
+            return torch.stack((-0.5 * single, 0.5 * single), dim=-1)
         return tensor
     if task == "survival":
         assert tensor.ndim in {1, 2}, "Continuous survival output must have shape [B] or [B, 1]."

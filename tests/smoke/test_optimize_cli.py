@@ -14,13 +14,13 @@ from tests.conftest import DUMMY_FE
 @pytest.mark.smoke
 def test_optimize_cli_importable() -> None:
     """The optimization CLI module must be importable without side-effects."""
-    from pathbench.cli import optimize  # noqa: F401
+    from pathbench.cli import optimize_run  # noqa: F401
 
 
 @pytest.mark.smoke
 def test_optimize_cli_missing_config_exits(tmp_path) -> None:
     """main() with a nonexistent config path must raise FileNotFoundError."""
-    from pathbench.cli.optimize import main
+    from pathbench.cli.optimize_run import main
 
     with pytest.raises(FileNotFoundError):
         main(["--config", str(tmp_path / "missing.yaml")])
@@ -80,41 +80,9 @@ def test_optimization_config_validates(tmp_path) -> None:
 def test_optimize_cli_writes_summary_and_visualizations(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """CLI smoke run should emit optimization CSV summaries and HTML reports."""
-    from pathbench.cli.optimize import main
+    """CLI smoke run should emit optimization CSV summaries and visual reports."""
+    from pathbench.cli.optimize_run import main
     import pathbench.policy.optimization as opt_mod
-
-    class _FakeStudy:
-        best_params = {"lr": 1e-4}
-        best_value = 0.82
-
-        def optimize(self, objective, n_trials: int) -> None:
-            _ = (objective, n_trials)
-
-        def trials_dataframe(self) -> pd.DataFrame:
-            return pd.DataFrame(
-                [
-                    {
-                        "number": 0,
-                        "value": 0.82,
-                        "state": "COMPLETE",
-                        "params_lr": 1e-4,
-                    },
-                    {
-                        "number": 1,
-                        "value": 0.61,
-                        "state": "COMPLETE",
-                        "params_lr": 5e-4,
-                    },
-                ]
-            )
-
-    def _fake_save_optuna_visualizations(study, output_dir):
-        _ = study
-        output_dir.mkdir(parents=True, exist_ok=True)
-        html_path = output_dir / "plot_optimization_history.html"
-        html_path.write_text("<html></html>", encoding="utf-8")
-        return [html_path]
 
     cfg_path = tmp_path / "optimize.yaml"
     project_root = (tmp_path / "project").resolve()
@@ -160,9 +128,6 @@ def test_optimize_cli_writes_summary_and_visualizations(
         encoding="utf-8",
     )
 
-    fake_study = _FakeStudy()
-    monkeypatch.setattr(opt_mod.optuna, "create_study", lambda **kwargs: fake_study)
-    monkeypatch.setattr(opt_mod, "save_optuna_visualizations", _fake_save_optuna_visualizations)
     monkeypatch.setattr(opt_mod.OptimizationPolicy, "objective", lambda self, trial: 0.5)
 
     exit_code = main(["--config", str(cfg_path)])
@@ -174,5 +139,7 @@ def test_optimize_cli_writes_summary_and_visualizations(
     assert raw_results.exists()
     assert summary_results.exists()
     summary_df = pd.read_csv(summary_results)
-    assert summary_df["objective_value"].tolist()[:2] == [0.82, 0.61]
+    assert len(summary_df) == 1
+    assert summary_df["objective_value"].iloc[0] == pytest.approx(0.5)
     assert (vis_dir / "plot_optimization_history.html").exists()
+    assert (vis_dir / "plot_optimization_history.png").exists()

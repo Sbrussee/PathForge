@@ -21,7 +21,6 @@ from ._smoke_training import (
     SurvivalBagDataset,
     fit_smoke_model,
     register_smoke_components,
-    training_artifact_outputs,
 )
 
 
@@ -61,10 +60,7 @@ def test_continuous_survival_mil_smoke(
             metadata,
             step_name="hf_continuous_survival_benchmark",
             intermediate={"survival_metadata_csv": survival_bag_workspace.metadata_csv},
-            final={
-                "best_model_path": Path(result.best_model_path),
-                **training_artifact_outputs(result),
-            },
+            final={"best_model_path": Path(result.best_model_path)},
         )
 
     assert Path(result.best_model_path).exists()
@@ -110,10 +106,7 @@ def test_discrete_survival_mil_smoke(
             metadata,
             step_name="hf_discrete_survival_benchmark",
             intermediate={"survival_metadata_csv": survival_bag_workspace.metadata_csv},
-            final={
-                "best_model_path": Path(result.best_model_path),
-                **training_artifact_outputs(result),
-            },
+            final={"best_model_path": Path(result.best_model_path)},
         )
 
     assert Path(result.best_model_path).exists()
@@ -167,21 +160,51 @@ def test_binary_classification_optuna_smoke(
         study.optimize(objective, n_trials=2)
         best_trial_root = objective_root / f"trial_{study.best_trial.number}"
         best_artifacts_dir = best_trial_root / "project" / "training_artifacts"
+        best_checkpoint = next(best_trial_root.glob("*.ckpt"), None)
         attach_smoke_outputs(
             metadata,
             step_name="hf_binary_classification_optuna",
-            intermediate={"objective_root": objective_root},
+            final={"best_model_path": best_checkpoint} if best_checkpoint else None,
+        )
+
+    from pathbench.policy.utils import save_optuna_visualizations, write_experiment_summary_csv
+
+    raw_results_csv = tmp_path / "smoke_study_results.csv"
+    opt_results_csv = tmp_path / "optimization_results.csv"
+    opt_vis_dir = tmp_path / "optimization_visualizations"
+
+    with capture_smoke_metrics(
+        tmp_path / "opt_agg_metrics",
+        step_name="smoke_optimization_policy_aggregate",
+        metadata={"n_trials": len(study.trials)},
+    ) as opt_meta:
+        raw_df = study.trials_dataframe()
+        raw_df.to_csv(raw_results_csv, index=False)
+        summary_rows = [
+            {
+                "run_index": int(t.number),
+                "status": "success" if t.state == optuna.trial.TrialState.COMPLETE else str(t.state),
+                "objective_metric": "balanced_accuracy",
+                "objective_value": t.value,
+                "trial_number": int(t.number),
+                **{f"params_{k}": v for k, v in t.params.items()},
+            }
+            for t in study.trials
+        ]
+        write_experiment_summary_csv(
+            summary_rows,
+            output_path=opt_results_csv,
+            objective_metric="balanced_accuracy",
+            minimize=True,
+        )
+        save_optuna_visualizations(study, output_dir=opt_vis_dir)
+        attach_smoke_outputs(
+            opt_meta,
+            step_name="smoke_optimization_policy_aggregate",
             final={
-                "best_trial_root": best_trial_root,
-                "training_artifacts_dir": best_artifacts_dir,
-                "val_metrics_json": best_artifacts_dir / "val_metrics.json",
-                "val_curves_json": best_artifacts_dir / "val_curves.json",
-                "val_confusion_matrix_png": best_artifacts_dir
-                / "val_confusion_matrix.png",
-                "val_roc_auc_curve_png": best_artifacts_dir / "val_roc_auc_curve.png",
-                "val_pr_auc_curve_png": best_artifacts_dir / "val_pr_auc_curve.png",
-                "val_calibration_curve_png": best_artifacts_dir
-                / "val_calibration_curve.png",
+                "study_results_csv": raw_results_csv,
+                "optimization_results_csv": opt_results_csv,
+                "optimization_visualizations_dir": opt_vis_dir,
             },
         )
 
@@ -195,6 +218,13 @@ def test_binary_classification_optuna_smoke(
     assert Path(best_artifacts_dir, "val_roc_auc_curve.png").exists()
     assert Path(best_artifacts_dir, "val_pr_auc_curve.png").exists()
     assert Path(best_artifacts_dir, "val_calibration_curve.png").exists()
+
+    assert raw_results_csv.exists()
+    assert opt_results_csv.exists()
+    summary_df = pd.read_csv(opt_results_csv)
+    assert {"objective_value", "rank"}.issubset(summary_df.columns)
+    ranked = summary_df[summary_df["rank"].notna()]
+    assert ranked["rank"].tolist() == list(range(1, len(ranked) + 1))
 
 
 @pytest.mark.smoke
@@ -308,7 +338,6 @@ def test_trained_mil_inference_heatmap_cli(
                 "scores_path": scores_path,
             },
             final={
-                **training_artifact_outputs(result),
                 "prediction_json": output_json,
                 "heatmap_json": heatmap_json,
                 "heatmap_png": heatmap_png,
@@ -358,11 +387,18 @@ def test_gtex_survival_mil_smoke(
 ) -> None:
     """Run continuous-survival MIL on tile-level GTEx features with synthetic labels.
 
-    Reuses the tile-level bags from ``extracted_bag_workspace`` (no extra
-    feature extraction).  Survival labels are derived deterministically from
-    GTEx metadata: calcification slides are treated as events, age bracket
-    encodes observation time.
+    Two learning-rate configurations are compared and aggregated into
+    ``smoke_regression_benchmark_aggregate``.  Survival labels are derived
+    deterministically from GTEx metadata: calcification slides are treated as
+    events, age bracket encodes observation time.
     """
+    from pathbench.policy.utils import (
+        collect_run_summary_row,
+        metric_should_minimize,
+        save_benchmark_visualizations,
+        write_experiment_summary_csv,
+    )
+
     metadata_df = pd.read_csv(gtex_survival_workspace.metadata_csv)
     dataset = SurvivalBagDataset(
         metadata_df,
@@ -372,36 +408,92 @@ def test_gtex_survival_mil_smoke(
         discrete_time=False,
     )
 
+    runs = []
     with capture_smoke_metrics(
         tmp_path / "metrics",
         step_name="hf_gtex_continuous_survival_benchmark",
-        metadata={"num_bags": len(dataset)},
+        metadata={"num_bags": len(dataset), "grid_size": 2},
     ) as metadata:
-        _, result = fit_smoke_model(
-            tmp_path / "gtex_continuous_survival",
-            dataset_train=dataset,
-            dataset_val=dataset,
-            input_dim=gtex_survival_workspace.input_dim,
-            output_dim=1,
-            task="survival",
-            loss_name="CoxPHLoss",
-            epochs=DEFAULT_SMOKE_EPOCHS,
-            lr=1e-3,
-            dropout=0.0,
-        )
+        for lr in (1e-3, 5e-4):
+            _, result = fit_smoke_model(
+                tmp_path / f"gtex_continuous_survival_lr{lr}",
+                dataset_train=dataset,
+                dataset_val=dataset,
+                input_dim=gtex_survival_workspace.input_dim,
+                output_dim=1,
+                task="survival",
+                loss_name="CoxPHLoss",
+                epochs=DEFAULT_SMOKE_EPOCHS,
+                lr=lr,
+                dropout=0.0,
+            )
+            runs.append(result)
         attach_smoke_outputs(
             metadata,
             step_name="hf_gtex_continuous_survival_benchmark",
             intermediate={
                 "survival_metadata_csv": gtex_survival_workspace.metadata_csv
             },
-            final={**training_artifact_outputs(result)},
+            final={
+                f"run_{index}_checkpoint": Path(run.best_model_path)
+                for index, run in enumerate(runs)
+            },
         )
 
-    assert Path(result.best_model_path).exists()
-    assert Path(result.artifacts_dir, "val_td_auc_curve.png").exists()
-    assert Path(result.artifacts_dir, "val_concordance_index.png").exists()
-    assert Path(result.artifacts_dir, "val_kaplan_meier.png").exists()
+    objective_metric = "c_index"
+    minimize = metric_should_minimize(objective_metric)
+    summary_rows = [
+        collect_run_summary_row(
+            run.config,
+            run_index=idx,
+            status="success",
+            objective_metric=objective_metric,
+            objective_value=run.best_score,
+            checkpoint_path=run.best_model_path,
+        )
+        for idx, run in enumerate(runs)
+    ]
+    agg_csv = tmp_path / "regression_benchmark_results.csv"
+    vis_dir = tmp_path / "regression_benchmark_visualizations"
+    with capture_smoke_metrics(
+        tmp_path / "reg_agg_metrics",
+        step_name="smoke_regression_benchmark_aggregate",
+        metadata={"grid_size": len(runs), "task": "survival"},
+    ) as reg_meta:
+        write_experiment_summary_csv(
+            summary_rows,
+            output_path=agg_csv,
+            objective_metric=objective_metric,
+            minimize=minimize,
+        )
+        save_benchmark_visualizations(
+            agg_csv,
+            output_dir=vis_dir,
+            objective_metric=objective_metric,
+            minimize=minimize,
+        )
+        attach_smoke_outputs(
+            reg_meta,
+            step_name="smoke_regression_benchmark_aggregate",
+            final={
+                "benchmark_results_csv": agg_csv,
+                "benchmark_performance_ranked_html": vis_dir / "benchmark_performance_ranked.html",
+                "benchmark_rank_scatter_html": vis_dir / "benchmark_rank_scatter.html",
+            },
+        )
+
+    assert all(Path(run.best_model_path).exists() for run in runs)
+    assert Path(runs[0].artifacts_dir, "val_td_auc_curve.png").exists()
+    assert Path(runs[0].artifacts_dir, "val_concordance_index.png").exists()
+    assert Path(runs[0].artifacts_dir, "val_kaplan_meier.png").exists()
+
+    df = pd.read_csv(agg_csv)
+    assert {"run_index", "status", "objective_metric", "objective_value", "rank"}.issubset(df.columns)
+    assert df["objective_metric"].dropna().unique().tolist() == ["c_index"]
+    assert len(df) == 2
+    assert df["objective_value"].dropna().is_monotonic_decreasing
+    successful = df[df["status"] == "success"]
+    assert successful["rank"].dropna().tolist() == list(range(1, len(successful) + 1))
 
 
 @pytest.mark.smoke

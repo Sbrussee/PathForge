@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class WSI:
+    """One whole-slide sample with source path, artifact path, and cached backend object."""
+
     slide: str
     patient: str
     category: str
@@ -130,30 +132,56 @@ class WSIDataset(DatasetBase):
 
     def _find_wsi_path(self, slide_id: str) -> Optional[Path]:
         """Return the slide file path for slide_id, or None if not found."""
-        pattern = f"{slide_id}.*"
-        candidates = list(self._slides_dir.glob(pattern))
 
-        candidates = [p for p in candidates if p.suffix.lower() in SLIDE_FILE_FORMATS]
+        # ---- Exact direct-file match: <slide_id>.<ext> ----
+        direct_matches = sorted(
+            p for p in self._slides_dir.iterdir()
+            if p.is_file()
+            and p.suffix.lower() in SLIDE_FILE_FORMATS
+            and p.stem == slide_id
+        )
 
-        if not candidates:
+        # ---- Prefer direct files first ----
+        if len(direct_matches) == 1:
+            return direct_matches[0]
+
+        if len(direct_matches) > 1:
             logger.warning(
-                "[%s] No slide file found for slide '%s' in '%s' (pattern=%s)",
+                "[%s] Multiple exact direct-file matches found for slide '%s': %s. Skipping.",
                 self.name,
                 slide_id,
-                self._slides_dir,
-                pattern,
+                [str(p) for p in direct_matches],
             )
             return None
 
-        if len(candidates) > 1:
-            logger.warning(
-                "[%s] Multiple files found for slide '%s': %s. Taking the first one.",
-                self.name,
-                slide_id,
-                [str(p) for p in candidates],
+        # ---- Only if no direct file exists, check exact DICOM-folder match ----
+        slide_dir = self._slides_dir / slide_id
+        if slide_dir.is_dir():
+            dcm_matches = sorted(
+                p for p in slide_dir.iterdir()
+                if p.is_file() and p.suffix.lower() == ".dcm"
             )
 
-        return candidates[0]
+            if dcm_matches:
+                return dcm_matches[0]
+
+            logger.warning(
+                "[%s] Folder found for slide '%s' but no direct file match exists and the folder contains no .dcm files: %s",
+                self.name,
+                slide_id,
+                slide_dir,
+            )
+            return None
+
+        # ---- Not found ----
+        logger.warning(
+            "[%s] No valid slide source found for slide '%s' in '%s'. Expected either "
+            "'<slide_id>.<ext>' or '<slide_id>/*.dcm'.",
+            self.name,
+            slide_id,
+            self._slides_dir,
+        )
+        return None
 
     def _resolve_row_wsi_path(self, row: pd.Series) -> Optional[Path]:
         """Return a directly annotated WSI path when one is available."""

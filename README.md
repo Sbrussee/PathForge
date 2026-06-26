@@ -7,7 +7,7 @@ optimization, optional TorchMIL backends, optional metrics backends, and
 explainability hooks.
 
 The repository follows the Clean Architecture contract described in
-[design.md](design.md): policies and trainers resolve implementations through
+[docs/design.md](docs/design.md): policies and trainers resolve implementations through
 PathBench interfaces and registries, while concrete third-party packages live in
 adapter modules.
 
@@ -34,6 +34,7 @@ Primary functionality:
   dataset, useful for SLURM array jobs.
 - **Tile reports:** render PDF reports from stored `tiles_overview` payloads.
 - **Benchmarking:** evaluate MIL model/loss combinations from config grids.
+- **Slide retrieval:** rank reference slides against query slides using bag-level features and configurable representation/search strategies.
 - **Optimization:** run Optuna studies over model and training choices.
 - **Inference:** lightweight inference CLI placeholder for checkpoint prediction
   outputs.
@@ -89,20 +90,35 @@ The package declares these console scripts in `pyproject.toml`:
 
 ```bash
 pathbench-benchmark --config config.yaml
+pathbench-evaluate --config config.yaml
 pathbench-optimize --config config.yaml
 pathbench-features --config config.yaml
+pathbench-mean-rgb --config config.yaml --dataset DatasetA --slide-id SLIDE_001
 pathbench-infer --model_path checkpoint.ckpt --input features.pt --output predictions.json
+pathbench-visualize --config config.yaml
+pathbench-slide-retrieval-representations --config retrieval.yaml
+```
+
+`feature_extraction_slide` and `tiles_report` are currently module-only CLIs:
+
+```bash
+python -m pathbench.cli.feature_extraction_slide --config config.yaml --dataset DatasetA --input /path/to/slide.svs
+python -m pathbench.cli.tiles_report --config config.yaml --log-level INFO
 ```
 
 The modules can also be called directly:
 
 ```bash
 python -m pathbench.cli.feature_extraction --config config.yaml --log-level INFO
-python -m pathbench.cli.feature_extraction_slide --config config.yaml --dataset DatasetA --input /path/to/slide.svs
-python -m pathbench.cli.tiles_report --config config.yaml --log-level INFO
 python -m pathbench.cli.benchmark --config config.yaml
+python -m pathbench.cli.evaluate --config config.yaml
 python -m pathbench.cli.optimize --config config.yaml
 python -m pathbench.cli.inference --model_path checkpoint.ckpt --input features.pt --output predictions.json
+python -m pathbench.cli.mean_rgb --config config.yaml --dataset DatasetA --slide-id SLIDE_001
+python -m pathbench.cli.visualize --config config.yaml
+python -m pathbench.cli.slide_retrieval_representations --config retrieval.yaml
+python -m pathbench.cli.feature_extraction_slide --config config.yaml --dataset DatasetA --input /path/to/slide.svs
+python -m pathbench.cli.tiles_report --config config.yaml --log-level INFO
 ```
 
 Use module commands during development when validating CLI changes; they make it
@@ -125,12 +141,15 @@ Optional column:
 
 - `fallback_mpp`: positive floating-point microns-per-pixel fallback used when a
   WSI backend cannot read valid base MPP metadata.
+- `wsi_path`: explicit absolute or relative slide path. When present and valid,
+  PathBench uses it instead of resolving `{slide}` inside `datasets[].slides_dir`.
 
 Rules:
 
 - `dataset` must match one entry in `datasets[].name`.
-- `slide` is matched against files in `datasets[].slides_dir` using
-  `{slide}.*`.
+- `slide` is resolved as either an exact direct file
+  `{slides_dir}/{slide}.<supported_suffix>` or an exact DICOM folder
+  `{slides_dir}/{slide}/*.dcm`.
 - Supported WSI suffixes include `.svs`, `.ndpi`, `.tiff`, `.tif`, and `.mrxs`.
 - `patient` and `category` are preserved in WSI metadata and downstream
   grouping.
@@ -245,6 +264,7 @@ Supported `experiment.task` values:
 - `regression`
 - `survival`
 - `survival_discrete`
+- `slide_retrieval`
 
 `experiment.task` may be omitted only for `feature_extraction` mode.
 
@@ -594,6 +614,72 @@ TorchMIL integration affects optimization in these places:
 
 The optimization policy should remain package-agnostic: it selects registry keys
 and config values, not concrete TorchMIL classes.
+
+## Slide Retrieval
+
+Slide retrieval ranks reference slides against query slides using bag-level
+features. It reuses existing H5 artifacts — no training is required.
+
+Run:
+
+```bash
+python -m pathbench.cli.benchmark --config retrieval.yaml
+```
+
+Minimal config:
+
+```yaml
+experiment:
+  project_name: tcga_retrieval
+  annotation_file: /data/annotations.csv
+  mode: benchmark
+  task: slide_retrieval
+  aggregation_level: slide
+
+datasets:
+  - name: ReferenceSet
+    slides_dir: /data/slides/reference
+    artifacts_dir: /data/artifacts/reference
+    used_for: reference
+  - name: QuerySet
+    slides_dir: /data/slides/query
+    artifacts_dir: /data/artifacts/query
+    used_for: query
+
+benchmark_parameters:
+  tile_px: [256]
+  tile_mpp: [0.5]
+  feature_extraction: [uni]
+  retrieval_representation: [mean_pooling]
+  search_strategy: [cosine_knn]
+
+slide_retrieval:
+  exclusion_level: patient
+```
+
+Dataset `used_for` roles for slide retrieval:
+
+- `reference` — slides added to the search database only.
+- `query` — slides used as queries only.
+- `query_reference` — slides in both database and query set (leave-one-out style).
+
+`slide_retrieval.exclusion_level` controls self-retrieval exclusion: `none`,
+`slide`, `case`, or `patient` (default). Use `patient` to exclude slides from
+the same patient when querying a shared pool.
+
+Pre-compute representations ahead of the search step for large datasets:
+
+```bash
+python -m pathbench.cli.slide_retrieval_representations --config retrieval.yaml
+```
+
+Outputs are written to:
+
+```text
+project_root/{project_name}/slide_retrieval/{tiling_id}/{feature}/{representation}/{search}/run_{hash}/
+├── manifest.json       — run configuration and summary counts
+└── query_results.csv   — ranked hits per query slide
+```
 
 ## Metrics
 

@@ -5,6 +5,8 @@ from typing import Any, Protocol
 
 
 class ExperimentLike(Protocol):
+    """Minimal structural contract required by policy implementations."""
+
     cfg: Any
     project_root: str | None
 

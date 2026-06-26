@@ -19,13 +19,14 @@ import numpy as np
 import torch
 
 from pathbench.core.models.base import ScikitBase
+from pathbench.training.base import TrainerBase
 from pathbench.training.metrics import (
     compute_task_metrics,
     save_task_evaluation_artifacts,
 )
 
 
-class SklearnSlideTrainer:
+class SklearnSlideTrainer(TrainerBase):
     """Fit a :class:`~pathbench.core.models.base.ScikitBase` estimator on
     slide-level numpy feature arrays and persist evaluation artefacts.
 
@@ -156,6 +157,10 @@ class SklearnSlideTrainer:
         if self.task == "regression":
             return torch.from_numpy(np.asarray(y, dtype=np.float32))
         raise ValueError(f"Unknown task: {self.task!r}")
+
+    def predict(self, model: ScikitBase, dataset: np.ndarray) -> torch.Tensor:
+        """Run prediction for a slide-level feature matrix shaped ``[N, D]``."""
+        return model.predict_as_tensor(dataset)
 
 
 def _primary_metric(task: str) -> str:

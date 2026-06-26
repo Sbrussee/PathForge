@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class H5Layout:
+    """Canonical HDF5 path layout for per-slide PathBench artifacts."""
+
     # ---- shared (per slide) ----
     tissue_dataset: str = "annotations/tissue"  # scalar UTF-8 JSON string
 

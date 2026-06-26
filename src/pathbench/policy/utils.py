@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import Any, Dict, List
+
+
+
 import importlib
 import json
 import logging
@@ -13,6 +17,7 @@ import pandas as pd
 from pathbench.config.config import Config, SearchSpaceParameter
 from pathbench.core.datasets.bag_dataset import BagDataset
 from pathbench.core.experiments.base import ComboConfig
+from pathbench.utils.constants import DATASET_COL
 from pathbench.utils.registries import MODELS
 
 
@@ -136,17 +141,27 @@ def build_bag_dataset_for_task(
     *,
     feature_dir: str | Path,
     name: str,
+    dataset_entry: Any | None = None,
 ) -> BagDataset:
     """Construct a task-aware bag dataset from config and a feature directory."""
 
     task = str(config.experiment.task or "classification")
+    annotations_df = pd.read_csv(config.experiment.annotation_file)
+    dataset_name = None
+    if dataset_entry is not None and DATASET_COL in annotations_df.columns:
+        dataset_name = str(dataset_entry.name)
+    slide_column = config.experiment.slide_column
+    if slide_column not in annotations_df.columns and "slide_id" in annotations_df.columns:
+        slide_column = None
     return BagDataset(
         name,
         str(feature_dir),
         str(config.experiment.annotation_file),
         config.experiment.label_column,
+        annotations_df=annotations_df,
+        dataset_name=dataset_name,
         task=task,
-        slide_column=config.experiment.slide_column,
+        slide_column=slide_column,
         time_column=config.experiment.survival_time_column,
         event_column=config.experiment.survival_event_column,
         bag_size=config.mil.bag_size,
@@ -509,14 +524,14 @@ def save_benchmark_visualizations(
             "lr",
             "dropout_p",
         )
-        if column in success_df.columns
+        if column in success_df.columns and success_df[column].notna().any()
     ]
     exported: list[Path] = []
     ranked_bar = px.bar(
         success_df,
         x="run_label",
         y="objective_value",
-        color="model" if "model" in success_df.columns else None,
+        color="model" if "model" in success_df.columns and success_df["model"].notna().any() else None,
         hover_data=hover_columns,
         title=f"Benchmark Performance Ranked by {objective_metric}",
     )
@@ -532,7 +547,7 @@ def save_benchmark_visualizations(
         success_df,
         x="rank",
         y="objective_value",
-        color="model" if "model" in success_df.columns else None,
+        color="model" if "model" in success_df.columns and success_df["model"].notna().any() else None,
         hover_name="run_label",
         hover_data=hover_columns,
         title=f"Benchmark Rank vs {objective_metric}",
@@ -553,7 +568,7 @@ def save_optuna_visualizations(
     output_dir: Path,
     logger: logging.Logger | None = None,
 ) -> list[Path]:
-    """Export supported Optuna visualization figures as HTML files.
+    """Export supported Optuna visualization figures as HTML and PNG files.
 
     The current Optuna documentation exposes Plotly-backed visualization
     helpers including ``plot_param_importances``, ``plot_optimization_history``,
@@ -592,6 +607,15 @@ def save_optuna_visualizations(
         output_path = output_dir / f"{name}.html"
         fig.write_html(str(output_path))
         exported.append(output_path)
+        png_path = output_dir / f"{name}.png"
+        if _write_optuna_png(
+            fig,
+            name=name,
+            study=study,
+            output_path=png_path,
+            logger=logger,
+        ):
+            exported.append(png_path)
 
     hypervolume_builder = getattr(visualization, "plot_hypervolume_history", None)
     reference_point = _hypervolume_reference_point(study)
@@ -607,7 +631,79 @@ def save_optuna_visualizations(
             output_path = output_dir / "plot_hypervolume_history.html"
             fig.write_html(str(output_path))
             exported.append(output_path)
+            png_path = output_dir / "plot_hypervolume_history.png"
+            if _write_optuna_png(
+                fig,
+                name="plot_hypervolume_history",
+                study=study,
+                output_path=png_path,
+                logger=logger,
+                reference_point=reference_point,
+            ):
+                exported.append(png_path)
     return exported
+
+
+def _write_optuna_png(
+    fig: Any,
+    *,
+    name: str,
+    study: Any,
+    output_path: Path,
+    logger: logging.Logger | None = None,
+    reference_point: Any | None = None,
+) -> bool:
+    try:
+        fig.write_image(str(output_path), format="png")
+        return output_path.exists()
+    except Exception as exc:
+        _log_optional_skip(
+            logger,
+            f"Plotly static export unavailable for Optuna visualization {name}: {exc}",
+        )
+
+    return _write_optuna_matplotlib_png(
+        name=name,
+        study=study,
+        output_path=output_path,
+        logger=logger,
+        reference_point=reference_point,
+    )
+
+
+def _write_optuna_matplotlib_png(
+    *,
+    name: str,
+    study: Any,
+    output_path: Path,
+    logger: logging.Logger | None = None,
+    reference_point: Any | None = None,
+) -> bool:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from matplotlib import pyplot as plt
+
+        mpl_visualization = importlib.import_module("optuna.visualization.matplotlib")
+        builder = getattr(mpl_visualization, name, None)
+        if builder is None:
+            return False
+        if name == "plot_hypervolume_history":
+            axis = builder(study, reference_point)
+        else:
+            axis = builder(study)
+        figure = axis.figure
+        figure.tight_layout()
+        figure.savefig(output_path, dpi=150)
+        plt.close(figure)
+        return output_path.exists()
+    except Exception as exc:
+        _log_optional_skip(
+            logger,
+            f"Skipping PNG export for Optuna visualization {name}: {exc}",
+        )
+        return False
 
 
 def _first_or_none(values: list[Any]) -> Any:

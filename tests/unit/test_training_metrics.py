@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import torch
 
 from pathbench.training.metrics import (
+    _discrete_continuous_hazard_scores,
+    _survival_kaplan_meier_time,
+    _survival_time_axis_label,
     compute_task_metrics,
     save_task_evaluation_artifacts,
 )
@@ -115,6 +119,47 @@ def test_discrete_survival_metrics_and_artifacts_are_saved(tmp_path: Path) -> No
     assert len(curve_payload["c_index_times"]) >= 1
     assert len(curve_payload["c_index_times"]) == len(curve_payload["c_index_curve"])
     assert "kaplan_meier" in curve_payload
+
+
+def test_discrete_survival_hazard_uses_piecewise_constant_mapping() -> None:
+    probabilities = torch.tensor([[0.2, 0.5, 0.8]], dtype=torch.float32)
+    logits = torch.logit(probabilities)
+    target = {
+        "time": torch.tensor([0], dtype=torch.long),
+        "event": torch.tensor([1.0], dtype=torch.float32),
+        "bin_widths": torch.tensor([2.0, 4.0, 8.0], dtype=torch.float32),
+    }
+
+    hazard = _discrete_continuous_hazard_scores(
+        logits,
+        time=target["time"].float().numpy(),
+        target=target,
+    )
+
+    expected = -torch.log1p(-probabilities).numpy() / target["bin_widths"].numpy()
+    assert hazard == pytest.approx(expected)
+    assert hazard[0, 1] != pytest.approx(float(probabilities[0, 1] / 4.0))
+
+
+def test_discrete_survival_kaplan_meier_prefers_continuous_time() -> None:
+    target = {
+        "time": torch.tensor([0, 1, 2], dtype=torch.long),
+        "event": torch.tensor([1.0, 1.0, 0.0], dtype=torch.float32),
+        "continuous_time": torch.tensor([12.0, 24.0, 48.0], dtype=torch.float32),
+    }
+
+    km_time = _survival_kaplan_meier_time(
+        target,
+        fallback_time=target["time"].float().numpy(),
+        task="survival_discrete",
+    )
+
+    assert km_time.tolist() == [12.0, 24.0, 48.0]
+
+
+def test_survival_time_axis_label_uses_time_bins_for_discrete_survival() -> None:
+    assert _survival_time_axis_label("survival") == "Evaluation time"
+    assert _survival_time_axis_label("survival_discrete") == "Time bins"
 
 
 def test_compute_task_metrics_filters_to_selected_metrics() -> None:

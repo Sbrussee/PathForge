@@ -44,6 +44,38 @@ Inference
    :undoc-members:
    :show-inheritance:
 
+Evaluation
+----------
+
+.. automodule:: pathbench.cli.evaluate
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Mean RGB
+--------
+
+.. automodule:: pathbench.cli.mean_rgb
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Visualization
+-------------
+
+.. automodule:: pathbench.cli.visualize
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Slide Retrieval Representations
+-------------------------------
+
+.. automodule:: pathbench.cli.slide_retrieval_representations
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Tile Reports
 ------------
 

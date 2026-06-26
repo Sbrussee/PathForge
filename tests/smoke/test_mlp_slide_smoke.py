@@ -25,7 +25,6 @@ from ._smoke_training import (
     SurvivalBagDataset,
     fit_smoke_model,
     register_smoke_components,
-    training_artifact_outputs,
 )
 
 
@@ -88,10 +87,7 @@ def test_slide_mlp_binary_classification_smoke(
         attach_smoke_outputs(
             meta,
             step_name="slide_mlp_binary_classification",
-            final={
-                "best_model_path": Path(best_path),
-                "val_confusion_matrix": artifacts_dir / "val_confusion_matrix.png",
-            },
+            final={"best_model_path": Path(best_path)},
         )
 
     assert Path(best_path).exists(), "No model checkpoint saved."
@@ -141,7 +137,7 @@ def test_slide_mlp_continuous_survival_smoke(
         attach_smoke_outputs(
             meta,
             step_name="slide_mlp_continuous_survival",
-            final={**training_artifact_outputs(result)},
+            final={"best_model_path": Path(result.best_model_path)},
         )
 
     assert Path(result.best_model_path).exists()
@@ -192,7 +188,7 @@ def test_slide_mlp_discrete_survival_smoke(
         attach_smoke_outputs(
             meta,
             step_name="slide_mlp_discrete_survival",
-            final={**training_artifact_outputs(result)},
+            final={"best_model_path": Path(result.best_model_path)},
         )
 
     assert Path(result.best_model_path).exists()

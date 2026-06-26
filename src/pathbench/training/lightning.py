@@ -14,6 +14,15 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from pathbench.adapters.torchmil.collate import torchmil_or_pathbench_collate
+
+
+def _cuda_compatible() -> bool:
+    if not torch.cuda.is_available():
+        return False
+    cap = torch.cuda.get_device_capability(0)
+    device_sm = cap[0] * 10 + cap[1]
+    supported = {int(a[3:]) for a in torch.cuda.get_arch_list() if a.startswith("sm_")}
+    return not supported or device_sm >= min(supported)
 from pathbench.adapters.torchmil.task_output import normalize_torchmil_output
 from pathbench.core.datasets.bag_schema import assert_bag_schema
 from pathbench.core.models.mil_base import MILModelBase
@@ -295,7 +304,7 @@ class LightningTrainer(TrainerBase):
             accumulate_grad_batches=config.mil.accumulate_grad_batches,
             gradient_clip_val=config.mil.gradient_clip_val,
             callbacks=self.callbacks,
-            accelerator="gpu" if torch.cuda.is_available() else "cpu",
+            accelerator="gpu" if _cuda_compatible() else "cpu",
             devices=1,
             default_root_dir=str(self.run_root),
             logger=True,

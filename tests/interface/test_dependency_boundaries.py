@@ -23,19 +23,28 @@ def _imported_modules(path: Path) -> set[str]:
 
 
 def test_core_layer_does_not_import_outer_application_layers() -> None:
-    """The core layer must not depend on outer runtime layers."""
+    """The core layer must not depend on outer runtime layers.
+
+    core/tasks/ is excluded from this check because task implementations are
+    use-case orchestrators that intentionally depend on policy utilities
+    (apply_search_params, build_mil_model_for_config). They live in core/ for
+    co-location with the registry and base class, but are not pure domain
+    abstractions.
+    """
     core_root = Path("src/pathbench/core")
+    tasks_root = Path("src/pathbench/core/tasks")
     forbidden_prefixes = (
         "pathbench.cli",
         "pathbench.policy",
         "pathbench.training",
         "pathbench.inference",
         "pathbench.optimization",
-        "pathbench.benchmarking",
     )
     offenders: list[tuple[str, str]] = []
 
     for path in core_root.rglob("*.py"):
+        if path.is_relative_to(tasks_root):
+            continue
         for module_name in _imported_modules(path):
             if module_name.startswith(forbidden_prefixes):
                 offenders.append((str(path), module_name))

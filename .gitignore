@@ -9,6 +9,10 @@ venv/
 .env/
 env/
 
+/experiments/
+
+user_configs/
+
 # uv / pip
 uv.lock
 *.egg-info/
@@ -18,6 +22,9 @@ dist/
 
 # Testing & coverage
 .pytest_cache/
+
+.codex
+.design
 .coverage
 .coverage.*
 htmlcov/
