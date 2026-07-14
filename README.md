@@ -14,20 +14,23 @@ PathForge.
 
 ## Documentation
 
-Start with the [documentation home](docs/index.rst), then use the page that
-matches your task:
+Start with the [documentation home](https://pathforge.readthedocs.io/), then
+use the page that matches your task:
 
-- [Installation](docs/installation.rst) and [quickstart](docs/quickstart.rst)
-- [Data preparation](docs/data_preparation.rst)
-- [Configuration reference](docs/configuration.rst)
-- [MIL benchmark and optimization options](docs/mil_options.rst)
-- [End-to-end classification tutorial](docs/tutorials/end_to_end.rst) and the
-  [complete tutorial index](docs/tutorials/index.rst)
-- [Backend integrations](docs/backends.rst)
-- [API reference](docs/api/index.rst) and [API usage examples](docs/api/examples.rst)
-- [HDF5 artifact layout](docs/HDF5_structure.md)
-- [Task outputs, metrics, and visualizations](docs/task_outputs.rst)
-- [Testing](docs/testing.rst) and [troubleshooting](docs/troubleshooting.rst)
+- [Installation](https://pathforge.readthedocs.io/en/latest/installation.html)
+  and [quickstart](https://pathforge.readthedocs.io/en/latest/quickstart.html)
+- [Data preparation](https://pathforge.readthedocs.io/en/latest/data_preparation.html)
+- [Configuration reference](https://pathforge.readthedocs.io/en/latest/configuration.html)
+- [MIL benchmark and optimization options](https://pathforge.readthedocs.io/en/latest/mil_options.html)
+- [End-to-end classification tutorial](https://pathforge.readthedocs.io/en/latest/tutorials/end_to_end.html)
+  and the [complete tutorial index](https://pathforge.readthedocs.io/en/latest/tutorials/index.html)
+- [Backend integrations](https://pathforge.readthedocs.io/en/latest/backends.html)
+- [API reference](https://pathforge.readthedocs.io/en/latest/api/index.html) and
+  [API usage examples](https://pathforge.readthedocs.io/en/latest/api/examples.html)
+- [HDF5 artifact layout](https://pathforge.readthedocs.io/en/latest/HDF5_structure.html)
+- [Task outputs, metrics, and visualizations](https://pathforge.readthedocs.io/en/latest/task_outputs.html)
+- [Testing](https://pathforge.readthedocs.io/en/latest/testing.html) and
+  [troubleshooting](https://pathforge.readthedocs.io/en/latest/troubleshooting.html)
 
 The end-to-end tutorial covers slide and annotation preparation, feature
 extraction, MIL training, evaluation, and packaged-model inference. The
@@ -249,9 +252,10 @@ then becomes `annotation_column` in the PathForge config.
 ## Configuration Reference
 
 The canonical, maintained schema is the
-[Sphinx configuration reference](docs/configuration.rst). See the
-[MIL options overview](docs/mil_options.rst) for benchmark axes and Optuna
-search-space syntax. The examples below provide a compact orientation.
+[configuration reference](https://pathforge.readthedocs.io/en/latest/configuration.html).
+See the [MIL options overview](https://pathforge.readthedocs.io/en/latest/mil_options.html)
+for benchmark axes and Optuna search-space syntax. The examples below provide
+a compact orientation.
 
 Minimal feature extraction config:
 
