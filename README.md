@@ -619,6 +619,10 @@ optimization:
   sampler: TPESampler
   pruner: HyperbandPruner
   trials: 50
+  search_space:
+    lr: {kind: float, low: 1.0e-5, high: 1.0e-3, log: true}
+    epochs: {kind: int, low: 10, high: 50, step: 5}
+    dropout_p: {kind: float, low: 0.0, high: 0.5}
 
 benchmark_parameters:
   feature_extraction: [resnet18]
@@ -626,18 +630,20 @@ benchmark_parameters:
   loss: [CrossEntropyLoss]
 ```
 
-TorchMIL integration affects optimization in these places:
+Define ranges explicitly under `optimization.search_space` in the YAML config.
+Each entry uses `kind: float`, `kind: int`, or `kind: categorical`; numeric
+entries require `low` and `high`, while categorical entries require `choices`.
+The policy applies supported MIL training keys (`optimizer`, `scheduler`,
+`batch_size`, `epochs`, `lr`, `weight_decay`, `dropout_p`, `bag_size`, `z_dim`,
+`encoder_layers`, and `k`) and active `mil`, `loss`, and `feature_extraction`
+choices. Multi-value `benchmark_parameters` lists also become categorical
+Optuna dimensions automatically.
 
-- Search spaces may include `model = "torchmil"` as a PathForge registry key.
-- Search spaces may include `mil.torchmil_model`, for example `ABMIL`, `DSMIL`,
-  or another installed TorchMIL class.
-- Trial parameters may update `mil.torchmil_model_kwargs`, such as hidden
-  dimensions or dropout, if supported by the selected TorchMIL model.
-- Objective metrics can be native, TorchMetrics-backed, or TorchSurv-backed,
-  selected by config.
-
-The optimization policy should remain package-agnostic: it selects registry keys
-and config values, not concrete TorchMIL classes.
+`mil.torchmil_model` and `mil.torchmil_model_kwargs` are fixed for one config;
+the current policy does not apply dotted search-space keys or arbitrary model
+constructor kwargs. Use separate configs when comparing TorchMIL architectures
+or constructor layouts. Objective metrics can be native, TorchMetrics-backed,
+or TorchSurv-backed, selected by config.
 
 ## Slide Retrieval
 

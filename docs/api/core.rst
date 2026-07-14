@@ -59,10 +59,6 @@ Native MIL Models
    :members:
    :show-inheritance:
 
-.. automodule:: pathforge.core.models.mil_mm
-   :members:
-   :show-inheritance:
-
 .. automodule:: pathforge.core.models.slide_mlp
    :members:
    :show-inheritance:

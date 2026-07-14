@@ -47,7 +47,6 @@ DISCOVERED_MODULE_BASES: dict[str, tuple[type[Any], ...]] = {
     "pathforge.core.models.mamba_mil": (MILModelBase, ModelBase),
     "pathforge.core.models.mil_ens": (MILModelBase, ModelBase),
     "pathforge.core.models.mil_graph": (MILModelBase, ModelBase),
-    "pathforge.core.models.mil_mm": (MILModelBase, ModelBase),
     "pathforge.core.models.perceiver_mil": (MILModelBase, ModelBase),
     "pathforge.core.models.prototype_mil": (MILModelBase, ModelBase),
     "pathforge.core.models.slide_mlp": (SlideLevelModel, MILModelBase, ModelBase),
