@@ -92,22 +92,16 @@ The ``native`` backend uses PathForge model classes registered directly in
 
    * - Registry Key
      - Model
-   * - ``AttentionMIL``
-     - Attention-based MIL (Ilse et al., 2018).
-   * - ``TransMIL``
-     - Transformer-based MIL (Shao et al., 2021).
    * - ``PerceiverMIL``
      - Perceiver-based MIL.
    * - ``VarMIL``
      - Variational MIL.
    * - ``PrototypeMIL``
      - Prototype-based MIL.
-   * - ``MambaFormerMIL``
-     - Mamba-based MIL.
-   * - ``EnsembleMIL``
-     - Ensemble of MIL models.
-   * - ``MultiModalMIL``
-     - Multi-modal MIL.
+   * - ``MambaMIL``
+     - Optional Mamba-based MIL; available when ``mamba`` is installed.
+   * - ``SlideVectorMLP``
+     - Neural slide-vector model exposed by the native catalog.
 
 Example config:
 
@@ -117,7 +111,7 @@ Example config:
      backend: native
 
    benchmark_parameters:
-     mil: [AttentionMIL]
+     mil: [PerceiverMIL]
      loss: [CrossEntropyLoss]
 
 torchmil

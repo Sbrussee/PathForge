@@ -18,6 +18,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.mathjax",
     "myst_parser",
 ]
 
@@ -25,7 +26,7 @@ templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "furo"
-html_title = f"PathForge {release}"
+html_title = "PathForge"
 html_logo = None
 
 autodoc_default_options = {
@@ -36,6 +37,15 @@ autodoc_default_options = {
     "exclude-members": "__weakref__",
     "show-inheritance": True,
 }
+
+# Keep every callable's complete typed signature visible and repeat type
+# information alongside parameter descriptions. This makes inherited and
+# otherwise sparsely documented callables usable from the generated reference.
+autodoc_class_signature = "separated"
+autodoc_preserve_defaults = True
+autodoc_typehints = "both"
+autodoc_typehints_description_target = "all"
+autodoc_typehints_format = "short"
 
 autodoc_mock_imports = [
     "lazyslide",
@@ -74,6 +84,8 @@ source_suffix = {
 }
 
 myst_enable_extensions = [
+    "amsmath",
     "colon_fence",
     "deflist",
+    "dollarmath",
 ]

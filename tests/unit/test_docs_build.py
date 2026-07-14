@@ -14,6 +14,7 @@ import importlib
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 
@@ -34,6 +35,90 @@ def test_legacy_pathforge_mil_branding_is_absent(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     legacy_name = "PathForge" + "-MIL"
     assert legacy_name not in text
+
+
+def test_readme_local_links_exist() -> None:
+    """Keep repository-relative documentation links in the README valid."""
+    readme = REPO_ROOT / "README.md"
+    text = readme.read_text(encoding="utf-8")
+    link_targets = re.findall(r"(?<!!)\[[^]]+\]\(([^)]+)\)", text)
+    missing: list[str] = []
+    for raw_target in link_targets:
+        target = raw_target.split("#", maxsplit=1)[0].strip()
+        if not target or "://" in target or target.startswith("mailto:"):
+            continue
+        resolved = REPO_ROOT / unquote(target)
+        if not resolved.exists():
+            missing.append(raw_target)
+    assert not missing, f"README links point to missing local files: {missing}"
+
+
+def test_mil_options_match_code_catalogs() -> None:
+    """Keep the documented static option names aligned with code catalogs."""
+    from pathforge.adapters.mil_lab.backend import MILLAB_MODEL_SPECS
+    from pathforge.adapters.torchmil.backend import TORCHMIL_MODEL_SPECS
+    from pathforge.config.config import BenchmarkParameters
+    from pathforge.core.models.sklearn_slide import SLIDE_LEVEL_MODEL_NAMES
+    from pathforge.utils.registries import LOSSES, list_mil_models
+
+    text = (DOCS_DIR / "mil_options.rst").read_text(encoding="utf-8")
+    mil_grid_fields = set(BenchmarkParameters.model_fields) - {
+        "retrieval_representation",
+        "search_strategy",
+    }
+    expected_names = {
+        *mil_grid_fields,
+        *MILLAB_MODEL_SPECS,
+        *TORCHMIL_MODEL_SPECS,
+        *SLIDE_LEVEL_MODEL_NAMES,
+        *(item.name for item in list_mil_models()),
+        *LOSSES.list_plugins(),
+    }
+    missing = sorted(name for name in expected_names if name not in text)
+    assert not missing, f"MIL option names missing from documentation: {missing}"
+
+
+def test_task_outputs_match_metric_and_visualization_catalogs() -> None:
+    """Keep task-output options aligned with configuration and registries."""
+    from pathforge.config.config import (
+        CLASSIFICATION_METRIC_NAMES,
+        REGRESSION_METRIC_NAMES,
+        SURVIVAL_METRIC_NAMES,
+    )
+    from pathforge.core.evaluation.registry import (
+        import_evaluation_metric_modules,
+        list_evaluation_metrics,
+    )
+    from pathforge.slide_retrieval.visualization.service import (
+        _SUPPORTED_VISUALIZATIONS,
+    )
+
+    import_evaluation_metric_modules()
+    text = (DOCS_DIR / "task_outputs.rst").read_text(encoding="utf-8")
+    expected_names = {
+        *CLASSIFICATION_METRIC_NAMES,
+        *REGRESSION_METRIC_NAMES,
+        *SURVIVAL_METRIC_NAMES,
+        *list_evaluation_metrics("slide_retrieval"),
+        *_SUPPORTED_VISUALIZATIONS,
+    }
+    missing = sorted(name for name in expected_names if name not in text)
+    assert not missing, f"Task output options missing from documentation: {missing}"
+
+
+def test_pipeline_optimization_terminology() -> None:
+    """Use the workflow-level Pipeline Optimization name consistently."""
+    paths = [
+        REPO_ROOT / "README.md",
+        *DOCS_DIR.rglob("*.rst"),
+        *DOCS_DIR.rglob("*.md"),
+    ]
+    offenders = [
+        str(path.relative_to(REPO_ROOT))
+        for path in paths
+        if "hyperparameter optimization" in path.read_text(encoding="utf-8").lower()
+    ]
+    assert not offenders, f"Legacy optimization terminology remains in: {offenders}"
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +285,7 @@ def test_autodoc_module_is_importable(
     reason="sphinx not installed",
 )
 def test_sphinx_build_no_errors(tmp_path: Path) -> None:
-    """Run a dummy Sphinx build and assert exit code 0."""
+    """Build the HTML documentation and verify that equations are rendered."""
     import subprocess
 
     build_dir = tmp_path / "_build" / "html"
@@ -220,3 +305,13 @@ def test_sphinx_build_no_errors(tmp_path: Path) -> None:
     assert result.returncode == 0, (
         f"Sphinx build failed.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
     )
+    metrics_html = (
+        build_dir / "slide-retrieval-results-and-metrics.html"
+    ).read_text(encoding="utf-8")
+    assert "mathjax" in metrics_html.lower()
+    assert 'class="math notranslate nohighlight"' in metrics_html
+    examples_html = (build_dir / "api" / "examples.html").read_text(
+        encoding="utf-8"
+    )
+    assert "build_bag_id" in examples_html
+    assert "pathforge benchmark run --help" in examples_html

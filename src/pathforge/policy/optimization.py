@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 import optuna
+import pandas as pd
 
 from pathforge.policy.base import PolicyBase
 from pathforge.config.config import Config
@@ -42,6 +43,8 @@ class OptimizationPolicy(PolicyBase):
 
         if name == "TPESampler":
             return optuna.samplers.TPESampler(seed=seed)
+        elif name == "GPSampler":
+            return optuna.samplers.GPSampler(seed=seed)
         elif name == "RandomSampler":
             return optuna.samplers.RandomSampler(seed=seed)
         elif name == "CmaEsSampler":

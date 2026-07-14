@@ -55,7 +55,7 @@ The **Use Case / Application layer**:
 Examples:
 - Running a benchmarking workflow
 - Executing a feature extraction pipeline
-- Performing hyperparameter optimization
+- Performing pipeline optimization
 
 ---
 
@@ -184,7 +184,7 @@ Policies define **how an experiment is executed**.
 
 - Feature extraction policy
 - MIL benchmarking policy
-- Hyperparameter optimization policy
+- Pipeline optimization policy
 
 ---
 

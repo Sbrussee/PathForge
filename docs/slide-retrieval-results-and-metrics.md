@@ -1,6 +1,6 @@
 # Slide Retrieval Results And Metrics
 
-This page explains where slide-retrieval benchmark outputs are stored in a PathForge2.0 project, how to find the files for one specific benchmark combination, and how the saved metrics are structured.
+This page explains where slide-retrieval benchmark outputs are stored in a PathForge project, how to find the files for one specific benchmark combination, and how the saved metrics are structured.
 
 ## Overview
 
@@ -143,7 +143,7 @@ So if you want to inspect the retrieval list for one sample, find its row in `qu
 
 ### `evaluation_metrics.json`
 
-After running the evaluation workflow, PathForge2.0 writes:
+After running the evaluation workflow, PathForge writes:
 
 ```text
 <run_dir>/evaluation_metrics.json
@@ -280,6 +280,13 @@ Checks whether at least one of the top-`k` retrieved samples has the same label 
 
 Measures how many of the top-`k` retrieved samples have the same label as the query.
 
+For query $q$, let $r_i(q)$ be 1 when the result at rank $i$ has the same
+label as the query and 0 otherwise. Then:
+
+$$
+\operatorname{Precision@k}(q) = \frac{1}{k}\sum_{i=1}^{k} r_i(q)
+$$
+
 - High value means: a large fraction of the top `k` hits are relevant
 - Low value means: the retrieved list contains many irrelevant samples
 
@@ -319,7 +326,15 @@ This is especially useful when class balance matters, because macro F1 gives equ
 
 ## Macro vs Micro
 
-Most retrieval metrics report both `macro` and `micro`.
+Most retrieval metrics report both `macro` and `micro`. If $M_c$ is the
+metric for label $c$, $n_c$ is its number of evaluable queries, and $C$ is the
+set of labels, the reported aggregates are:
+
+$$
+M_{\mathrm{macro}} = \frac{1}{|C|}\sum_{c \in C} M_c,
+\qquad
+M_{\mathrm{micro}} = \frac{\sum_{c \in C} n_c M_c}{\sum_{c \in C} n_c}
+$$
 
 - `macro`: average over labels, so rare labels count equally with common labels
 - `micro`: weighted by the number of queries per label, so common labels have more influence
@@ -348,7 +363,7 @@ If you have multiple `run_*` folders for the same combination, compare their `ma
 
 ## Cached Retrieval Representations
 
-The final run results live in the project folder, but PathForge2.0 also caches retrieval representations in each dataset's `artifacts_dir`.
+The final run results live in the project folder, but PathForge also caches retrieval representations in each dataset's `artifacts_dir`.
 
 Those cached files are stored at:
 

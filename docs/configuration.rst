@@ -269,6 +269,9 @@ When ``source: gdc``, use these fields instead of ``slides_dir``/``name``:
 ``benchmark_parameters``
 -------------------------
 
+See :doc:`mil_options` for the complete option catalogue, backend-aware model
+lists, validation constraints, and benchmark/optimization examples.
+
 Grid-search axes. All lists are combined exhaustively.
 
 .. list-table::
@@ -383,7 +386,9 @@ Slide retrieval task settings (only used when ``task: slide_retrieval``).
 ``optimization``
 ----------------
 
-Optuna study settings (only used when ``mode: optimization``).
+Optuna study settings (only used when ``mode: optimization``). Search spaces
+must be declared in the YAML config under ``optimization.search_space``;
+PathForge does not infer numeric ranges from model constructors.
 
 .. list-table::
    :widths: 25 15 60
@@ -393,26 +398,73 @@ Optuna study settings (only used when ``mode: optimization``).
      - Default
      - Description
    * - ``study_name``
-     - *required*
+     - ``study``
      - Optuna study name.
    * - ``objective_metric``
-     - ``val_loss``
+     - ``balanced_accuracy``
      - Metric to optimize.
    * - ``objective_mode``
-     - ``min``
+     - ``max``
      - ``min`` or ``max``.
    * - ``sampler``
      - ``TPESampler``
-     - Optuna sampler class name (e.g. ``TPESampler``, ``RandomSampler``, ``CmaEsSampler``).
+     - Supported: ``TPESampler`` (TPE/Bayesian), ``GPSampler``
+       (Gaussian-process Bayesian), ``RandomSampler``, and ``CmaEsSampler``.
+       ``GridSampler`` is accepted but currently falls back to TPE. See the
+       `Optuna sampler reference
+       <https://optuna.readthedocs.io/en/stable/reference/samplers/index.html>`_
+       for Optuna's complete catalogue; names not listed as supported here are
+       not automatically supported by PathForge.
    * - ``pruner``
      - ``HyperbandPruner``
      - Optuna pruner class name (e.g. ``HyperbandPruner``, ``MedianPruner``, ``NopPruner``).
    * - ``trials``
-     - ``50``
+     - ``100``
      - Number of Optuna trials to run.
    * - ``search_space``
-     - ``{}``
-     - Dict defining the trial parameter search space.
+     - See below
+     - Mapping from parameter names to typed search-space specifications.
+
+Define every explicit range in the config. ``float`` and ``int`` parameters
+require ``low`` and ``high``; both may set ``step`` and ``log``.
+``categorical`` parameters require ``choices``:
+
+.. code-block:: yaml
+
+   optimization:
+     study_name: abmil_search
+     objective_metric: balanced_accuracy
+     objective_mode: max
+     sampler: TPESampler
+     pruner: HyperbandPruner
+     trials: 100
+     search_space:
+       lr:
+         kind: float
+         low: 1.0e-5
+         high: 1.0e-3
+         log: true
+       epochs:
+         kind: int
+         low: 10
+         high: 50
+         step: 5
+       z_dim:
+         kind: categorical
+         choices: [128, 256, 512]
+
+The current optimization policy applies these training keys:
+``optimizer``, ``scheduler``, ``batch_size``, ``epochs``, ``lr``,
+``weight_decay``, ``dropout_p``, ``bag_size``, ``z_dim``,
+``encoder_layers``, and ``k``. It also applies active ``mil``, ``loss``, and
+``feature_extraction`` component choices. Multi-value lists in
+``benchmark_parameters`` are automatically added as categorical dimensions
+unless the same name is explicitly defined in ``optimization.search_space``.
+
+Backend constructor dictionaries such as ``mil.torchmil_model_kwargs`` are
+fixed config in the current implementation; arbitrary dotted keys or kwargs in
+``optimization.search_space`` are sampled but are not applied to the model.
+Use separate configs to optimize different backend constructor layouts.
 
 Top-Level Fields
 ----------------

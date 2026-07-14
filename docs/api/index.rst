@@ -21,6 +21,7 @@ implementation modules are intentionally omitted.
    adapters
    utils
    inference
+   examples
 
 Package Map
 -----------
@@ -55,3 +56,5 @@ Package Map
      - Registries, optional guards, constants, logging utilities.
    * - :doc:`inference`
      - Heatmap generation and H5-backed inference visualization helpers.
+   * - :doc:`examples`
+     - Copyable examples for configuration, identifiers, registries, and CLI use.
