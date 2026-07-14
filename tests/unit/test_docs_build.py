@@ -36,6 +36,31 @@ def test_legacy_pathforge_mil_branding_is_absent(path: Path) -> None:
     assert legacy_name not in text
 
 
+def test_mil_options_match_code_catalogs() -> None:
+    """Keep the documented static option names aligned with code catalogs."""
+    from pathforge.adapters.mil_lab.backend import MILLAB_MODEL_SPECS
+    from pathforge.adapters.torchmil.backend import TORCHMIL_MODEL_SPECS
+    from pathforge.config.config import BenchmarkParameters
+    from pathforge.core.models.sklearn_slide import SLIDE_LEVEL_MODEL_NAMES
+    from pathforge.utils.registries import LOSSES, list_mil_models
+
+    text = (DOCS_DIR / "mil_options.rst").read_text(encoding="utf-8")
+    mil_grid_fields = set(BenchmarkParameters.model_fields) - {
+        "retrieval_representation",
+        "search_strategy",
+    }
+    expected_names = {
+        *mil_grid_fields,
+        *MILLAB_MODEL_SPECS,
+        *TORCHMIL_MODEL_SPECS,
+        *SLIDE_LEVEL_MODEL_NAMES,
+        *(item.name for item in list_mil_models()),
+        *LOSSES.list_plugins(),
+    }
+    missing = sorted(name for name in expected_names if name not in text)
+    assert not missing, f"MIL option names missing from documentation: {missing}"
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

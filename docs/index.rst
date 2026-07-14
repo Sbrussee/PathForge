@@ -1,5 +1,5 @@
-PathForge 2.0
-=============
+PathForge
+=========
 
 **PathForge** is a modular benchmarking framework for multiple instance
 learning (MIL) in computational pathology. It supports whole-slide image (WSI)
@@ -32,6 +32,7 @@ adapter modules where practical.
    :caption: Reference
 
    configuration
+   mil_options
    testing
    backends
    architecture

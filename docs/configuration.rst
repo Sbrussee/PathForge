@@ -269,6 +269,9 @@ When ``source: gdc``, use these fields instead of ``slides_dir``/``name``:
 ``benchmark_parameters``
 -------------------------
 
+See :doc:`mil_options` for the complete option catalogue, backend-aware model
+lists, validation constraints, and benchmark/optimization examples.
+
 Grid-search axes. All lists are combined exhaustively.
 
 .. list-table::
