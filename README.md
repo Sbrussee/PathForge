@@ -11,9 +11,27 @@ PathForge is the successor to and replacement for
 expected to be deprecated; new development and new projects should use
 PathForge.
 
-For a complete worked workflow—from slide and annotation preparation through
-feature extraction, MIL training, evaluation, and packaged-model inference—see
-the [end-to-end classification tutorial](docs/tutorials/end_to_end.rst).
+## Documentation
+
+Start with the [documentation home](docs/index.rst), then use the page that
+matches your task:
+
+- [Installation](docs/installation.rst) and [quickstart](docs/quickstart.rst)
+- [Data preparation](docs/data_preparation.rst)
+- [Configuration reference](docs/configuration.rst)
+- [MIL benchmark and optimization options](docs/mil_options.rst)
+- [End-to-end classification tutorial](docs/tutorials/end_to_end.rst) and the
+  [complete tutorial index](docs/tutorials/index.rst)
+- [Backend integrations](docs/backends.rst)
+- [API reference](docs/api/index.rst) and [API usage examples](docs/api/examples.rst)
+- [HDF5 artifact layout](docs/HDF5_structure.md)
+- [Testing](docs/testing.rst) and [troubleshooting](docs/troubleshooting.rst)
+
+The end-to-end tutorial covers slide and annotation preparation, feature
+extraction, MIL training, evaluation, and packaged-model inference. The
+configuration reference defines the complete YAML schema; the MIL options page
+identifies benchmark grids, installed backend catalogs, and config-defined
+Optuna search spaces.
 
 ## What PathForge Does
 
@@ -227,6 +245,11 @@ download first and inspect the generated CSV files such as `files_metadata.csv`,
 then becomes `annotation_column` in the PathForge config.
 
 ## Configuration Reference
+
+The canonical, maintained schema is the
+[Sphinx configuration reference](docs/configuration.rst). See the
+[MIL options overview](docs/mil_options.rst) for benchmark axes and Optuna
+search-space syntax. The examples below provide a compact orientation.
 
 Minimal feature extraction config:
 

@@ -14,6 +14,7 @@ import importlib
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 
@@ -34,6 +35,22 @@ def test_legacy_pathforge_mil_branding_is_absent(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     legacy_name = "PathForge" + "-MIL"
     assert legacy_name not in text
+
+
+def test_readme_local_links_exist() -> None:
+    """Keep repository-relative documentation links in the README valid."""
+    readme = REPO_ROOT / "README.md"
+    text = readme.read_text(encoding="utf-8")
+    link_targets = re.findall(r"(?<!!)\[[^]]+\]\(([^)]+)\)", text)
+    missing: list[str] = []
+    for raw_target in link_targets:
+        target = raw_target.split("#", maxsplit=1)[0].strip()
+        if not target or "://" in target or target.startswith("mailto:"):
+            continue
+        resolved = REPO_ROOT / unquote(target)
+        if not resolved.exists():
+            missing.append(raw_target)
+    assert not missing, f"README links point to missing local files: {missing}"
 
 
 def test_mil_options_match_code_catalogs() -> None:
