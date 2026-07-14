@@ -128,6 +128,18 @@ def test_pipeline_optimization_terminology() -> None:
     assert not offenders, f"Legacy optimization terminology remains in: {offenders}"
 
 
+def test_tutorials_select_concrete_mil_model_names() -> None:
+    """Do not teach legacy backend sentinels as benchmark model choices."""
+    paths = [REPO_ROOT / "README.md", *DOCS_DIR.joinpath("tutorials").rglob("*.rst")]
+    pattern = re.compile(r"mil:\s*\[(?:torchmil|mil-lab)\]", re.IGNORECASE)
+    offenders = [
+        str(path.relative_to(REPO_ROOT))
+        for path in paths
+        if pattern.search(path.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, f"Legacy MIL backend sentinels remain in tutorials: {offenders}"
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

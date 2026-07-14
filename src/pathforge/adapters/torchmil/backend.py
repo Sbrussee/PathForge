@@ -226,7 +226,10 @@ class TorchMILBackendModel(MILModelBase):
 
 
 def register_torchmil_backend() -> None:
-    """Register the generic TorchMIL backend model when TorchMIL is available."""
+    """Register the generic backend and concrete TorchMIL model names."""
 
     if not MODELS.is_available("torchmil"):
         MODELS.register("torchmil")(TorchMILBackendModel)
+    for model_name in TORCHMIL_MODEL_SPECS:
+        if not MODELS.is_available(model_name):
+            MODELS.register(model_name)(TorchMILBackendModel)

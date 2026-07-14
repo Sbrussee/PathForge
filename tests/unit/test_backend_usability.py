@@ -263,7 +263,7 @@ def test_list_mil_models_reports_backend_requirements_and_availability(
 
     assert ("GCNConvMIL", "native") not in lookup
     assert lookup[("MambaMIL", "native")].available is False
-    assert lookup[("ABMIL", "torchmil")].config_field == "mil.torchmil_model"
+    assert lookup[("ABMIL", "torchmil")].config_field == "benchmark_parameters.mil"
     assert lookup[("ABMIL", "torchmil")].available is False
-    assert lookup[("abmil", "mil-lab")].config_field == "mil.mil_lab_model"
+    assert lookup[("abmil", "mil-lab")].config_field == "benchmark_parameters.mil"
     assert lookup[("abmil", "mil-lab")].available is True

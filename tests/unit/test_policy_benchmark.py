@@ -574,8 +574,6 @@ def test_build_mil_model_for_config_preserves_torchmil_user_kwargs(monkeypatch, 
             },
             "slide_processing": {"backend": "lazyslide"},
             "mil": {
-                "backend": "torchmil",
-                "torchmil_model": "ABMIL",
                 "torchmil_model_kwargs": {
                     "in_shape": (7,),
                     "out_shape": 9,
@@ -595,7 +593,7 @@ def test_build_mil_model_for_config_preserves_torchmil_user_kwargs(monkeypatch, 
                 "tile_px": [256],
                 "tile_mpp": [0.5],
                 "feature_extraction": [DUMMY_FE],
-                "mil": ["torchmil"],
+                "mil": ["ABMIL"],
                 "loss": ["CrossEntropyLoss"],
                 "seeds": [7],
             },
@@ -606,7 +604,7 @@ def test_build_mil_model_for_config_preserves_torchmil_user_kwargs(monkeypatch, 
 
     build_mil_model_for_config(
         cfg,
-        model_name="torchmil",
+        model_name="ABMIL",
         input_dim=11,
         output_dim=4,
     )

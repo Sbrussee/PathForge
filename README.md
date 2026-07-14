@@ -473,7 +473,7 @@ metrics:
 
 benchmark_parameters:
   feature_extraction: [resnet18]
-  mil: [AttentionMIL]
+  mil: [PerceiverMIL]
   loss: [CrossEntropyLoss]
 ```
 
@@ -499,8 +499,6 @@ experiment:
   task: classification
 
 mil:
-  backend: torchmil
-  torchmil_model: ABMIL
   torchmil_model_kwargs:
     in_shape: [1024]
     out_shape: 2
@@ -513,24 +511,25 @@ metrics:
 
 benchmark_parameters:
   feature_extraction: [resnet18]
-  mil: [torchmil]
+  mil: [ABMIL, CLAM]
   loss: [CrossEntropyLoss]
 ```
 
 Important rules:
 
-- `benchmark_parameters.mil` contains the PathForge registry key `torchmil`.
-- `mil.torchmil_model` contains the TorchMIL model class name.
+- `benchmark_parameters.mil` contains concrete available model names from
+  PathForge, TorchMIL, or MIL-Lab.
 - `mil.torchmil_model_kwargs` are forwarded to the TorchMIL constructor.
 - `mil.use_torchmil_collate: true` enables padded dict batches compatible with
   TorchMIL semantics.
 - The generic `TorchMILBackendModel` is the only PathForge model adapter for
   TorchMIL models.
 
-If `torchmil` is selected but unavailable, config validation raises:
+If a TorchMIL model is selected but TorchMIL is unavailable, config validation
+reports that the model is not registered in the active environment.
 
 ```text
-MIL backend 'torchmil' selected, but 'torchmil' is not installed. Install torchmil or set mil.backend='native'.
+MIL model 'ABMIL' not found in registry.
 ```
 
 ## Canonical MIL Bag Batch
@@ -591,7 +590,7 @@ metrics:
 
 benchmark_parameters:
   feature_extraction: [resnet18]
-  mil: [AttentionMIL]
+  mil: [PerceiverMIL]
   loss: [CrossEntropyLoss]
   activation_function: [ReLU]
   optimizer: [Adam]
@@ -599,19 +598,18 @@ benchmark_parameters:
 
 For a TorchMIL benchmark, every run resolves:
 
-1. `MODELS.get("torchmil")`
-2. `TorchMILBackendModel(...)`
-3. `mil.torchmil_model`, for example `ABMIL`
-4. `mil.torchmil_model_kwargs`, forwarded to the TorchMIL constructor
-5. `LightningTrainer`, which accepts canonical dict batches
+1. The concrete `benchmark_parameters.mil` name, for example `ABMIL`
+2. Its catalogued backend and the generic `TorchMILBackendModel`
+3. `mil.torchmil_model_kwargs`, forwarded to the selected constructor
+4. `LightningTrainer`, which accepts canonical dict batches
 
 This keeps TorchMIL as one backend plugin. Benchmarking policies still interact
 with PathForge registries and trainer/model interfaces; they do not import or
 call TorchMIL directly.
 
-To compare native and TorchMIL backends, use separate config files. Native
-models and TorchMIL models may not share constructor kwargs, so separate configs
-keep model construction explicit and reproducible.
+Native, TorchMIL, and MIL-Lab names may share one model grid when all required
+packages are installed. Use separate config files when their shared backend
+constructor kwargs are incompatible.
 
 ## Optimization
 
@@ -634,8 +632,6 @@ experiment:
   task: classification
 
 mil:
-  backend: torchmil
-  torchmil_model: ABMIL
   torchmil_model_kwargs:
     in_shape: [1024]
     out_shape: 2
@@ -655,7 +651,7 @@ optimization:
 
 benchmark_parameters:
   feature_extraction: [resnet18]
-  mil: [torchmil]
+  mil: [ABMIL]
   loss: [CrossEntropyLoss]
 ```
 
@@ -668,11 +664,12 @@ The policy applies supported MIL training keys (`optimizer`, `scheduler`,
 choices. Multi-value `benchmark_parameters` lists also become categorical
 Optuna dimensions automatically.
 
-`mil.torchmil_model` and `mil.torchmil_model_kwargs` are fixed for one config;
-the current policy does not apply dotted search-space keys or arbitrary model
-constructor kwargs. Use separate configs when comparing TorchMIL architectures
-or constructor layouts. Objective metrics can be native, TorchMetrics-backed,
-or TorchSurv-backed, selected by config.
+Concrete model names in `benchmark_parameters.mil` are selectable pipeline
+dimensions. `mil.torchmil_model_kwargs` remains one shared fixed mapping; the
+current policy does not apply dotted search-space keys or arbitrary constructor
+kwargs. Compare models in one config only when those kwargs are compatible, and
+use separate configs for different constructor layouts. Objective metrics can
+be native, TorchMetrics-backed, or TorchSurv-backed, selected by config.
 
 ## Slide Retrieval
 
@@ -786,11 +783,11 @@ experiment:
   task: survival
 
 mil:
-  backend: torchmil
-  torchmil_model: SomeSurvivalCapableModel
-  torchmil_model_kwargs:
-    in_shape: [1024]
-    out_shape: 1
+  batch_size: 1
+
+benchmark_parameters:
+  mil: [PerceiverMIL]
+  loss: [CoxPHLoss]
 
 metrics:
   survival_continuous_backend: torchsurv

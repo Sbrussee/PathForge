@@ -118,10 +118,13 @@ MIL model and training loop settings.
      - Description
    * - ``backend``
      - ``native``
-     - ``native``, ``torchmil``, or ``mil-lab``.
+     - Legacy/direct-run backend selector: ``native``, ``torchmil``, or
+       ``mil-lab``. During benchmarking and optimization, each concrete
+       ``benchmark_parameters.mil`` name determines its backend automatically.
    * - ``torchmil_model``
      - ``null``
-     - TorchMIL model class name (e.g. ``ABMIL``, ``DSMIL``). Used when ``backend: torchmil``.
+     - Legacy/direct-run TorchMIL model class name. Prefer concrete names such
+       as ``ABMIL`` and ``DSMIL`` in ``benchmark_parameters.mil``.
    * - ``torchmil_model_kwargs``
      - ``{}``
      - Constructor kwargs forwarded to the TorchMIL model.
@@ -292,7 +295,8 @@ Grid-search axes. All lists are combined exhaustively.
      - List of feature extractor names. See :doc:`backends` for available options.
    * - ``mil``
      - ``[]``
-     - List of MIL model registry keys (e.g. ``[AttentionMIL, torchmil]``).
+     - Concrete model names from PathForge, TorchMIL, or MIL-Lab (for example,
+       ``[PerceiverMIL, ABMIL, clam]``). The name selects its backend.
    * - ``loss``
      - ``[]``
      - List of loss function registry keys (e.g. ``[CrossEntropyLoss]``).
@@ -465,6 +469,8 @@ Backend constructor dictionaries such as ``mil.torchmil_model_kwargs`` are
 fixed config in the current implementation; arbitrary dotted keys or kwargs in
 ``optimization.search_space`` are sampled but are not applied to the model.
 Use separate configs to optimize different backend constructor layouts.
+Concrete model names from different backends may share a search space only
+when their shared constructor settings are compatible.
 
 Top-Level Fields
 ----------------

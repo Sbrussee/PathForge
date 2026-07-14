@@ -79,18 +79,23 @@ The current catalog is exposed by
      - Explicitly catalogued: ``ABMIL``, ``CLAM``, ``DSMIL``. The generic
        adapter also accepts another class exposed by the installed
        ``torchmil.models`` package.
-     - Set ``mil.backend: torchmil`` and ``mil.torchmil_model``; pass
+     - Select concrete names in ``benchmark_parameters.mil``. Pass shared
        constructor arguments through ``mil.torchmil_model_kwargs``.
    * - MIL-Lab
      - ``abmil``, ``clam``, ``dftd``, ``dsmil``, ``ilra``, ``rrt``,
        ``transformer``, ``transmil``, ``wikg``
-     - Set ``mil.backend: mil-lab`` and ``mil.mil_lab_model``; pass arguments
-       through ``mil.mil_lab_model_kwargs``.
+     - Select concrete names in ``benchmark_parameters.mil``. Pass shared
+       constructor arguments through ``mil.mil_lab_model_kwargs``.
 
 TorchMIL evolves independently, so consult its `model API
 <https://torchmil.readthedocs.io/en/stable/api/models/>`_ for constructor
 parameters, input shapes, and outputs. PathForge forwards
 ``mil.torchmil_model_kwargs`` directly to the chosen constructor.
+
+The concrete model name determines the backend for each combination. This
+allows a grid such as ``[PerceiverMIL, ABMIL, clam]`` when PathForge, TorchMIL,
+and MIL-Lab are installed. Generic ``torchmil`` and ``mil-lab`` sentinel keys
+remain supported for legacy configs but should not be used in new grids.
 
 .. code-block:: python
 

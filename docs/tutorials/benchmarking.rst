@@ -101,8 +101,6 @@ To benchmark TorchMIL models:
      task: classification
 
    mil:
-     backend: torchmil
-     torchmil_model: ABMIL
      torchmil_model_kwargs:
        in_shape: [2048]
        out_shape: 2
@@ -115,14 +113,13 @@ To benchmark TorchMIL models:
 
    benchmark_parameters:
      feature_extraction: [resnet50]
-     mil: [torchmil]
+     mil: [ABMIL, CLAM]
      loss: [CrossEntropyLoss]
 
-The registry key in ``benchmark_parameters.mil`` is always ``torchmil`` —
-the actual TorchMIL class is specified in ``mil.torchmil_model``.
-
-To compare multiple TorchMIL models, use separate config files (model
-constructor kwargs differ per class).
+``benchmark_parameters.mil`` accepts concrete available names from native
+PathForge, TorchMIL, and MIL-Lab catalogs. The selected name determines the
+backend automatically. Models can share a grid when their constructor kwargs
+are compatible; otherwise use separate config files.
 
 Survival Benchmarking
 ----------------------
@@ -138,8 +135,6 @@ For continuous survival analysis:
      survival_event_column: vital_status_binary
 
    mil:
-     backend: torchmil
-     torchmil_model: SurvivalABMIL
      torchmil_model_kwargs:
        in_shape: [1024]
        out_shape: 1
@@ -149,7 +144,7 @@ For continuous survival analysis:
      survival_metrics: [c_index, td_auc]
 
    benchmark_parameters:
-     mil: [torchmil]
+     mil: [PerceiverMIL]
      loss: [CoxPHLoss]
 
 For discrete survival:
@@ -176,7 +171,7 @@ Compare multiple feature extractors in a single run:
      tile_px: [224, 256]
      tile_mpp: [0.5]
      feature_extraction: [resnet50, uni, conch]
-     mil: [AttentionMIL]
+     mil: [PerceiverMIL]
      loss: [CrossEntropyLoss]
 
 This generates ``2 × 1 × 2 × 1 × 1 = 4`` pipeline combinations before any
