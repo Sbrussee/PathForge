@@ -50,14 +50,15 @@ class HSHRFeatures(BaseRetrievalRepresentationStrategy):
         - ``additional_data["coords"]`` of shape ``(N, 2)``
 
     Example:
-        ```python
-        strategy = HSHRFeatures(params={"n_patches": 4})
-        representation = strategy.run(
-            bag=torch.randn(32, 512),
-            sample=sample,
-            bag_dataset=bag_dataset,
-        )
-        ```
+        .. code-block:: python
+
+            strategy = HSHRFeatures(params={"n_patches": 4})
+            representation = strategy.run(
+                bag=torch.randn(32, 512),
+                sample=sample,
+                bag_dataset=bag_dataset,
+            )
+
 
     Notes:
         This is a minimal PathForge 1.0 port. The clustering and representative

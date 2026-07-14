@@ -21,13 +21,14 @@ class MetricRequest:
     - Immutable request consumed by the evaluation orchestrator.
 
     Example:
-    ```python
-    request = MetricRequest(
-        raw_name="hit_at_5",
-        canonical_name="hit_at_k",
-        params={"k": 5},
-    )
-    ```
+    .. code-block:: python
+
+        request = MetricRequest(
+            raw_name="hit_at_5",
+            canonical_name="hit_at_k",
+            params={"k": 5},
+        )
+
     """
 
     raw_name: str

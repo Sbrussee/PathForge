@@ -12,11 +12,11 @@ The framework is designed for:
 - Framework-agnostic extensibility via registries and interfaces
 - Long-term maintainability through strict architectural boundaries
 
----
 
 ## 2. Architectural Principles
 
-PathForge-MIL strictly adheres to **Clean Architecture** principles.
+PathForge-MIL uses **Clean Architecture** principles as design guidance while
+keeping a small number of explicit orchestration dependencies practical.
 
 ### 2.1 Dependency Rule
 
@@ -25,7 +25,9 @@ All source code dependencies must point **inward**:
 Interfaces → Adapters → Application / Use Cases → Domain
 
 
-Outer layers may depend on inner layers, but **never the reverse**.
+Outer layers should depend on stable inner contracts. The current task modules
+are an explicit exception because they expose application-level workflows from
+the ``core.tasks`` namespace.
 
 ---
 
@@ -36,12 +38,13 @@ The **Domain layer**:
 - Must **not** depend on concrete implementations
 - Minimizes framework-specific imports
 - May depend on *well-standardized scientific frameworks* (e.g. `torch`, `numpy`)
-- Must be completely agnostic to:
+- Stable domain contracts should remain agnostic to:
   - CLI
   - File system layout
   - Training frameworks
   - Slide backends
-  - Experiment orchestration
+  - Experiment orchestration (except the application-facing ``core.tasks``
+    modules, which intentionally compose policy helpers)
 
 ---
 
@@ -826,5 +829,3 @@ labels/instances/{instance_type}/classes
 
 PathForge-MIL is designed as a **clean, extensible, and reproducible** framework for MIL benchmarking in computational pathology.  
 By enforcing strict architectural boundaries, interface-based design, and extensible artifact formats, it enables rapid experimentation without sacrificing correctness, maintainability, or scientific rigor.
-
----

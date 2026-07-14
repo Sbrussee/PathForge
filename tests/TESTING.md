@@ -18,13 +18,13 @@ cd /exports/path-cutane-lymfomen-hpc/siemen/PathForge
 For the standard development environment:
 
 ```bash
-uv sync --extra lazyslide --extra mil-backends --extra hf --extra dev
+uv sync --extra mil-backends --extra hf --extra dev
 ```
 
 If you need CUDA 12.8 PyTorch builds on a GPU node:
 
 ```bash
-uv sync --extra lazyslide --extra mil-backends --extra hf --extra dev --extra cu128
+uv sync --extra mil-backends --extra hf --extra dev --extra cu128
 ```
 
 ## Run Unit Tests

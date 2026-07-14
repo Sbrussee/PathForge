@@ -72,7 +72,7 @@ Ensure the extractor package is installed. For Lazyslide/timm extractors:
 
 .. code-block:: bash
 
-   uv sync --extra lazyslide
+   uv sync
 
 Check available extractors:
 

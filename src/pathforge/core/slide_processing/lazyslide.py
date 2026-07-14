@@ -32,21 +32,13 @@ logger = logging.getLogger(__name__)
 
 @SLIDE_PROCESSORS.register("lazyslide")
 class LazySlideProcessor(SlideProcessorBase):
-    """
-    Policy contracts (canonical):
-    - segment_tissue(...) -> list[np.ndarray]          # polygons, each (N,2) float32, level-0 pixels
-    - extract_patches(...) -> (coords, tiling_spec)    # coords: (N,5) int32, tiling_spec: dict (stored in H5)
-    - validate_tile_spec(...) -> bool                  # validates tiling_spec dict vs config
-    - extract_features(...) -> np.ndarray              # (N,D) float32 row-aligned with coords
+    """Process slides with LazySlide while preserving PathForge H5 contracts.
 
-    Storage contract (H5):
-    - coords: (N,5) int32 columns:
-        [x_level0, y_level0, read_w_at_level, read_h_at_level, level]
-    - tiling_spec (JSON, backend-agnostic):
-        {tile_px, tile_mpp, stride_px, coord_space="level0", backend?}
-
-    Lazyslide/wsidata-specific tile_spec (wsi.obj.attrs["tile_spec"]) is reconstructed
-    from coords + tiling_spec when extracting features.
+    Coordinates are stored as an ``(N, 5)`` ``int32`` array containing
+    ``x_level0``, ``y_level0``, read width, read height, and pyramid level.
+    Features are returned as a row-aligned ``(N, D)`` ``float32`` array. The
+    backend-specific tile specification is reconstructed when features are
+    extracted rather than persisted as PathForge's source of truth.
     """
 
     BACKEND_NAME = "lazyslide"

@@ -219,6 +219,7 @@ class LightningModuleAdapter(pl.LightningModule):
         return torch.cat([target.reshape(-1) for target in targets], dim=0)
 
     def configure_optimizers(self):
+        """Build the configured optimizer and optional learning-rate scheduler."""
         mil_cfg = self.config.mil
         optim_cls = getattr(torch.optim, mil_cfg.optimizer, None)
         if optim_cls is None:

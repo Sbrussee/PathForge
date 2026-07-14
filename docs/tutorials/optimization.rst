@@ -104,7 +104,9 @@ Optuna Study Settings
    * - ``CmaEsSampler``
      - CMA-ES for continuous parameter spaces. Use with many float params.
    * - ``GridSampler``
-     - Exhaustive grid search over a fixed space.
+     - Accepted for configuration compatibility, but currently logs a warning
+       and falls back to ``TPESampler`` because the dynamic search space is not
+       available when Optuna constructs the sampler.
 
 ``optimization.pruner``
 ~~~~~~~~~~~~~~~~~~~~~~~~

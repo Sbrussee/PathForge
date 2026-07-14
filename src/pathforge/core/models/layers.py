@@ -38,10 +38,11 @@ def create_mlp(
         hidden-dimension contract is invalid.
 
     Example:
-        ```python
-        mlp = create_mlp(in_dim=16, hid_dims=[8], out_dim=4, dropout=0.1)
-        assert isinstance(mlp, nn.Module)
-        ```
+        .. code-block:: python
+
+            mlp = create_mlp(in_dim=16, hid_dims=[8], out_dim=4, dropout=0.1)
+            assert isinstance(mlp, nn.Module)
+
     """
 
     if hid_dims is None:
@@ -140,7 +141,7 @@ class StandardTransformerBlock(nn.Module):
         # x: B, N, D
         # mask: B, N (True = keep, False = ignore)
         key_padding_mask = ~mask if mask is not None else None
-        
+
         attn_out, _ = self.attn(self.norm1(x), self.norm1(x), self.norm1(x), key_padding_mask=key_padding_mask)
         x = x + attn_out
         x = x + self.mlp(self.norm2(x))
@@ -189,7 +190,7 @@ else:
             super().__init__()
             self.head = head
             self.num_landmarks = num_landmarks
-            
+
             self.head_dim = dim // head
             self.scale = self.head_dim ** -0.5
 
@@ -202,14 +203,14 @@ else:
         def forward(self, x, mask=None):
             b, n, c = x.shape
             h = self.head
-            
+
             qkv = self.to_qkv(x).chunk(3, dim = -1)
             q, k, v = map(lambda t: t.reshape(b, n, h, -1).permute(0, 2, 1, 3), qkv)
 
             if mask is not None:
                 mask = mask[:, None, :, None]
                 v.masked_fill_(~mask, 0.)
-            
+
             # Use fewer landmarks if sequence is shorter than num_landmarks
             if n < self.num_landmarks:
                 q_landmarks = q
@@ -233,7 +234,7 @@ else:
             out = torch.matmul(kernel_1, kernel_2_inv)
             out = torch.matmul(out, kernel_3)
             out = torch.matmul(out, v)
-            
+
             out = out.permute(0, 2, 1, 3).reshape(b, n, c)
             return self.to_out(out)
 
@@ -277,17 +278,17 @@ class PPEG(nn.Module):
         B, N, D = x.shape
         if N == 0:
             return x
-        
+
         # Separate CLS token
         cls_token = x[:, 0:1, :] # B, 1, D
         feats = x[:, 1:, :]      # B, N-1, D
-        
+
         if feats.shape[1] == 0:
             return x
-            
+
         feats_t = feats.transpose(1, 2)
         pe = self.proj(feats_t) + self.proj1(feats_t) + self.proj2(feats_t)
         feats_t = feats_t + pe
         feats = feats_t.transpose(1, 2)
-        
+
         return torch.cat((cls_token, feats), dim=1)

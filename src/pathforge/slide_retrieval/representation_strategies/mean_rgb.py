@@ -42,13 +42,14 @@ def resolve_sample_patch_mean_rgb(
     - `np.ndarray[float32]` with shape `(N, 3)` aligned with the retrieval bag.
 
     Example:
-    ```python
-    mean_rgb = resolve_sample_patch_mean_rgb(
-        sample=sample,
-        bag_id="256px_0.5mpp",
-        config=cfg,
-    )
-    ```
+    .. code-block:: python
+
+        mean_rgb = resolve_sample_patch_mean_rgb(
+            sample=sample,
+            bag_id="256px_0.5mpp",
+            config=cfg,
+        )
+
     """
     if sample is None:
         raise ValueError("sample is required to resolve patch mean RGB descriptors.")

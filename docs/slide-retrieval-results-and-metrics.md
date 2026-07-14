@@ -195,11 +195,11 @@ At the top level it looks like:
   "run_dir": "...",
   "label_column": "category",
   "aggregation_level": "slide",
-  "combo_cfg": { ... },
-  "manifest": { ... },
+  "combo_cfg": { "example": "..." },
+  "manifest": { "example": "..." },
   "metrics": {
-    "hit_at_5": { ... },
-    "precision_at_5": { ... }
+    "hit_at_5": { "example": "..." },
+    "precision_at_5": { "example": "..." }
   }
 }
 ```

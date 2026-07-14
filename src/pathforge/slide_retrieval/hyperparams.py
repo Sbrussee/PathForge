@@ -21,10 +21,11 @@ class HyperParam:
     - Immutable metadata object collected by strategy base classes.
 
     Example:
-    ```python
-    class ExampleStrategy:
-        k = HyperParam(int, default=5, min=1, help="Retrieval depth.")
-    ```
+    .. code-block:: python
+
+        class ExampleStrategy:
+            k = HyperParam(int, default=5, min=1, help="Retrieval depth.")
+
     """
 
     hp_type: type[Any] | None = None

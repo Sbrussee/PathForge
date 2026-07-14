@@ -84,19 +84,19 @@ def _all_toctree_references(start: Path) -> list[tuple[Path, str, Path]]:
     return results
 
 
-def _collect_autodoc_modules(docs_dir: Path) -> list[tuple[str, Path]]:
-    """Return (module_or_class_path, source_rst) for every autodoc directive."""
+def _collect_autodoc_modules(docs_dir: Path) -> list[tuple[str, str, Path]]:
+    """Return directive kind, target, and source for every autodoc directive."""
     pattern = re.compile(
-        r"^\.\. auto(?:module|class|function|exception|data)::\s+(.+)$"
+        r"^\.\. auto(module|class|function|exception|data)::\s+(.+)$"
     )
-    results: list[tuple[str, Path]] = []
+    results: list[tuple[str, str, Path]] = []
     for rst_file in docs_dir.rglob("*.rst"):
         text = rst_file.read_text(encoding="utf-8")
         for line in text.splitlines():
             m = pattern.match(line.strip())
             if m:
-                target = m.group(1).strip()
-                results.append((target, rst_file))
+                kind, target = m.group(1), m.group(2).strip()
+                results.append((kind, target, rst_file))
     return results
 
 
@@ -143,15 +143,12 @@ def _autodoc_params():
     items = _collect_autodoc_modules(DOCS_DIR)
     # Resolve class/function paths to their parent module
     results = []
-    for target, src in items:
-        # For autoclass/autofunction the target may be "package.module.ClassName"
-        # We import only the module portion (everything up to last segment that starts with uppercase or is a known function)
-        parts = target.split(".")
-        # Try to find the longest importable prefix
-        module_candidate = target
-        if len(parts) > 1 and (parts[-1][0].isupper() or parts[-1][0].islower()):
-            # Could be Module.Class or module.function — try the module prefix
-            module_candidate = ".".join(parts[:-1])
+    for kind, target, src in items:
+        # ``automodule`` targets are already modules. Other directives target
+        # members, so import their parent module.
+        module_candidate = (
+            target if kind == "module" else target.rsplit(".", maxsplit=1)[0]
+        )
         results.append((module_candidate, target, str(src)))
     # Deduplicate by module_candidate
     seen: set[str] = set()

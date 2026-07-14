@@ -11,7 +11,7 @@ class ComboConfig:
     Generic, dynamically-populated benchmark combination configuration.
 
     Inputs:
-        **kwargs (object):
+        keyword arguments (object):
             Benchmark parameter values keyed by parameter name. Each key becomes
             an attribute on the created object.
 
@@ -25,19 +25,20 @@ class ComboConfig:
         lightweight attribute-based object.
 
     Example:
-        ```python
-        combo_cfg = ComboConfig.from_keys_values(
-            keys=["feature_extraction", "tile_px"],
-            values=[
-                BenchmarkParamEntry(value="uni", hyperparams={"family": "foundation"}),
-                256,
-            ],
-        )
-        assert combo_cfg.feature_extraction == "uni"
-        assert combo_cfg.get_hyperparams("feature_extraction") == {
-            "family": "foundation",
-        }
-        ```
+        .. code-block:: python
+
+            combo_cfg = ComboConfig.from_keys_values(
+                keys=["feature_extraction", "tile_px"],
+                values=[
+                    BenchmarkParamEntry(value="uni", hyperparams={"family": "foundation"}),
+                    256,
+                ],
+            )
+            assert combo_cfg.feature_extraction == "uni"
+            assert combo_cfg.get_hyperparams("feature_extraction") == {
+                "family": "foundation",
+            }
+
     """
 
     def __init__(self, **kwargs: object) -> None:
@@ -117,12 +118,13 @@ def build_combinations(cfg: Config, keys: list[str]) -> list[ComboConfig]:
         objects that policies and tasks can execute.
 
     Example:
-        ```python
-        combos = build_combinations(
-            cfg=cfg,
-            keys=["feature_extraction", "tile_px", "tile_mpp"],
-        )
-        ```
+        .. code-block:: python
+
+            combos = build_combinations(
+                cfg=cfg,
+                keys=["feature_extraction", "tile_px", "tile_mpp"],
+            )
+
     """
     benchmark_params = cfg.benchmark_parameters
     value_lists: list[list[Any]] = []

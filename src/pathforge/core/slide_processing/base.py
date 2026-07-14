@@ -21,7 +21,7 @@ class SlideProcessorBase(ABC):
         Close the backend-native slide object (if needed) and clear it from the WSI.
         """
         pass
-    
+
     def get_base_mpp(self, wsi: WSI) -> float:
         """
         Return the level-0 microns-per-pixel (MPP) as a scalar.
@@ -55,7 +55,7 @@ class SlideProcessorBase(ABC):
     def segment_tissue(self, wsi: WSI, config: Optional[Dict[str, Any]] = None) -> Any:
         """Segment tissue regions from the slide object."""
         pass
-    
+
     @abstractmethod
     def extract_patches(self, wsi: WSI, tissues: List[np.ndarray], config: Optional[Dict[str, Any]] = None) -> Tuple[pd.DataFrame, str]:
         """
@@ -66,7 +66,7 @@ class SlideProcessorBase(ABC):
             tile_spec: JSON string (keys may vary; backend-defined)
         """
         pass
-    
+
     @abstractmethod
     def validate_tile_spec(self, tile_spec: Optional[str], config: Optional[Dict[str, Any]] = None) -> bool:
         """
@@ -102,30 +102,30 @@ class SlideProcessorBase(ABC):
         """
         Read one patch region from the source slide as an RGB image array.
 
-        Inputs:
-        - `wsi`: loaded slide wrapper.
-        - `x`: level-0 left coordinate.
-        - `y`: level-0 top coordinate.
-        - `width`: region width in pixels at `level`.
-        - `height`: region height in pixels at `level`.
-        - `level`: slide pyramid level used for the read.
+        Args:
+            wsi: Loaded slide wrapper.
+            x: Level-0 left coordinate.
+            y: Level-0 top coordinate.
+            width: Region width in pixels at ``level``.
+            height: Region height in pixels at ``level``.
+            level: Slide pyramid level used for the read.
 
         Returns:
-        - `np.ndarray[uint8]` with shape `(H, W, 3)` containing the RGB patch
-          pixels.
+            RGB ``uint8`` array with shape ``(H, W, 3)``.
 
         Example:
-        ```python
-        patch = processor.read_patch_region(wsi, 0, 0, 256, 256, 0)
-        ```
+        .. code-block:: python
+
+            patch = processor.read_patch_region(wsi, 0, 0, 256, 256, 0)
+
         """
         pass
-    
+
     @abstractmethod
     def extract_cells(self, wsi: WSI, config: Optional[Dict[str, Any]] = None) -> Any:
         """Extract cells from the slide object."""
         pass
-    
+
     @abstractmethod
     def inspect_slide(self, wsi: WSI) -> None:
         """Inspect the slide object for debugging or analysis."""

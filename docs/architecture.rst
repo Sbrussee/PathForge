@@ -40,16 +40,19 @@ Layer Overview
 Dependency Rule
 ---------------
 
-Inner layers never import from outer layers:
+Dependencies generally point toward stable contracts:
 
-- ``core/`` does not import from ``policy/``, ``cli/``, or any adapter.
+- Most of ``core/`` is independent of ``policy/``, ``cli/``, and adapters.
+  Task modules are the deliberate exception: they reuse policy workflow
+  helpers to provide application-level task orchestration.
 - ``policy/`` imports from ``core/`` and resolves implementations via registries.
-- ``cli/`` imports from ``policy/`` and ``config/`` only.
+- ``cli/`` is a thin composition layer that may invoke policies, inference,
+  retrieval, and configuration entry points.
 - ``adapters/`` and ``infrastructure/`` implement ``core/`` interfaces and
   register themselves.
 
-This means the domain logic is always testable without any framework or
-optional package.
+The stable contracts remain independently testable; orchestration modules may
+require the dependencies of the workflow they expose.
 
 Core Layer (``pathforge.core``)
 --------------------------------

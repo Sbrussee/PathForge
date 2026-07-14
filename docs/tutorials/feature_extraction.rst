@@ -11,7 +11,7 @@ What You Need
 - A directory of WSI files (``.svs``, ``.ndpi``, ``.tiff``, ``.tif``, ``.mrxs``).
 - An annotation CSV with at least ``dataset``, ``slide``, ``patient``, and
   ``category`` columns.
-- The ``lazyslide`` extra: ``uv sync --extra lazyslide``.
+- A default PathForge installation, which includes LazySlide and timm.
 
 Step 1 — Prepare the Annotation CSV
 -------------------------------------
@@ -26,7 +26,9 @@ Step 1 — Prepare the Annotation CSV
 Rules:
 
 - ``dataset`` must match a name in ``datasets[].name``.
-- ``slide`` is matched against files using ``{slide}.*`` — no extension needed.
+- ``slide`` must exactly match a supported file stem; do not include the
+  extension. DICOM slides use an exact-name directory containing ``.dcm``
+  files.
 - Add a ``fallback_mpp`` column for slides missing valid MPP metadata.
 
 See :doc:`/data_preparation` for the complete annotation format reference,

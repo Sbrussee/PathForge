@@ -51,10 +51,11 @@ class TorchMILModelSpec:
         build_kwargs: Default constructor kwargs merged before config kwargs.
 
     Example:
-        ```python
-        spec = TorchMILModelSpec(name="ABMIL", task_types=("classification",))
-        model = build_torchmil_model(spec, {"in_shape": (1024,), "out_shape": 2})
-        ```
+        .. code-block:: python
+
+            spec = TorchMILModelSpec(name="ABMIL", task_types=("classification",))
+            model = build_torchmil_model(spec, {"in_shape": (1024,), "out_shape": 2})
+
     """
 
     name: str
@@ -139,14 +140,15 @@ class TorchMILBackendModel(MILModelBase):
         ``[B, T]``.
 
     Example:
-        ```python
-        model = TorchMILBackendModel(
-            torchmil_model="ABMIL",
-            task="classification",
-            torchmil_model_kwargs={"in_shape": (1024,), "out_shape": 2},
-        )
-        logits = model.forward_bag(torch.zeros(2, 8, 1024), mask=torch.ones(2, 8, dtype=torch.bool))
-        ```
+        .. code-block:: python
+
+            model = TorchMILBackendModel(
+                torchmil_model="ABMIL",
+                task="classification",
+                torchmil_model_kwargs={"in_shape": (1024,), "out_shape": 2},
+            )
+            logits = model.forward_bag(torch.zeros(2, 8, 1024), mask=torch.ones(2, 8, dtype=torch.bool))
+
 
     Raises:
         RuntimeError: If TorchMIL is not installed.

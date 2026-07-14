@@ -26,11 +26,12 @@ class TorchMetricsClassificationBackend:
     """TorchMetrics-backed classification metrics adapter.
 
     Example:
-        ```python
-        backend = TorchMetricsClassificationBackend(num_classes=2)
-        metrics = backend.compute(torch.zeros(4, 2), torch.tensor([0, 1, 0, 1]))
-        assert "accuracy" in metrics
-        ```
+        .. code-block:: python
+
+            backend = TorchMetricsClassificationBackend(num_classes=2)
+            metrics = backend.compute(torch.zeros(4, 2), torch.tensor([0, 1, 0, 1]))
+            assert "accuracy" in metrics
+
     """
 
     def __init__(self, *, num_classes: int, task: str | None = None) -> None:

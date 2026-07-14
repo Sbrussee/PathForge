@@ -13,7 +13,7 @@ Install PathForge with its slide-processing and MIL backends:
 
 .. code-block:: bash
 
-   uv sync --extra lazyslide --extra mil-backends
+   uv sync --extra mil-backends
 
 Use at least four slides from two classes. Two slides are enough to exercise
 the commands, but are not enough for a meaningful train/validation result.

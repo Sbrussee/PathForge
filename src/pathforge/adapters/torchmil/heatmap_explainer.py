@@ -37,14 +37,15 @@ class TorchMILHeatmapExplainer(ExplainerBase):
         can persist this under a prediction heatmap H5 namespace.
 
     Example:
-        ```python
-        explainer = TorchMILHeatmapExplainer()
-        heatmap = explainer.explain({
-            "coords": torch.tensor([[0, 0], [256, 0]]),
-            "instance_scores": torch.tensor([0.2, 0.8]),
-        })
-        assert heatmap.scores.tolist() == [0.0, 1.0]
-        ```
+        .. code-block:: python
+
+            explainer = TorchMILHeatmapExplainer()
+            heatmap = explainer.explain({
+                "coords": torch.tensor([[0, 0], [256, 0]]),
+                "instance_scores": torch.tensor([0.2, 0.8]),
+            })
+            assert heatmap.scores.tolist() == [0.0, 1.0]
+
     """
 
     def initialize(self, config: dict[str, Any]) -> None:

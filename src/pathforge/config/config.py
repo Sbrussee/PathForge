@@ -250,11 +250,12 @@ class MetricsConfig(BaseModel):
     """Metric and loss backend selection.
 
     Examples:
-        ```yaml
-        metrics:
-          classification_backend: torchmetrics
-          survival_continuous_backend: torchsurv
-        ```
+        .. code-block:: yaml
+
+            metrics:
+              classification_backend: torchmetrics
+              survival_continuous_backend: torchsurv
+
     """
 
     classification_backend: str = "torchmetrics"

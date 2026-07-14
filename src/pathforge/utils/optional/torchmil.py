@@ -21,13 +21,14 @@ class TorchMILModules:
         datasets: Imported ``torchmil.datasets`` module.
 
     Example:
-        ```python
-        from pathforge.utils.optional.torchmil import load_torchmil_modules
+        .. code-block:: python
 
-        modules = load_torchmil_modules()
-        batch = modules.data.collate_fn([{"X": x0, "Y": y0}, {"X": x1, "Y": y1}])
-        model_cls = getattr(modules.models, "ABMIL")
-        ```
+            from pathforge.utils.optional.torchmil import load_torchmil_modules
+
+            modules = load_torchmil_modules()
+            batch = modules.data.collate_fn([{"X": x0, "Y": y0}, {"X": x1, "Y": y1}])
+            model_cls = getattr(modules.models, "ABMIL")
+
 
     Raises:
         RuntimeError: If TorchMIL is not installed.

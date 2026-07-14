@@ -39,6 +39,11 @@ third-party packages live in adapter modules.
    testing
    backends
    architecture
+   design
+   HDF5_structure
+   slide_retrieval_h5_structure
+   slide-retrieval-results-and-metrics
+   supported_slide_files
    troubleshooting
 
 .. toctree::

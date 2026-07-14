@@ -52,9 +52,10 @@ def _count_xor(left: np.ndarray, right: np.ndarray) -> int:
         Returns the Hamming/XOR distance as ``int``.
 
     Example:
-        ```python
-        _count_xor(np.array([1, 0]), np.array([0, 0]))
-        ```
+        .. code-block:: python
+
+            _count_xor(np.array([1, 0]), np.array([0, 0]))
+
     """
     return int(np.count_nonzero(np.not_equal(left, right)))
 
@@ -116,11 +117,12 @@ class BoB:
             ``float``.
 
         Example:
-            ```python
-            left = BoB(np.array([[1, 1]], dtype=np.uint8), "a", None, "x")
-            right = BoB(np.array([[1, 1]], dtype=np.uint8), "b", None, "x")
-            left.distance(right)
-            ```
+            .. code-block:: python
+
+                left = BoB(np.array([[1, 1]], dtype=np.uint8), "a", None, "x")
+                right = BoB(np.array([[1, 1]], dtype=np.uint8), "b", None, "x")
+                left.distance(right)
+
         """
         if len(self.barcodes) == 0 or len(other_bob.barcodes) == 0:
             return float("inf")
@@ -162,11 +164,12 @@ class YottixelSearch(BaseSearchStrategy):
         entries and query metadata carrying ``predicted_category``.
 
     Example:
-        ```python
-        strategy = YottixelSearch(params={"k": 5})
-        strategy.build_database(database_representations)
-        result = strategy.search(query_representation)
-        ```
+        .. code-block:: python
+
+            strategy = YottixelSearch(params={"k": 5})
+            strategy.build_database(database_representations)
+            result = strategy.search(query_representation)
+
     """
 
     name = "yottixel"

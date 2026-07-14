@@ -24,16 +24,17 @@ def torchmil_or_pathforge_collate(batch: list[Any], *, use_torchmil: bool = True
         real instances are true.
 
     Example:
-        ```python
-        torch.manual_seed(7)
-        batch = [
-            {"X": torch.ones(2, 4), "Y": torch.tensor(0)},
-            {"X": torch.ones(3, 4), "Y": torch.tensor(1)},
-        ]
-        out = torchmil_or_pathforge_collate(batch, use_torchmil=False)
-        assert out["X"].shape == (2, 3, 4)
-        assert out["mask"].tolist() == [[True, True, False], [True, True, True]]
-        ```
+        .. code-block:: python
+
+            torch.manual_seed(7)
+            batch = [
+                {"X": torch.ones(2, 4), "Y": torch.tensor(0)},
+                {"X": torch.ones(3, 4), "Y": torch.tensor(1)},
+            ]
+            out = torchmil_or_pathforge_collate(batch, use_torchmil=False)
+            assert out["X"].shape == (2, 3, 4)
+            assert out["mask"].tolist() == [[True, True, False], [True, True, True]]
+
     """
 
     bag_dicts = []

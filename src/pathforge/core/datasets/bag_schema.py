@@ -8,33 +8,28 @@ import torch
 class BagBatch(TypedDict):
     """Canonical PathForge MIL batch schema.
 
-    Required keys:
-        X: Floating point feature tensor shaped ``[B, N, D]`` for a padded batch
-            or ``[N, D]`` for one unbatched bag. Values are finite feature
-            embeddings, usually ``float32``.
-        Y: Bag-level target tensor. Classification targets are usually ``[B]``
-            integer class ids. Continuous survival targets may be a dict with
-            ``time`` and ``event`` tensors shaped ``[B]``.
+    ``X`` contains finite floating-point features shaped ``[B, N, D]`` for a
+    padded batch or ``[N, D]`` for one unbatched bag. ``Y`` contains the
+    bag-level target. Classification targets are normally integer class IDs;
+    continuous-survival targets may contain ``time`` and ``event`` tensors.
 
-    Optional keys:
-        mask: Boolean or binary tensor shaped ``[B, N]`` where ``True``/``1``
-            marks real instances and ``False``/``0`` marks padding.
-        coords: Coordinate tensor shaped ``[B, N, 2]`` with x/y tile positions.
-        adj: Dense adjacency tensor shaped ``[B, N, N]``.
-        y_inst: Instance-level labels shaped ``[B, N]``.
+    Optional keys are ``mask`` (real-versus-padding flags shaped ``[B, N]``),
+    ``coords`` (x/y positions shaped ``[B, N, 2]``), ``adj`` (dense adjacency
+    shaped ``[B, N, N]``), and ``y_inst`` (instance labels shaped ``[B, N]``).
 
     Example:
-        ```python
-        import torch
-        from pathforge.core.datasets.bag_schema import assert_bag_schema
+        .. code-block:: python
 
-        batch = {
-            "X": torch.zeros(2, 4, 1024, dtype=torch.float32),
-            "Y": torch.tensor([0, 1], dtype=torch.long),
-            "mask": torch.tensor([[1, 1, 0, 0], [1, 1, 1, 1]], dtype=torch.bool),
-        }
-        assert_bag_schema(batch, batched=True)
-        ```
+            import torch
+            from pathforge.core.datasets.bag_schema import assert_bag_schema
+
+            batch = {
+                "X": torch.zeros(2, 4, 1024, dtype=torch.float32),
+                "Y": torch.tensor([0, 1], dtype=torch.long),
+                "mask": torch.tensor([[1, 1, 0, 0], [1, 1, 1, 1]], dtype=torch.bool),
+            }
+            assert_bag_schema(batch, batched=True)
+
 
     Raises:
         AssertionError: Validation helpers raise when required keys, ranks,
