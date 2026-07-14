@@ -18,6 +18,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.mathjax",
     "myst_parser",
 ]
 
@@ -74,6 +75,8 @@ source_suffix = {
 }
 
 myst_enable_extensions = [
+    "amsmath",
     "colon_fence",
     "deflist",
+    "dollarmath",
 ]

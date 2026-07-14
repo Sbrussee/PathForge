@@ -200,7 +200,7 @@ def test_autodoc_module_is_importable(
     reason="sphinx not installed",
 )
 def test_sphinx_build_no_errors(tmp_path: Path) -> None:
-    """Run a dummy Sphinx build and assert exit code 0."""
+    """Build the HTML documentation and verify that equations are rendered."""
     import subprocess
 
     build_dir = tmp_path / "_build" / "html"
@@ -220,3 +220,8 @@ def test_sphinx_build_no_errors(tmp_path: Path) -> None:
     assert result.returncode == 0, (
         f"Sphinx build failed.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
     )
+    metrics_html = (
+        build_dir / "slide-retrieval-results-and-metrics.html"
+    ).read_text(encoding="utf-8")
+    assert "mathjax" in metrics_html.lower()
+    assert 'class="math notranslate nohighlight"' in metrics_html
