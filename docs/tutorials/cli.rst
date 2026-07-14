@@ -77,7 +77,7 @@ Example:
 ``pathforge-optimize``
 -----------------------
 
-Run an Optuna hyperparameter optimization study.
+Run an Optuna pipeline optimization study.
 
 .. code-block:: text
 

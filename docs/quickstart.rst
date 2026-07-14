@@ -103,7 +103,7 @@ Benchmarking
 
    pathforge-benchmark --config benchmark.yaml
 
-Hyperparameter Optimization
+Pipeline Optimization
 ----------------------------
 
 **Config** (``optimize.yaml``):

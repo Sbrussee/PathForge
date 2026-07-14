@@ -408,7 +408,13 @@ PathForge does not infer numeric ranges from model constructors.
      - ``min`` or ``max``.
    * - ``sampler``
      - ``TPESampler``
-     - Optuna sampler class name (e.g. ``TPESampler``, ``RandomSampler``, ``CmaEsSampler``).
+     - Supported: ``TPESampler`` (TPE/Bayesian), ``GPSampler``
+       (Gaussian-process Bayesian), ``RandomSampler``, and ``CmaEsSampler``.
+       ``GridSampler`` is accepted but currently falls back to TPE. See the
+       `Optuna sampler reference
+       <https://optuna.readthedocs.io/en/stable/reference/samplers/index.html>`_
+       for Optuna's complete catalogue; names not listed as supported here are
+       not automatically supported by PathForge.
    * - ``pruner``
      - ``HyperbandPruner``
      - Optuna pruner class name (e.g. ``HyperbandPruner``, ``MedianPruner``, ``NopPruner``).

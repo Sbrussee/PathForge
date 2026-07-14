@@ -1,4 +1,4 @@
-Tutorial: Hyperparameter Optimization
+Tutorial: Pipeline Optimization
 ======================================
 
 Optimization mode runs an `Optuna <https://optuna.readthedocs.io>`_ study to
@@ -98,7 +98,11 @@ Optuna Study Settings
    * - Sampler
      - When to use
    * - ``TPESampler``
-     - **Default.** Tree-structured Parzen Estimator. Best for most cases.
+     - **Default.** Tree-structured Parzen Estimator, a model-based Bayesian
+       optimization method. Best for most mixed search spaces.
+   * - ``GPSampler``
+     - Gaussian-process Bayesian optimization. Useful for comparatively small,
+       expensive search spaces; requires the dependencies expected by Optuna.
    * - ``RandomSampler``
      - Baseline random search. Use to verify TPE improvement.
    * - ``CmaEsSampler``
@@ -107,6 +111,12 @@ Optuna Study Settings
      - Accepted for configuration compatibility, but currently logs a warning
        and falls back to ``TPESampler`` because the dynamic search space is not
        available when Optuna constructs the sampler.
+
+These are the samplers wired into the current PathForge policy. See Optuna's
+`complete sampler reference
+<https://optuna.readthedocs.io/en/stable/reference/samplers/index.html>`_ for
+the broader Optuna catalogue. An Optuna sampler name is not selectable in
+PathForge until the policy explicitly constructs it.
 
 ``optimization.pruner``
 ~~~~~~~~~~~~~~~~~~~~~~~~

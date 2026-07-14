@@ -78,6 +78,49 @@ def test_mil_options_match_code_catalogs() -> None:
     assert not missing, f"MIL option names missing from documentation: {missing}"
 
 
+def test_task_outputs_match_metric_and_visualization_catalogs() -> None:
+    """Keep task-output options aligned with configuration and registries."""
+    from pathforge.config.config import (
+        CLASSIFICATION_METRIC_NAMES,
+        REGRESSION_METRIC_NAMES,
+        SURVIVAL_METRIC_NAMES,
+    )
+    from pathforge.core.evaluation.registry import (
+        import_evaluation_metric_modules,
+        list_evaluation_metrics,
+    )
+    from pathforge.slide_retrieval.visualization.service import (
+        _SUPPORTED_VISUALIZATIONS,
+    )
+
+    import_evaluation_metric_modules()
+    text = (DOCS_DIR / "task_outputs.rst").read_text(encoding="utf-8")
+    expected_names = {
+        *CLASSIFICATION_METRIC_NAMES,
+        *REGRESSION_METRIC_NAMES,
+        *SURVIVAL_METRIC_NAMES,
+        *list_evaluation_metrics("slide_retrieval"),
+        *_SUPPORTED_VISUALIZATIONS,
+    }
+    missing = sorted(name for name in expected_names if name not in text)
+    assert not missing, f"Task output options missing from documentation: {missing}"
+
+
+def test_pipeline_optimization_terminology() -> None:
+    """Use the workflow-level Pipeline Optimization name consistently."""
+    paths = [
+        REPO_ROOT / "README.md",
+        *DOCS_DIR.rglob("*.rst"),
+        *DOCS_DIR.rglob("*.md"),
+    ]
+    offenders = [
+        str(path.relative_to(REPO_ROOT))
+        for path in paths
+        if "hyperparameter optimization" in path.read_text(encoding="utf-8").lower()
+    ]
+    assert not offenders, f"Legacy optimization terminology remains in: {offenders}"
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

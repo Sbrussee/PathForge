@@ -6,7 +6,6 @@ import types
 
 import optuna
 import pandas as pd
-import pytest
 
 import pathforge.policy.optimization as opt_mod
 import pathforge.policy.utils as policy_utils
@@ -71,6 +70,12 @@ def test_optimization_policy_selects_sampler(tmp_path: Path) -> None:
     policy = OptimizationPolicy(_make_cfg(tmp_path, sampler="RandomSampler"))
     sampler = policy._get_sampler()
     assert isinstance(sampler, optuna.samplers.RandomSampler)
+
+
+def test_optimization_policy_selects_bayesian_sampler(tmp_path: Path) -> None:
+    policy = OptimizationPolicy(_make_cfg(tmp_path, sampler="GPSampler"))
+    sampler = policy._get_sampler()
+    assert isinstance(sampler, optuna.samplers.GPSampler)
 
 
 def test_optimization_policy_selects_pruner(tmp_path: Path) -> None:

@@ -2,7 +2,8 @@
 
 PathForge is a modular benchmarking framework for multiple instance
 learning (MIL) in computational pathology. It supports WSI feature extraction,
-H5 artifact generation, tile overview reports, MIL benchmarking, hyperparameter- and pipeline optimization, support for classification,
+H5 artifact generation, tile overview reports, MIL benchmarking, pipeline
+optimization, support for classification,
 regression, survival and retrieval tasks, and support for model inference and
 visualization.
 
@@ -25,6 +26,7 @@ matches your task:
 - [Backend integrations](docs/backends.rst)
 - [API reference](docs/api/index.rst) and [API usage examples](docs/api/examples.rst)
 - [HDF5 artifact layout](docs/HDF5_structure.md)
+- [Task outputs, metrics, and visualizations](docs/task_outputs.rst)
 - [Testing](docs/testing.rst) and [troubleshooting](docs/troubleshooting.rst)
 
 The end-to-end tutorial covers slide and annotation preparation, feature
