@@ -42,13 +42,14 @@ class TorchSurvBackend:
     """TorchSurv-backed survival metrics and losses adapter.
 
     Example:
-        ```python
-        backend = TorchSurvBackend()
-        risk = torch.tensor([0.1, -0.2])
-        time = torch.tensor([5.0, 8.0])
-        event = torch.tensor([1.0, 0.0])
-        loss = backend.neg_partial_log_likelihood(risk, time, event)
-        ```
+        .. code-block:: python
+
+            backend = TorchSurvBackend()
+            risk = torch.tensor([0.1, -0.2])
+            time = torch.tensor([5.0, 8.0])
+            event = torch.tensor([1.0, 0.0])
+            loss = backend.neg_partial_log_likelihood(risk, time, event)
+
     """
 
     def __init__(self) -> None:

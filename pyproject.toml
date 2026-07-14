@@ -34,10 +34,6 @@ dependencies = [
     "plotly",
     "kaleido",
     "typer",
-]
-
-[project.optional-dependencies]
-lazyslide = [
     "lazyslide>=0.10.0",
     "wsidata",
     "timm",
@@ -45,6 +41,7 @@ lazyslide = [
     "anndata>=0.10.9",
 ]
 
+[project.optional-dependencies]
 cu128 = [
     "torch==2.9.1",
     "torchvision==0.24.1",

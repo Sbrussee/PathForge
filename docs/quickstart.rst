@@ -16,7 +16,9 @@ All workflows need an annotation CSV. At minimum:
    TestSet,SLIDE_003,PATIENT_003,case
 
 - ``dataset`` must match a name in ``datasets[].name``.
-- ``slide`` is matched against files in ``slides_dir`` using ``{slide}.*``.
+- ``slide`` must exactly match a supported file stem in ``slides_dir`` (for
+  example, ``SLIDE_001`` resolves to ``SLIDE_001.svs``). A DICOM slide may
+  instead use an exact-name directory containing ``.dcm`` files.
 - Supported suffixes: ``.svs``, ``.ndpi``, ``.tiff``, ``.tif``, ``.mrxs``.
 
 See :doc:`data_preparation` for the complete column reference, per-task

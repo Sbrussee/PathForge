@@ -24,9 +24,11 @@ def register_task(name: str) -> Callable[[type["TaskBase"]], type["TaskBase"]]:
     Decorator to register a benchmarking task class.
 
     Example:
-        @register_task("classification")
-        class ClassificationTask(TaskBase):
-            ...
+        .. code-block:: python
+
+            @register_task("classification")
+            class ClassificationTask(TaskBase):
+                ...
     """
     normalized_name = _normalize_task_name(name)
 

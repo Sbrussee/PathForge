@@ -20,7 +20,7 @@ Configured via ``slide_processing.backend``.
      - **Default and currently implemented processor.** Uses the
        `Lazyslide <https://lazyslide.readthedocs.io>`_ / WSIData stack.
        Lazyslide itself can route I/O through tiffslide and related readers.
-       Requires the ``lazyslide`` extra and integrates with ``timm`` feature
+       Installed by default and integrates with ``timm`` feature
        extractors.
    * - ``openslide``
      - Reserved configuration key for a future dedicated OpenSlide processor.

@@ -64,10 +64,11 @@ class BackendCatalogEntry:
             entry can be selected in this environment.
 
     Example:
-        ```python
-        entries = list_mil_models()
-        torchmil_names = [item.name for item in entries if item.backend == "torchmil"]
-        ```
+        .. code-block:: python
+
+            entries = list_mil_models()
+            torchmil_names = [item.name for item in entries if item.backend == "torchmil"]
+
     """
 
     name: str
@@ -343,10 +344,11 @@ def list_feature_extractors() -> list[BackendCatalogEntry]:
             from the backend package itself.
 
     Example:
-        ```python
-        entries = list_feature_extractors()
-        lazyslide_only = [item.name for item in entries if item.backend == "lazyslide"]
-        ```
+        .. code-block:: python
+
+            entries = list_feature_extractors()
+            lazyslide_only = [item.name for item in entries if item.backend == "lazyslide"]
+
     """
 
     config_field = "benchmark_parameters.feature_extraction"
@@ -394,10 +396,11 @@ def list_mil_models() -> list[BackendCatalogEntry]:
             requirements.
 
     Example:
-        ```python
-        entries = list_mil_models()
-        mil_lab_models = [item.name for item in entries if item.backend == "mil-lab"]
-        ```
+        .. code-block:: python
+
+            entries = list_mil_models()
+            mil_lab_models = [item.name for item in entries if item.backend == "mil-lab"]
+
     """
 
     from pathforge.adapters.mil_lab.backend import MILLAB_MODEL_SPECS

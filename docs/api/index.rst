@@ -2,7 +2,9 @@ API Reference
 =============
 
 PathForge is organized into several packages following Clean Architecture
-principles. All public interfaces are documented here.
+principles. This section documents the stable interfaces most useful to users
+and extension authors; internal implementation modules are intentionally
+omitted.
 
 .. toctree::
    :maxdepth: 2

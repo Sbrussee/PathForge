@@ -43,30 +43,29 @@ Primary functionality:
 
 ## Installation
 
-**Recommended install** — includes all runtime dependencies (Lazyslide feature
-extraction backend, TorchMIL, TorchMetrics, TorchSurv):
+**Recommended install** — LazySlide feature extraction is included by default;
+this command adds TorchMIL, TorchMetrics, and TorchSurv:
 
 ```bash
-uv sync --extra lazyslide --extra mil-backends
+uv sync --extra mil-backends
 ```
 
 For GPU (CUDA 12.8) builds, add `--extra cu128`:
 
 ```bash
-uv sync --extra lazyslide --extra mil-backends --extra cu128
+uv sync --extra mil-backends --extra cu128
 ```
 
 Development install (adds pytest):
 
 ```bash
-uv sync --extra lazyslide --extra mil-backends --extra dev
+uv sync --extra mil-backends --extra dev
 ```
 
 Individual extras:
 
 | Extra | Installs |
 |---|---|
-| `lazyslide` | `lazyslide`, `wsidata`, `timm`, `geopandas`, `anndata` |
 | `mil-backends` | `torchmil`, `torchmetrics`, `torchsurv` |
 | `tcga` | `tcga-tools` integration for TCGA/TCIA datasets |
 | `cu128` | CUDA 12.8 PyTorch builds (via the `pytorch-cu128` index) |
@@ -932,9 +931,8 @@ adapter and optional-guard modules.
 
 `Feature extractor '<name>' is not registered.`
 
-: Ensure the extractor package is installed and dynamic registries are populated
-  before config validation. For Lazyslide/timm extractors, install
-  `.[lazyslide]`.
+: Ensure dynamic registries are populated before config validation. LazySlide
+  and timm extractors are included in the default installation.
 
 `cfg.experiment.project_root must be an absolute path.`
 

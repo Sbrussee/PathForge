@@ -10,12 +10,10 @@ Base Abstractions
 
 .. autoclass:: pathforge.training.base.TrainerBase
    :members:
-   :undoc-members:
    :show-inheritance:
 
 .. autoclass:: pathforge.training.base.MILTrainer
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Lightning Trainer
@@ -26,7 +24,6 @@ The Lightning trainer is registered as ``"lightning"`` in
 
 .. automodule:: pathforge.training.lightning
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Callbacks
@@ -34,7 +31,6 @@ Callbacks
 
 .. automodule:: pathforge.training.callbacks
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Metrics
@@ -42,7 +38,6 @@ Metrics
 
 .. automodule:: pathforge.training.metrics
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Scikit-Learn Trainer
@@ -50,5 +45,4 @@ Scikit-Learn Trainer
 
 .. automodule:: pathforge.training.sklearn_trainer
    :members:
-   :undoc-members:
    :show-inheritance:

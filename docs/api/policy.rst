@@ -9,7 +9,6 @@ Base
 
 .. autoclass:: pathforge.policy.base.PolicyBase
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Feature Extraction
@@ -17,7 +16,6 @@ Feature Extraction
 
 .. autoclass:: pathforge.policy.feature_extraction.FeatureExtractionPolicy
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Benchmarking
@@ -25,7 +23,6 @@ Benchmarking
 
 .. autoclass:: pathforge.policy.benchmarking.BenchmarkingPolicy
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Optimization
@@ -33,7 +30,6 @@ Optimization
 
 .. autoclass:: pathforge.policy.optimization.OptimizationPolicy
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Shared Utilities
@@ -41,5 +37,4 @@ Shared Utilities
 
 .. automodule:: pathforge.policy.utils
    :members:
-   :undoc-members:
    :show-inheritance:

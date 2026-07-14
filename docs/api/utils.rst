@@ -8,12 +8,10 @@ Registries
 
 .. automodule:: pathforge.utils.registries
    :members:
-   :undoc-members:
    :show-inheritance:
 
 .. automodule:: pathforge.utils.registry
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Available registries:
@@ -48,12 +46,10 @@ Optional Package Guards
 
 .. automodule:: pathforge.utils.optional.torchmil
    :members:
-   :undoc-members:
    :show-inheritance:
 
 .. automodule:: pathforge.utils.optional.mil_lab
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Constants
@@ -61,7 +57,6 @@ Constants
 
 .. automodule:: pathforge.utils.constants
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Logging
@@ -69,7 +64,6 @@ Logging
 
 .. automodule:: pathforge.utils.logging
    :members:
-   :undoc-members:
    :show-inheritance:
 
 I/O Utilities
@@ -77,7 +71,6 @@ I/O Utilities
 
 .. automodule:: pathforge.utils.io
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Serialization
@@ -85,5 +78,4 @@ Serialization
 
 .. automodule:: pathforge.utils.serialization
    :members:
-   :undoc-members:
    :show-inheritance:

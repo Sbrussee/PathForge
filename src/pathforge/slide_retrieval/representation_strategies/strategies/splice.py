@@ -153,9 +153,10 @@ class _BaseSPLICEStrategy(BaseRetrievalRepresentationStrategy):
         - object exposing `tile_px: int` and `tile_mpp: float`.
 
         Example:
-        ```python
-        combo_cfg = self._resolve_combo_cfg(combo_cfg)
-        ```
+        .. code-block:: python
+
+            combo_cfg = self._resolve_combo_cfg(combo_cfg)
+
         """
         if combo_cfg is None:
             raise ValueError("combo_cfg must be provided for SPLICE retrieval strategies.")
@@ -196,10 +197,11 @@ class SPLICERGB(_BaseSPLICEStrategy):
       - `additional_data["groups"]`: group-to-member index mapping
 
     Example:
-    ```python
-    strategy = SPLICERGB(params={"percentile_threshold": 25.0})
-    representation = strategy.run(bag=rgb_histograms, sample=sample, combo_cfg=combo_cfg)
-    ```
+    .. code-block:: python
+
+        strategy = SPLICERGB(params={"percentile_threshold": 25.0})
+        representation = strategy.run(bag=rgb_histograms, sample=sample, combo_cfg=combo_cfg)
+
 
     Reference:
         Alsaafin, Areej, Peyman Nejat, Abubakr Shafique, Jibran Khan, Saghir
@@ -381,10 +383,11 @@ class SPLICEFeatures(_BaseSPLICEStrategy):
       - `additional_data["groups"]`: group-to-member index mapping
 
     Example:
-    ```python
-    strategy = SPLICEFeatures(params={"percentile_threshold": 25.0})
-    representation = strategy.run(bag=embeddings, sample=sample, combo_cfg=combo_cfg)
-    ```
+    .. code-block:: python
+
+        strategy = SPLICEFeatures(params={"percentile_threshold": 25.0})
+        representation = strategy.run(bag=embeddings, sample=sample, combo_cfg=combo_cfg)
+
 
     Reference:
         Alsaafin, Areej, Peyman Nejat, Abubakr Shafique, Jibran Khan, Saghir

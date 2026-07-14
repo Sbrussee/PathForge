@@ -136,13 +136,14 @@ class BaseRetrievalRepresentationStrategy:
           load additional retrieval-specific inputs.
 
         Example:
-        ```python
-        payload = strategy.load_sample(
-            index=0,
-            sample=sample,
-            base_dataset=bag_dataset,
-        )
-        ```
+        .. code-block:: python
+
+            payload = strategy.load_sample(
+                index=0,
+                sample=sample,
+                base_dataset=bag_dataset,
+            )
+
         """
         _ = sample
         return {

@@ -7,33 +7,29 @@ console script entry point.
 Feature Extraction
 ------------------
 
-.. automodule:: pathforge.cli.feature_extraction
+.. automodule:: pathforge.cli.features_run
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Single-Slide Feature Extraction
 ---------------------------------
 
-.. automodule:: pathforge.cli.feature_extraction_slide
+.. automodule:: pathforge.cli.features_slide
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Benchmarking
 ------------
 
-.. automodule:: pathforge.cli.benchmark
+.. automodule:: pathforge.cli.benchmark_run
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Optimization
 ------------
 
-.. automodule:: pathforge.cli.optimize
+.. automodule:: pathforge.cli.optimize_run
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Inference
@@ -41,47 +37,41 @@ Inference
 
 .. automodule:: pathforge.cli.inference
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Evaluation
 ----------
 
-.. automodule:: pathforge.cli.evaluate
+.. automodule:: pathforge.cli.evaluate_run
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Mean RGB
 --------
 
-.. automodule:: pathforge.cli.mean_rgb
+.. automodule:: pathforge.cli.retrieval_mean_rgb
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Visualization
 -------------
 
-.. automodule:: pathforge.cli.visualize
+.. automodule:: pathforge.cli.visualize_run
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Slide Retrieval Representations
 -------------------------------
 
-.. automodule:: pathforge.cli.slide_retrieval_representations
+.. automodule:: pathforge.cli.retrieval_representations
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Tile Reports
 ------------
 
-.. automodule:: pathforge.cli.tiles_report
+.. automodule:: pathforge.cli.report_tiles
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Base
@@ -89,5 +79,4 @@ Base
 
 .. automodule:: pathforge.cli.base
    :members:
-   :undoc-members:
    :show-inheritance:

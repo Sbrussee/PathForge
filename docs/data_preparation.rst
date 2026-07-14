@@ -361,8 +361,17 @@ A quick sanity check using pandas:
    df = pd.read_csv("/data/annotations.csv")
    slides_dir = Path("/data/slides/train")
 
+   supported_suffixes = (".svs", ".ndpi", ".tiff", ".tif", ".mrxs")
+
+   def slide_exists(slide_id: str) -> bool:
+       direct = any((slides_dir / f"{slide_id}{suffix}").is_file()
+                    for suffix in supported_suffixes)
+       dicom_dir = slides_dir / slide_id
+       dicom = dicom_dir.is_dir() and any(dicom_dir.glob("*.dcm"))
+       return direct or dicom
+
    missing = [
        row.slide for _, row in df[df.dataset == "TrainingSet"].iterrows()
-       if not any(slides_dir.glob(f"{row.slide}.*"))
+       if not slide_exists(row.slide)
    ]
    print("Missing slides:", missing)

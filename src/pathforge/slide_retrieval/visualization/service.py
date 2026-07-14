@@ -72,18 +72,19 @@ class SlideVisualizationAsset:
     - `metadata`: row-like metadata lookup keyed by annotation column name.
 
     Example:
-    ```python
-    asset = SlideVisualizationAsset(
-        slide_id="slide_001",
-        dataset_name="cohort_a",
-        artifact_path=Path("/tmp/artifacts/slide_001.h5"),
-        slide_path=None,
-        patient_id="patient_1",
-        category="tumor",
-        fallback_mpp=None,
-        metadata={"slide": "slide_001", "category": "tumor"},
-    )
-    ```
+    .. code-block:: python
+
+        asset = SlideVisualizationAsset(
+            slide_id="slide_001",
+            dataset_name="cohort_a",
+            artifact_path=Path("/tmp/artifacts/slide_001.h5"),
+            slide_path=None,
+            patient_id="patient_1",
+            category="tumor",
+            fallback_mpp=None,
+            metadata={"slide": "slide_001", "category": "tumor"},
+        )
+
     """
 
     slide_id: str
@@ -111,17 +112,18 @@ class SlideRetrievalVisualizationService:
       `run_dir / f"vis_{visualization_name}"`.
 
     Example:
-    ```python
-    service = SlideRetrievalVisualizationService(
-        experiment=experiment,
-        run_dir=Path("/tmp/run_abc"),
-        manifest={"tiling_id": "256px_0.5mpp", "representation_id": "repr_id"},
-    )
-    files = service.render_requested_visualizations(
-        requested_visualizations=["retrieval_results"],
-        subset_ids={"slide_1"},
-    )
-    ```
+    .. code-block:: python
+
+        service = SlideRetrievalVisualizationService(
+            experiment=experiment,
+            run_dir=Path("/tmp/run_abc"),
+            manifest={"tiling_id": "256px_0.5mpp", "representation_id": "repr_id"},
+        )
+        files = service.render_requested_visualizations(
+            requested_visualizations=["retrieval_results"],
+            subset_ids={"slide_1"},
+        )
+
     """
 
     def __init__(

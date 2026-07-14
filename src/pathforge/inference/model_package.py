@@ -31,10 +31,11 @@ class LoadedModelPackage:
         package_payload: Raw serialized package dictionary loaded from disk.
 
     Example:
-        ```python
-        loaded = load_packaged_model("best_model_package.pt")
-        logits = predict_bag(loaded.model, torch.randn(1, 8, 16), task=loaded.task)
-        ```
+        .. code-block:: python
+
+            loaded = load_packaged_model("best_model_package.pt")
+            logits = predict_bag(loaded.model, torch.randn(1, 8, 16), task=loaded.task)
+
     """
 
     model: MILModelBase

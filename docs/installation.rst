@@ -11,24 +11,24 @@ Requirements
 Recommended Install
 -------------------
 
-Install with Lazyslide feature extraction and MIL backends (TorchMIL,
-TorchMetrics, TorchSurv):
+LazySlide feature extraction is installed by default. Add the MIL backends
+(TorchMIL, TorchMetrics, and TorchSurv) with:
 
 .. code-block:: bash
 
-   uv sync --extra lazyslide --extra mil-backends
+   uv sync --extra mil-backends
 
 GPU (CUDA 12.8) build:
 
 .. code-block:: bash
 
-   uv sync --extra lazyslide --extra mil-backends --extra cu128
+   uv sync --extra mil-backends --extra cu128
 
 Development install (adds pytest and coverage):
 
 .. code-block:: bash
 
-   uv sync --extra lazyslide --extra mil-backends --extra dev
+   uv sync --extra mil-backends --extra dev
 
 Optional Extras
 ---------------
@@ -39,8 +39,6 @@ Optional Extras
 
    * - Extra
      - Installs
-   * - ``lazyslide``
-     - ``lazyslide``, ``wsidata``, ``timm``, ``geopandas``, ``anndata``
    * - ``mil-backends``
      - ``torchmil``, ``torchmetrics``, ``torchsurv``, ``pycox``
    * - ``cu128``

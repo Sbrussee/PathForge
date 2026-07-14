@@ -24,10 +24,11 @@ def normalize_torchmil_output(output: Any, *, task: TaskName | str) -> torch.Ten
         torch.Tensor: Normalized finite tensor matching PathForge task losses.
 
     Example:
-        ```python
-        logits = normalize_torchmil_output({"logits": torch.zeros(2, 3)}, task="classification")
-        assert logits.shape == (2, 3)
-        ```
+        .. code-block:: python
+
+            logits = normalize_torchmil_output({"logits": torch.zeros(2, 3)}, task="classification")
+            assert logits.shape == (2, 3)
+
 
     Raises:
         TypeError: If no tensor output can be extracted.

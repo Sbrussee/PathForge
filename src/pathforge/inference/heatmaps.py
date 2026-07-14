@@ -125,16 +125,17 @@ def create_inference_heatmap(
         InferenceHeatmapResult: Summary of the persisted heatmap.
 
     Example:
-        ```python
-        result = create_inference_heatmap(
-            artifact_path="SLIDE_001.h5",
-            bag_id="256px_0.5mpp",
-            scores_path="attention_scores.npy",
-            heatmap_backend="torchmil",
-            heatmap_name="abmil_attention",
-        )
-        assert result.num_points > 0
-        ```
+        .. code-block:: python
+
+            result = create_inference_heatmap(
+                artifact_path="SLIDE_001.h5",
+                bag_id="256px_0.5mpp",
+                scores_path="attention_scores.npy",
+                heatmap_backend="torchmil",
+                heatmap_name="abmil_attention",
+            )
+            assert result.num_points > 0
+
 
     Raises:
         KeyError: If the selected explainer backend is not registered.

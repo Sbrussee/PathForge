@@ -9,5 +9,11 @@ Heatmaps
 
 .. automodule:: pathforge.inference.heatmaps
    :members:
-   :undoc-members:
+   :show-inheritance:
+
+Model packages
+--------------
+
+.. automodule:: pathforge.inference.model_package
+   :members:
    :show-inheritance:

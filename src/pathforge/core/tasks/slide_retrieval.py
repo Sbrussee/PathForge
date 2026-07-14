@@ -646,23 +646,18 @@ class SlideRetrievalTask(TaskBase):
         """
         Create and persist retrieval representations for one retrieval dataset.
 
-        Inputs:
-        - `bag_dataset`: `SlideRetrievalBagDataset` that owns the target samples.
-        - `retrieval_loader`: `DataLoader[list[SlideRetrievalDatasetItem]]`
-          yielding retrieval batches to materialize.
-        - `batch_thread_workers`: number of threads used per retrieval batch.
-        - `combo_cfg`: active combo used by the representation strategy.
-        - `representation_strategy`: instantiated retrieval representation
-          strategy.
-        - `representation_id`: stable representation artifact key.
-        - `aggregation_level`: active experiment aggregation level.
-        - `exclusion_level`: configured exclusion key level.
+        Args:
+            bag_dataset: Dataset that owns the target samples.
+            retrieval_loader: Loader yielding retrieval batches to materialize.
+            batch_thread_workers: Threads used per retrieval batch.
+            combo_cfg: Active representation configuration.
+            representation_strategy: Instantiated representation strategy.
+            representation_id: Stable representation artifact key.
+            aggregation_level: Active experiment aggregation level.
+            exclusion_level: Configured exclusion key level.
 
         Returns:
-        - tuple:
-          - `created_retrieval_representations`: successfully created
-            representations.
-          - `creation_errors_by_sample`: failure details keyed by sample ID.
+            Created representations and failure details keyed by sample ID.
         """
         created_retrieval_representations: list[RetrievalRepresentation] = []
         creation_errors_by_sample: dict[str, str] = {}

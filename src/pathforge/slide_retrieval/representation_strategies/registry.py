@@ -115,9 +115,10 @@ def import_representation_strategy_modules(
     - `None`. Import side effects register all retrieval representation strategies.
 
     Example:
-    ```python
-    import_representation_strategy_modules()
-    ```
+    .. code-block:: python
+
+        import_representation_strategy_modules()
+
     """
     global _REPRESENTATION_STRATEGIES_IMPORTED
 

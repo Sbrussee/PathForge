@@ -14,13 +14,13 @@ Install the standard test environment first:
 
 .. code-block:: bash
 
-   uv sync --extra lazyslide --extra mil-backends --extra hf --extra dev
+   uv sync --extra mil-backends --extra hf --extra dev
 
 If you also need the documentation build dependencies:
 
 .. code-block:: bash
 
-   uv sync --extra lazyslide --extra mil-backends --extra hf --extra dev --extra docs
+   uv sync --extra mil-backends --extra hf --extra dev --extra docs
 
 Unit Tests
 ----------

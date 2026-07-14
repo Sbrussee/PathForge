@@ -1,20 +1,23 @@
 import os
 import sys
+from importlib.metadata import PackageNotFoundError, version as package_version
 
 sys.path.insert(0, os.path.abspath("../src"))
 
 project = "PathForge"
-copyright = "2025, Siemen Brussee"
+copyright = "2026, Siemen Brussee"
 author = "Siemen Brussee"
-release = "2.0"
-version = "2.0"
+try:
+    release = package_version("pathforge")
+except PackageNotFoundError:
+    release = "0.1.0"
+version = release
 
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
-    "sphinx.ext.autosummary",
     "myst_parser",
 ]
 
@@ -23,7 +26,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "furo"
 html_static_path = ["_static"]
-html_title = "PathForge 2.0"
+html_title = f"PathForge {release}"
 html_logo = None
 
 autodoc_default_options = {
@@ -41,6 +44,8 @@ autodoc_mock_imports = [
     "timm",
     "geopandas",
     "anndata",
+    "spatialdata",
+    "dask",
     "torchmil",
     "torchmetrics",
     "torchsurv",
@@ -58,8 +63,7 @@ napoleon_numpy_docstring = True
 napoleon_preprocess_types = True
 napoleon_use_param = True
 napoleon_use_rtype = True
-
-autosummary_generate = True
+napoleon_use_ivar = True
 
 # Keep docs builds self-contained in test and CI environments where outbound
 # inventory fetches may be slow or unavailable.

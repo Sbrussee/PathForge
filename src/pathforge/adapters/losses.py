@@ -47,11 +47,12 @@ class TorchClassificationLoss(BaseLoss):
         **loss_kwargs: Forwarded to ``loss_ctor``.
 
     Example:
-        ```python
-        loss = TorchClassificationLoss(nn.CrossEntropyLoss, target_dtype="long")
-        value = loss(torch.zeros(2, 3), torch.tensor([0, 1]))
-        assert value.ndim == 0
-        ```
+        .. code-block:: python
+
+            loss = TorchClassificationLoss(nn.CrossEntropyLoss, target_dtype="long")
+            value = loss(torch.zeros(2, 3), torch.tensor([0, 1]))
+            assert value.ndim == 0
+
     """
 
     def __init__(
@@ -128,14 +129,15 @@ class TorchSurvivalLoss(BaseLoss):
         uses_eval_time: Whether the wrapped loss requires an ``eval_time`` grid.
 
     Example:
-        ```python
-        from torchsurv.loss.cox import neg_partial_log_likelihood
+        .. code-block:: python
 
-        loss = TorchSurvivalLoss(neg_partial_log_likelihood, task_type="survival")
-        target = {"time": torch.tensor([1.0]), "event": torch.tensor([1.0])}
-        value = loss(torch.tensor([[0.2]]), target)
-        assert torch.isfinite(value)
-        ```
+            from torchsurv.loss.cox import neg_partial_log_likelihood
+
+            loss = TorchSurvivalLoss(neg_partial_log_likelihood, task_type="survival")
+            target = {"time": torch.tensor([1.0]), "event": torch.tensor([1.0])}
+            value = loss(torch.tensor([[0.2]]), target)
+            assert torch.isfinite(value)
+
     """
 
     def __init__(
@@ -198,13 +200,14 @@ def register_builtin_loss_factories(registry: Any) -> None:
         registry: PathForge registry instance used for loss resolution.
 
     Example:
-        ```python
-        from pathforge.utils.registry import Registry
+        .. code-block:: python
 
-        registry = Registry()
-        register_builtin_loss_factories(registry)
-        assert registry.get("CrossEntropyLoss") is not None
-        ```
+            from pathforge.utils.registry import Registry
+
+            registry = Registry()
+            register_builtin_loss_factories(registry)
+            assert registry.get("CrossEntropyLoss") is not None
+
     """
 
     for name, (
