@@ -8,6 +8,7 @@ trained models and inference heatmaps.
    :maxdepth: 2
 
    feature_extraction
+   end_to_end
    benchmarking
    slide_retrieval
    optimization

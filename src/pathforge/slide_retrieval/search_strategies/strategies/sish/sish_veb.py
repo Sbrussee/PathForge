@@ -1,135 +1,139 @@
-# The implementation of VEB tree is borrowed from:
-# https://github.com/erikwaing/VEBTree
-import math
-import logging
+"""Integer predecessor/successor index used by the SISH search backend.
 
-logger = logging.getLogger(__name__)
+The van Emde Boas implementation is adapted from
+https://github.com/erikwaing/VEBTree.
+"""
+
+from __future__ import annotations
+
+import math
+
 
 class VEB:
-    """van Emde Boas tree used by the SISH retrieval backend."""
+    """Store integer keys in a van Emde Boas tree.
 
-    def high(self, x):
-        return int(math.floor(x / math.sqrt(self.u)))
+    Args:
+        universe_size: Exclusive upper bound for keys that will be inserted.
 
-    def low(self, x):
-        return int((x % math.ceil(math.sqrt(self.u))))
+    Example:
+        >>> tree = VEB(16)
+        >>> tree.insert(4)
+        >>> tree.insert(9)
+        >>> tree.successor(4)
+        9
+    """
 
-    def index(self, x, y):
-        return int((x * math.floor(math.sqrt(self.u))) + y)
-
-    def __init__(self, u):
-        if u < 0:
-            raise Exception("u cannot be less than 0 --- u = " + str(u))
+    def __init__(self, universe_size: int) -> None:
+        if universe_size < 0:
+            raise ValueError(f"universe_size must be non-negative, got {universe_size}")
         self.u = 2
-        while self.u < u:
+        while self.u < universe_size:
             self.u *= self.u
-        self.min = None
-        self.max = None
-        if (u > 2):
-            self.clusters = [None for i in range(self.high(self.u))]  # VEB(self.high(self.u))
-            self.summary = None  # VEB(self.high(self.u))
+        self.min: int | None = None
+        self.max: int | None = None
+        if universe_size > 2:
+            self.clusters: list[VEB | None] = [None for _ in range(self.high(self.u))]
+            self.summary: VEB | None = None
 
-    def member(self, x):
-        if x == self.min or x == self.max:  # found it as the minimum or maximum
+    def high(self, value: int) -> int:
+        """Return the cluster index containing ``value``."""
+        return int(math.floor(value / math.sqrt(self.u)))
+
+    def low(self, value: int) -> int:
+        """Return the offset of ``value`` within its cluster."""
+        return int(value % math.ceil(math.sqrt(self.u)))
+
+    def index(self, high: int, low: int) -> int:
+        """Combine a cluster index and offset into one key."""
+        return int(high * math.floor(math.sqrt(self.u)) + low)
+
+    def member(self, value: int) -> bool:
+        """Return whether ``value`` is present in the tree."""
+        if value == self.min or value == self.max:
             return True
-        elif self.u <= 2:					# has not found it in the "leaf"
+        if self.u <= 2:
             return False
-        else:
-            cluster = self.clusters[self.high(x)]
-            if cluster is not None:
-                return cluster.member(self.low(x))  # looks for it in the clusters inside
-            else:
-                return False
+        cluster = self.clusters[self.high(value)]
+        return cluster is not None and cluster.member(self.low(value))
 
-    def successor(self, x):
+    def successor(self, value: int) -> int | None:
+        """Return the smallest stored key greater than ``value``."""
         if self.u <= 2:
-            if x == 0 and self.max == 1:
-                return 1
-            else:
-                return None
-        elif self.min is not None and x < self.min: # x is less than everything in the tree, returns the minimum
+            return 1 if value == 0 and self.max == 1 else None
+        if self.min is not None and value < self.min:
             return self.min
-        else:
-            h = self.high(x)
-            low_val = self.low(x)
-            maxlow = None
-            cluster = self.clusters[h]
-            if cluster is not None:
-                maxlow = cluster.max
-            if maxlow is not None and low_val < maxlow:
-                offset = cluster.successor(low_val)
-                return self.index(h, offset)
-            else:
-                succcluster = None
-                if self.summary is not None:
-                    succcluster = self.summary.successor(h)
-                if succcluster is None:
-                    return None
-                else:
-                    cluster2 = self.clusters[succcluster]
-                    offset = 0
-                    if cluster2 is not None:
-                        offset = cluster2.min
-                    return self.index(succcluster, offset)
 
-    def predecessor(self, x):
+        high = self.high(value)
+        low = self.low(value)
+        cluster = self.clusters[high]
+        max_low = cluster.max if cluster is not None else None
+        if max_low is not None and low < max_low:
+            offset = cluster.successor(low)
+            return None if offset is None else self.index(high, offset)
+
+        successor_cluster = (
+            self.summary.successor(high) if self.summary is not None else None
+        )
+        if successor_cluster is None:
+            return None
+        successor = self.clusters[successor_cluster]
+        return (
+            None
+            if successor is None or successor.min is None
+            else self.index(successor_cluster, successor.min)
+        )
+
+    def predecessor(self, value: int) -> int | None:
+        """Return the largest stored key smaller than ``value``."""
         if self.u <= 2:
-            if x == 1 and self.min == 0:
-                return 0
-            else:
-                return None
-        elif self.max is not None and x > self.max:
+            return 0 if value == 1 and self.min == 0 else None
+        if self.max is not None and value > self.max:
             return self.max
-        else:
-            h = self.high(x)
-            low_val = self.low(x)
-            minlow = None
-            cluster = self.clusters[h]
-            if cluster is not None:
-                minlow = cluster.min
-            if minlow is not None and low_val > minlow:
-                offset = cluster.predecessor(low_val)
-                if offset is None:
-                    offset = 0
-                return self.index(h, offset)
-            else:
-                predcluster = None
-                if self.summary is not None:
-                    predcluster = self.summary.predecessor(h)
-                if predcluster is None:
-                    if self.min is not None and x > self.min:
-                        return self.min
-                    else:
-                        return None
-                else:
-                    cluster2 = self.clusters[predcluster]
-                    offset = 0
-                    if cluster2 is not None:
-                        offset = cluster2.max
-                    return self.index(predcluster, offset)
 
-    def emptyInsert(self, x):
-        self.min = x
-        self.max = x
+        high = self.high(value)
+        low = self.low(value)
+        cluster = self.clusters[high]
+        min_low = cluster.min if cluster is not None else None
+        if min_low is not None and low > min_low:
+            offset = cluster.predecessor(low)
+            return None if offset is None else self.index(high, offset)
 
-    def insert(self, x):
+        predecessor_cluster = (
+            self.summary.predecessor(high) if self.summary is not None else None
+        )
+        if predecessor_cluster is None:
+            return self.min if self.min is not None and value > self.min else None
+        predecessor = self.clusters[predecessor_cluster]
+        return (
+            None
+            if predecessor is None or predecessor.max is None
+            else self.index(predecessor_cluster, predecessor.max)
+        )
+
+    def _insert_empty(self, value: int) -> None:
+        """Insert ``value`` into an empty tree or cluster."""
+        self.min = value
+        self.max = value
+
+    def insert(self, value: int) -> None:
+        """Insert ``value`` into the tree."""
         if self.min is None:
-            self.emptyInsert(x)
-        else:
-            if x < self.min:
-                temp = self.min
-                self.min = x
-                x = temp
-            if self.u > 2:
-                h = self.high(x)
-                if self.clusters[h] is None:
-                    self.clusters[h] = VEB(self.high(self.u))
-                if self.summary is None:
-                    self.summary = VEB(self.high(self.u))
-                if self.clusters[h].min is None:
-                    self.summary.insert(h)
-                    self.clusters[h].emptyInsert(self.low(x))
-                else:
-                    self.clusters[h].insert(self.low(x))
-            if x > self.max:
-                self.max = x
+            self._insert_empty(value)
+            return
+
+        if value < self.min:
+            self.min, value = value, self.min
+        if self.u > 2:
+            high = self.high(value)
+            if self.clusters[high] is None:
+                self.clusters[high] = VEB(self.high(self.u))
+            if self.summary is None:
+                self.summary = VEB(self.high(self.u))
+            cluster = self.clusters[high]
+            if cluster.min is None:
+                self.summary.insert(high)
+                cluster._insert_empty(self.low(value))
+            else:
+                cluster.insert(self.low(value))
+        if self.max is None or value > self.max:
+            self.max = value
