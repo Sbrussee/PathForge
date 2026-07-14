@@ -10,24 +10,21 @@ The framework is designed for:
 - Fair and reproducible benchmarking of MIL methods
 - Clean separation of concerns
 - Framework-agnostic extensibility via registries and interfaces
-- Long-term maintainability through strict architectural boundaries
+- Long-term maintainability through documented package boundaries
 
 
 ## 2. Architectural Principles
 
-PathForge uses **Clean Architecture** principles as design guidance while
-keeping a small number of explicit orchestration dependencies practical.
+PathForge uses interface-oriented modules and documented package boundaries,
+with explicit cross-package dependencies for orchestration and integration.
 
-### 2.1 Dependency Rule
+### 2.1 Dependency Guidelines
 
-All source code dependencies must point **inward**:
-
-Interfaces → Adapters → Application / Use Cases → Domain
-
-
-Outer layers should depend on stable inner contracts. The current task modules
-are an explicit exception because they expose application-level workflows from
-the ``core.tasks`` namespace.
+Stable contracts should avoid unnecessary dependencies on CLI entry points and
+concrete integrations. Application modules may compose core, training,
+retrieval, configuration, and adapter functionality when required by a
+workflow. New cross-package dependencies should be explicit and covered by
+interface tests.
 
 ---
 
@@ -243,5 +240,5 @@ duplicated in this design document:
 
 ## 10. Summary
 
-PathForge is designed as a **clean, extensible, and reproducible** framework for MIL benchmarking in computational pathology.  
-By enforcing strict architectural boundaries, interface-based design, and extensible artifact formats, it enables rapid experimentation without sacrificing correctness, maintainability, or scientific rigor.
+PathForge is designed as an **extensible and reproducible** framework for MIL benchmarking in computational pathology.
+Documented interfaces, tested package boundaries, and extensible artifact formats support rapid experimentation while preserving correctness and maintainability.

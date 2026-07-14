@@ -12,7 +12,7 @@ Typical scope:
 
 - abstract base class method contracts
 - required registry surface contracts
-- clean-architecture dependency rules
+- package dependency rules
 - package-layer boundaries such as “core must not import CLI”
 
 Run only the interface tests:

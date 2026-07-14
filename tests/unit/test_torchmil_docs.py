@@ -10,7 +10,7 @@ def test_readme_documents_optional_backends_and_run_modes():
         "mil.torchmil_model",
         "benchmark",
         "optimization",
-        "Clean Architecture",
+        "Integration Boundaries",
         "optional",
         "registry",
     ]

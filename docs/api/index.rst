@@ -1,10 +1,10 @@
 API Reference
 =============
 
-PathForge is organized into several packages following Clean Architecture
-principles. This section documents the stable interfaces most useful to users
-and extension authors; internal implementation modules are intentionally
-omitted.
+PathForge is organized into packages for shared contracts, workflow policies,
+integrations, training, and command-line entry points. This section documents
+the stable interfaces most useful to users and extension authors; internal
+implementation modules are intentionally omitted.
 
 .. toctree::
    :maxdepth: 2

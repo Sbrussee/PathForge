@@ -861,8 +861,8 @@ Persisted heatmap contracts:
 - `metadata`: JSON with backend, explainer key, model path, score path, optional
   coordinate path, optional mask path, score range, and coordinate space.
 
-This path still follows Clean Architecture: inference resolves the heatmap
-implementation through `EXPLAINERS`; TorchMIL-specific behavior remains in
+Inference resolves the heatmap implementation through `EXPLAINERS`, while
+TorchMIL-specific behavior remains in
 `pathforge.adapters.torchmil.heatmap_explainer`.
 
 ## Registries And Extensibility
@@ -900,7 +900,7 @@ class MyMIL(MILModelBase):
 Optional backends should be registered conditionally through dynamic registry
 population so missing packages do not break imports.
 
-## Clean Architecture Guarantees
+## Integration Boundaries
 
 The integration is intentionally interface-first:
 

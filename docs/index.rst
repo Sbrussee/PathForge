@@ -7,9 +7,9 @@ feature extraction, H5 artifact generation, tile overview reports, MIL
 benchmarking, hyperparameter optimization, optional TorchMIL backends, metric
 adapters, and explainability hooks.
 
-PathForge follows a Clean Architecture: policies and trainers resolve
-implementations through PathForge interfaces and registries, while concrete
-third-party packages live in adapter modules.
+Policies and trainers resolve implementations through PathForge interfaces and
+registries, while concrete third-party integrations are concentrated in
+adapter modules where practical.
 
 ----
 
