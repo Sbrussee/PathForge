@@ -433,7 +433,7 @@ def list_mil_models() -> list[BackendCatalogEntry]:
         BackendCatalogEntry(
             name=name,
             backend="torchmil",
-            config_field="mil.torchmil_model",
+            config_field="benchmark_parameters.mil",
             source="torchmil",
             available=is_torchmil_available(),
         )
@@ -443,10 +443,34 @@ def list_mil_models() -> list[BackendCatalogEntry]:
         BackendCatalogEntry(
             name=name,
             backend="mil-lab",
-            config_field="mil.mil_lab_model",
+            config_field="benchmark_parameters.mil",
             source="mil-lab",
             available=is_mil_lab_available(),
         )
         for name in MILLAB_MODEL_SPECS
     )
     return _sorted_catalog(entries)
+
+
+def resolve_mil_model_backend(name: str) -> str:
+    """Return the backend providing a selectable MIL model name.
+
+    The generic ``torchmil`` and ``mil-lab`` keys remain supported for legacy
+    configs. New benchmark grids should use a concrete name returned by
+    :func:`list_mil_models`.
+    """
+
+    normalized_name = str(name).strip()
+    if normalized_name in {"torchmil", "mil-lab"}:
+        return normalized_name
+    matches = {entry.backend for entry in list_mil_models() if entry.name == normalized_name}
+    if not matches:
+        if MODELS.is_available(normalized_name):
+            return "native"
+        raise ValueError(f"MIL model '{normalized_name}' is not in the backend catalog.")
+    if len(matches) > 1:
+        raise ValueError(
+            f"MIL model '{normalized_name}' is ambiguous across backends: "
+            f"{sorted(matches)}. Use a backend-specific model name."
+        )
+    return matches.pop()

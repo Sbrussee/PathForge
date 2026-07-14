@@ -131,19 +131,18 @@ Example config:
 .. code-block:: yaml
 
    mil:
-     backend: torchmil
-     torchmil_model: ABMIL
      torchmil_model_kwargs:
        in_shape: [1024]
        out_shape: 2
      use_torchmil_collate: true
 
    benchmark_parameters:
-     mil: [torchmil]
+     mil: [ABMIL, CLAM]
      loss: [CrossEntropyLoss]
 
-The PathForge registry key is always ``torchmil`` regardless of which
-TorchMIL model class is selected.
+Concrete available TorchMIL class names are registered as model keys. The
+generic ``torchmil`` key remains supported only for compatibility with older
+configs that set ``mil.torchmil_model`` separately.
 
 mil-lab
 ~~~~~~~
@@ -152,14 +151,15 @@ The ``mil-lab`` backend is an optional third backend registered conditionally
 when the ``mil-lab`` package is installed. Available models are listed in the
 `MIL-Lab repository <https://github.com/mahmoodlab/MIL-Lab>`_.
 
-Configure like ``torchmil``:
+Use concrete available MIL-Lab names in the same grid:
 
 .. code-block:: yaml
 
    mil:
-     backend: mil-lab
-     mil_lab_model: MyMILLabModel
      mil_lab_from_pretrained: false
+
+   benchmark_parameters:
+     mil: [abmil, clam, transmil]
 
 Metrics Backends
 -----------------

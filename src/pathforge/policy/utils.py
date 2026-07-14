@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
-
-
-
 import importlib
 import json
 import logging
@@ -86,7 +82,19 @@ def _apply_active_component_overrides(config: Config, params: dict[str, Any]) ->
     """Store active pipeline-component choices on the runtime config."""
 
     if "mil" in params:
-        setattr(config, "_active_model_name", str(params["mil"]))
+        model_name = str(params["mil"])
+        setattr(config, "_active_model_name", model_name)
+        from pathforge.utils.registries import resolve_mil_model_backend
+
+        backend = resolve_mil_model_backend(model_name)
+        if backend == "torchmil" and model_name != "torchmil":
+            config.mil.backend = "torchmil"
+            config.mil.torchmil_model = model_name
+        elif backend == "mil-lab" and model_name != "mil-lab":
+            config.mil.backend = "mil-lab"
+            config.mil.mil_lab_model = model_name
+        elif backend == "native":
+            config.mil.backend = "native"
     if "loss" in params:
         setattr(config, "_active_loss_name", str(params["loss"]))
     if "feature_extraction" in params:
@@ -237,24 +245,32 @@ def build_mil_model_for_config(
     """
 
     task = str(config.experiment.task or "classification")
-    model_factory = MODELS.get(model_name)
+    from pathforge.utils.registries import resolve_mil_model_backend
+
+    backend = resolve_mil_model_backend(model_name)
+    registry_name = backend if backend in {"torchmil", "mil-lab"} else model_name
+    model_factory = MODELS.get(registry_name)
     caller_kwargs = dict(extra_kwargs or {})
 
-    if config.mil.backend == "torchmil":
+    if backend == "torchmil":
         backend_kwargs = dict(config.mil.torchmil_model_kwargs)
         backend_kwargs.setdefault("in_shape", (int(input_dim),))
         backend_kwargs.setdefault("out_shape", int(output_dim))
         ctor_kwargs = {
-            "torchmil_model": str(config.mil.torchmil_model),
+            "torchmil_model": str(
+                config.mil.torchmil_model if model_name == "torchmil" else model_name
+            ),
             "task": task,
             "torchmil_model_kwargs": backend_kwargs,
         }
-    elif config.mil.backend == "mil-lab":
+    elif backend == "mil-lab":
         backend_kwargs = dict(config.mil.mil_lab_model_kwargs)
         backend_kwargs.setdefault("input_dim", int(input_dim))
         backend_kwargs.setdefault("output_dim", int(output_dim))
         ctor_kwargs = {
-            "mil_lab_model": str(config.mil.mil_lab_model),
+            "mil_lab_model": str(
+                config.mil.mil_lab_model if model_name == "mil-lab" else model_name
+            ),
             "task": task,
             "mil_lab_model_kwargs": backend_kwargs,
             "mil_lab_from_pretrained": bool(config.mil.mil_lab_from_pretrained),

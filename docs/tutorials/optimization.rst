@@ -210,7 +210,7 @@ Optimize TorchMIL model hyperparameters:
        dropout_p: {type: float, low: 0.0, high: 0.5}
 
    benchmark_parameters:
-     mil: [torchmil]
+     mil: [ABMIL, CLAM]
      loss: [CrossEntropyLoss]
 
 Resuming a Study

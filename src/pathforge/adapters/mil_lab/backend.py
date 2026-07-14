@@ -217,10 +217,14 @@ def _make_torchmil_alias_factory(
 
 
 def register_mil_lab_backend() -> None:
-    """Register the generic MIL-Lab backend and alias names."""
+    """Register the generic backend, concrete MIL-Lab names, and aliases."""
 
     if not MODELS.is_available("mil-lab"):
         MODELS.register("mil-lab")(MILLabBackendModel)
+
+    for model_name in MILLAB_MODEL_SPECS:
+        if not MODELS.is_available(model_name):
+            MODELS.register(model_name)(MILLabBackendModel)
 
     for registry_name, model_name in MILLAB_NATIVE_ALIASES.items():
         if MODELS.is_available(registry_name):

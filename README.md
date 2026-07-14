@@ -14,20 +14,23 @@ PathForge.
 
 ## Documentation
 
-Start with the [documentation home](docs/index.rst), then use the page that
-matches your task:
+Start with the [documentation home](https://pathforge.readthedocs.io/), then
+use the page that matches your task:
 
-- [Installation](docs/installation.rst) and [quickstart](docs/quickstart.rst)
-- [Data preparation](docs/data_preparation.rst)
-- [Configuration reference](docs/configuration.rst)
-- [MIL benchmark and optimization options](docs/mil_options.rst)
-- [End-to-end classification tutorial](docs/tutorials/end_to_end.rst) and the
-  [complete tutorial index](docs/tutorials/index.rst)
-- [Backend integrations](docs/backends.rst)
-- [API reference](docs/api/index.rst) and [API usage examples](docs/api/examples.rst)
-- [HDF5 artifact layout](docs/HDF5_structure.md)
-- [Task outputs, metrics, and visualizations](docs/task_outputs.rst)
-- [Testing](docs/testing.rst) and [troubleshooting](docs/troubleshooting.rst)
+- [Installation](https://pathforge.readthedocs.io/en/latest/installation.html)
+  and [quickstart](https://pathforge.readthedocs.io/en/latest/quickstart.html)
+- [Data preparation](https://pathforge.readthedocs.io/en/latest/data_preparation.html)
+- [Configuration reference](https://pathforge.readthedocs.io/en/latest/configuration.html)
+- [MIL benchmark and optimization options](https://pathforge.readthedocs.io/en/latest/mil_options.html)
+- [End-to-end classification tutorial](https://pathforge.readthedocs.io/en/latest/tutorials/end_to_end.html)
+  and the [complete tutorial index](https://pathforge.readthedocs.io/en/latest/tutorials/index.html)
+- [Backend integrations](https://pathforge.readthedocs.io/en/latest/backends.html)
+- [API reference](https://pathforge.readthedocs.io/en/latest/api/index.html) and
+  [API usage examples](https://pathforge.readthedocs.io/en/latest/api/examples.html)
+- [HDF5 artifact layout](https://pathforge.readthedocs.io/en/latest/HDF5_structure.html)
+- [Task outputs, metrics, and visualizations](https://pathforge.readthedocs.io/en/latest/task_outputs.html)
+- [Testing](https://pathforge.readthedocs.io/en/latest/testing.html) and
+  [troubleshooting](https://pathforge.readthedocs.io/en/latest/troubleshooting.html)
 
 The end-to-end tutorial covers slide and annotation preparation, feature
 extraction, MIL training, evaluation, and packaged-model inference. The
@@ -249,9 +252,10 @@ then becomes `annotation_column` in the PathForge config.
 ## Configuration Reference
 
 The canonical, maintained schema is the
-[Sphinx configuration reference](docs/configuration.rst). See the
-[MIL options overview](docs/mil_options.rst) for benchmark axes and Optuna
-search-space syntax. The examples below provide a compact orientation.
+[configuration reference](https://pathforge.readthedocs.io/en/latest/configuration.html).
+See the [MIL options overview](https://pathforge.readthedocs.io/en/latest/mil_options.html)
+for benchmark axes and Optuna search-space syntax. The examples below provide
+a compact orientation.
 
 Minimal feature extraction config:
 
@@ -469,7 +473,7 @@ metrics:
 
 benchmark_parameters:
   feature_extraction: [resnet18]
-  mil: [AttentionMIL]
+  mil: [PerceiverMIL]
   loss: [CrossEntropyLoss]
 ```
 
@@ -495,8 +499,6 @@ experiment:
   task: classification
 
 mil:
-  backend: torchmil
-  torchmil_model: ABMIL
   torchmil_model_kwargs:
     in_shape: [1024]
     out_shape: 2
@@ -509,24 +511,25 @@ metrics:
 
 benchmark_parameters:
   feature_extraction: [resnet18]
-  mil: [torchmil]
+  mil: [ABMIL, CLAM]
   loss: [CrossEntropyLoss]
 ```
 
 Important rules:
 
-- `benchmark_parameters.mil` contains the PathForge registry key `torchmil`.
-- `mil.torchmil_model` contains the TorchMIL model class name.
+- `benchmark_parameters.mil` contains concrete available model names from
+  PathForge, TorchMIL, or MIL-Lab.
 - `mil.torchmil_model_kwargs` are forwarded to the TorchMIL constructor.
 - `mil.use_torchmil_collate: true` enables padded dict batches compatible with
   TorchMIL semantics.
 - The generic `TorchMILBackendModel` is the only PathForge model adapter for
   TorchMIL models.
 
-If `torchmil` is selected but unavailable, config validation raises:
+If a TorchMIL model is selected but TorchMIL is unavailable, config validation
+reports that the model is not registered in the active environment.
 
 ```text
-MIL backend 'torchmil' selected, but 'torchmil' is not installed. Install torchmil or set mil.backend='native'.
+MIL model 'ABMIL' not found in registry.
 ```
 
 ## Canonical MIL Bag Batch
@@ -587,7 +590,7 @@ metrics:
 
 benchmark_parameters:
   feature_extraction: [resnet18]
-  mil: [AttentionMIL]
+  mil: [PerceiverMIL]
   loss: [CrossEntropyLoss]
   activation_function: [ReLU]
   optimizer: [Adam]
@@ -595,19 +598,18 @@ benchmark_parameters:
 
 For a TorchMIL benchmark, every run resolves:
 
-1. `MODELS.get("torchmil")`
-2. `TorchMILBackendModel(...)`
-3. `mil.torchmil_model`, for example `ABMIL`
-4. `mil.torchmil_model_kwargs`, forwarded to the TorchMIL constructor
-5. `LightningTrainer`, which accepts canonical dict batches
+1. The concrete `benchmark_parameters.mil` name, for example `ABMIL`
+2. Its catalogued backend and the generic `TorchMILBackendModel`
+3. `mil.torchmil_model_kwargs`, forwarded to the selected constructor
+4. `LightningTrainer`, which accepts canonical dict batches
 
 This keeps TorchMIL as one backend plugin. Benchmarking policies still interact
 with PathForge registries and trainer/model interfaces; they do not import or
 call TorchMIL directly.
 
-To compare native and TorchMIL backends, use separate config files. Native
-models and TorchMIL models may not share constructor kwargs, so separate configs
-keep model construction explicit and reproducible.
+Native, TorchMIL, and MIL-Lab names may share one model grid when all required
+packages are installed. Use separate config files when their shared backend
+constructor kwargs are incompatible.
 
 ## Optimization
 
@@ -630,8 +632,6 @@ experiment:
   task: classification
 
 mil:
-  backend: torchmil
-  torchmil_model: ABMIL
   torchmil_model_kwargs:
     in_shape: [1024]
     out_shape: 2
@@ -651,7 +651,7 @@ optimization:
 
 benchmark_parameters:
   feature_extraction: [resnet18]
-  mil: [torchmil]
+  mil: [ABMIL]
   loss: [CrossEntropyLoss]
 ```
 
@@ -664,11 +664,12 @@ The policy applies supported MIL training keys (`optimizer`, `scheduler`,
 choices. Multi-value `benchmark_parameters` lists also become categorical
 Optuna dimensions automatically.
 
-`mil.torchmil_model` and `mil.torchmil_model_kwargs` are fixed for one config;
-the current policy does not apply dotted search-space keys or arbitrary model
-constructor kwargs. Use separate configs when comparing TorchMIL architectures
-or constructor layouts. Objective metrics can be native, TorchMetrics-backed,
-or TorchSurv-backed, selected by config.
+Concrete model names in `benchmark_parameters.mil` are selectable pipeline
+dimensions. `mil.torchmil_model_kwargs` remains one shared fixed mapping; the
+current policy does not apply dotted search-space keys or arbitrary constructor
+kwargs. Compare models in one config only when those kwargs are compatible, and
+use separate configs for different constructor layouts. Objective metrics can
+be native, TorchMetrics-backed, or TorchSurv-backed, selected by config.
 
 ## Slide Retrieval
 
@@ -782,11 +783,11 @@ experiment:
   task: survival
 
 mil:
-  backend: torchmil
-  torchmil_model: SomeSurvivalCapableModel
-  torchmil_model_kwargs:
-    in_shape: [1024]
-    out_shape: 1
+  batch_size: 1
+
+benchmark_parameters:
+  mil: [PerceiverMIL]
+  loss: [CoxPHLoss]
 
 metrics:
   survival_continuous_backend: torchsurv

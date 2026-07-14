@@ -53,6 +53,13 @@ def test_readme_local_links_exist() -> None:
     assert not missing, f"README links point to missing local files: {missing}"
 
 
+def test_readme_documentation_links_use_readthedocs() -> None:
+    """Direct README readers to rendered documentation rather than sources."""
+    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "](docs/" not in text
+    assert "https://pathforge.readthedocs.io/" in text
+
+
 def test_mil_options_match_code_catalogs() -> None:
     """Keep the documented static option names aligned with code catalogs."""
     from pathforge.adapters.mil_lab.backend import MILLAB_MODEL_SPECS
@@ -119,6 +126,18 @@ def test_pipeline_optimization_terminology() -> None:
         if "hyperparameter optimization" in path.read_text(encoding="utf-8").lower()
     ]
     assert not offenders, f"Legacy optimization terminology remains in: {offenders}"
+
+
+def test_tutorials_select_concrete_mil_model_names() -> None:
+    """Do not teach legacy backend sentinels as benchmark model choices."""
+    paths = [REPO_ROOT / "README.md", *DOCS_DIR.joinpath("tutorials").rglob("*.rst")]
+    pattern = re.compile(r"mil:\s*\[(?:torchmil|mil-lab)\]", re.IGNORECASE)
+    offenders = [
+        str(path.relative_to(REPO_ROOT))
+        for path in paths
+        if pattern.search(path.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, f"Legacy MIL backend sentinels remain in tutorials: {offenders}"
 
 
 # ---------------------------------------------------------------------------
