@@ -125,17 +125,17 @@ class BaseRetrievalRepresentationStrategy:
         """
         Load the default retrieval inputs for one sample.
 
-        Inputs:
-        - `index`: integer position inside the bound retrieval dataset.
-        - `sample`: `BagSample` carrying slide membership and artifact paths.
-        - `base_dataset`: task-specific `BagDataset` exposing `load_bag(...)`.
+        Args:
+            index: Integer position inside the bound retrieval dataset.
+            sample: Bag sample carrying membership and artifact paths.
+            base_dataset: Dataset exposing ``load_bag``.
 
         Returns:
-        - `dict[str, Any]` with the minimal default payload required by the
-          current `run(...)` signature. Subclasses can override this method to
-          load additional retrieval-specific inputs.
+            Minimal payload required by ``run``. Subclasses may add
+            retrieval-specific inputs.
 
         Example:
+
         .. code-block:: python
 
             payload = strategy.load_sample(

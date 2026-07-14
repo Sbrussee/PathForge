@@ -4,6 +4,15 @@ pathforge.cli
 Thin CLI shells. Each module exposes a ``main()`` function registered as a
 console script entry point.
 
+Application and shared helpers
+------------------------------
+
+.. automodule:: pathforge.cli.app
+   :members:
+
+.. automodule:: pathforge.cli.common
+   :members:
+
 Feature Extraction
 ------------------
 
@@ -34,6 +43,9 @@ Optimization
 
 Inference
 ---------
+
+.. automodule:: pathforge.cli.infer_run
+   :members:
 
 .. automodule:: pathforge.cli.inference
    :members:
@@ -71,6 +83,13 @@ Tile Reports
 ------------
 
 .. automodule:: pathforge.cli.report_tiles
+   :members:
+   :show-inheritance:
+
+SISH VQ-VAE
+------------
+
+.. automodule:: pathforge.cli.retrieval_sish_vqvae
    :members:
    :show-inheritance:
 

@@ -1,7 +1,7 @@
 PathForge 2.0
 =============
 
-**PathForge-MIL** is a modular benchmarking framework for multiple instance
+**PathForge** is a modular benchmarking framework for multiple instance
 learning (MIL) in computational pathology. It supports whole-slide image (WSI)
 feature extraction, H5 artifact generation, tile overview reports, MIL
 benchmarking, hyperparameter optimization, optional TorchMIL backends, metric

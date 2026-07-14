@@ -58,20 +58,10 @@ _SUPPORTED_VISUALIZATIONS = {
 
 @dataclass(frozen=True, slots=True)
 class SlideVisualizationAsset:
-    """
-    Slide-level artifact context used by retrieval visualization.
-
-    Inputs:
-    - `slide_id`: slide/sample identifier in slide-level retrieval mode.
-    - `dataset_name`: configured dataset that owns the slide.
-    - `artifact_path`: per-slide H5 artifact path.
-    - `slide_path`: optional original slide path used for thumbnail/patch fallback.
-    - `patient_id`: patient identifier from annotations.
-    - `category`: category/label-like metadata from annotations.
-    - `fallback_mpp`: optional fallback MPP from annotations.
-    - `metadata`: row-like metadata lookup keyed by annotation column name.
+    """Slide artifact context used by retrieval visualization.
 
     Example:
+
     .. code-block:: python
 
         asset = SlideVisualizationAsset(
@@ -98,20 +88,10 @@ class SlideVisualizationAsset:
 
 
 class SlideRetrievalVisualizationService:
-    """
-    Render run-level slide retrieval visualizations.
-
-    Inputs:
-    - `experiment`: configured experiment used to load annotations and backends.
-    - `run_dir`: one concrete retrieval run directory containing `manifest.json`
-      and ranked results (`query_results.xlsx` or legacy `query_results.csv`).
-    - `manifest`: parsed retrieval manifest for the run.
-
-    Returns:
-    - Service object that can render configured retrieval visualizations into
-      `run_dir / f"vis_{visualization_name}"`.
+    """Render run-level slide retrieval visualizations.
 
     Example:
+
     .. code-block:: python
 
         service = SlideRetrievalVisualizationService(

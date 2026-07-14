@@ -6,19 +6,7 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class HyperParam:
-    """
-    Declarative hyperparameter marker used by slide-retrieval strategies.
-
-    Inputs:
-    - `hp_type`: expected Python type used for casting and validation.
-    - `default`: default value applied when no override is provided.
-    - `min`: optional numeric lower bound.
-    - `max`: optional numeric upper bound.
-    - `choices`: optional finite set of allowed values.
-    - `help`: human-readable description for registries / docs.
-
-    Returns:
-    - Immutable metadata object collected by strategy base classes.
+    """Declarative hyperparameter marker for slide-retrieval strategies.
 
     Example:
     .. code-block:: python
@@ -59,15 +47,9 @@ class HyperParam:
 
 
 def collect_hyperparams(strategy_cls: type[Any]) -> dict[str, HyperParam]:
-    """
-    Collect `HyperParam` declarations from a strategy class hierarchy.
+    """Collect hyperparameters across a strategy class hierarchy.
 
-    Inputs:
-    - `strategy_cls`: strategy class whose MRO should be inspected.
-
-    Returns:
-    - `dict[str, HyperParam]` keyed by attribute name. Child classes override
-      parent declarations with the same name.
+    Child declarations override parent declarations with the same name.
     """
     collected: dict[str, HyperParam] = {}
     for base_cls in reversed(strategy_cls.__mro__):
@@ -86,13 +68,13 @@ def resolve_hyperparam(
     """
     Resolve one effective hyperparameter value from user params and defaults.
 
-    Inputs:
-    - `name`: hyperparameter field name.
-    - `declaration`: declarative metadata for this hyperparameter.
-    - `params`: runtime override mapping.
+    Args:
+        name: Hyperparameter field name.
+        declaration: Declarative metadata for the hyperparameter.
+        params: Runtime override mapping.
 
     Returns:
-    - Validated and normalized effective value.
+        Validated and normalized effective value.
     """
     value = params.get(name, declaration.default)
     hp_type = declaration.hp_type

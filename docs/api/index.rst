@@ -12,12 +12,15 @@ omitted.
    config
    cli
    core
+   artifacts
+   evaluation
+   slide_retrieval
+   visualization
    policy
    training
    adapters
    utils
    inference
-   optimization
 
 Package Map
 -----------
@@ -34,6 +37,14 @@ Package Map
      - Thin CLI shells wrapping policies. Entry points for all commands.
    * - :doc:`core`
      - Domain layer: model/loss/dataset abstractions, H5 I/O, experiments.
+   * - :doc:`artifacts`
+     - Slide artifact and retrieval artifact storage contracts.
+   * - :doc:`evaluation`
+     - Evaluation orchestration and slide-retrieval metrics.
+   * - :doc:`slide_retrieval`
+     - Representation, search, and result-rendering interfaces.
+   * - :doc:`visualization`
+     - Visualization registries, orchestration, and render result types.
    * - :doc:`policy`
      - Use-case layer: feature extraction, benchmarking, optimization.
    * - :doc:`training`
@@ -44,5 +55,3 @@ Package Map
      - Registries, optional guards, constants, logging utilities.
    * - :doc:`inference`
      - Heatmap generation and H5-backed inference visualization helpers.
-   * - :doc:`optimization`
-     - Optuna helpers removed; see :doc:`policy` (``OptimizationPolicy``) and ``pathforge.policy.utils``.

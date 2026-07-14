@@ -15,9 +15,9 @@ For a complete worked workflow—from slide and annotation preparation through
 feature extraction, MIL training, evaluation, and packaged-model inference—see
 the [end-to-end classification tutorial](docs/tutorials/end_to_end.rst).
 
-## What PathForge-MIL Does
+## What PathForge Does
 
-PathForge-MIL is organized around a config-driven workflow:
+PathForge is organized around a config-driven workflow:
 
 1. Read a YAML config.
 2. Create an experiment folder with copied annotations and metadata.

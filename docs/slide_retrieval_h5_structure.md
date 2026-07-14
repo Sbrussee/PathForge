@@ -1,4 +1,4 @@
-# PathForge-MIL Retrieval Representation H5 Structure
+# PathForge Retrieval Representation H5 Structure
 
 This document defines the current H5 structure used for slide-retrieval representation artifacts.
 

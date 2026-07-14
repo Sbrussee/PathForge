@@ -32,6 +32,13 @@ Optimization
    :members:
    :show-inheritance:
 
+Inference
+---------
+
+.. automodule:: pathforge.policy.inference
+   :members:
+   :show-inheritance:
+
 Shared Utilities
 ----------------
 

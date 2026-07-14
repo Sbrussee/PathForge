@@ -1,11 +1,11 @@
-# PathForge-MIL HDF5 Structure — Canonical Overview
+# PathForge HDF5 Structure — Canonical Overview
 
 **File:**  
 
 {slide_stem}.h5
 
 
-This document defines the **authoritative structure** of PathForge-MIL slide-level HDF5 files, including explicit rules for **where** each artifact is stored and **how** it is formatted.
+This document defines the **authoritative structure** of PathForge slide-level HDF5 files, including explicit rules for **where** each artifact is stored and **how** it is formatted.
 
 ---
 

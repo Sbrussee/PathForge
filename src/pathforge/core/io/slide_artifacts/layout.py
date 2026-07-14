@@ -5,42 +5,12 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class H5Layout:
-    """
-    Path builder for slide-artifact H5 files stored in `artifacts_dir`.
+    """Build canonical dataset paths inside a slide-artifact H5 file.
 
-    One slide artifact file lives at:
-        artifacts_dir/{slide_id}.h5
-
-    Inside that file, data is organized as:
-
-        annotations/
-          tissue
-
-        thumbnail/
-          image
-          spec
-
-        bags/
-          {bag_id}/
-            coords
-            tiling_spec
-            tiles_overview
-            features/
-              {extractor_name}
-
-    Meanings:
-    - `bag_id`:
-        Canonical tiling identifier, e.g. `256px_0.5mpp`.
-    - `tissue`:
-        Slide-level tissue annotation payload.
-    - `coords`:
-        `(N, 5)` patch coordinate matrix for one tiling configuration.
-    - `tiling_spec`:
-        JSON payload describing the tiling setup used to create `coords`.
-    - `tiles_overview`:
-        Optional rendered overview image for one tiling configuration.
-    - `extractor_name`:
-        Canonical stored feature name for one feature extractor configuration.
+    Slide-level tissue and thumbnail data live under ``annotations/`` and
+    ``thumbnail/``. Each tiling configuration lives under ``bags/{bag_id}``
+    with coordinates, tiling metadata, an optional overview, and feature
+    matrices keyed by extractor name.
     """
 
     # ---- shared (per artifact) ----

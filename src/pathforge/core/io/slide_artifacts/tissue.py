@@ -133,11 +133,7 @@ def read_tissue(
     Read tissue polygons from H5.
 
     Returns:
-        TissuePolygons:
-            [
-                [ring0, hole1, ...],   # polygon 1
-                [ring0],               # polygon 2
-            ]
+        Nested polygons, each containing an outer ring and optional hole rings.
     """
     dset = get_dataset(slide_artifact.h5, layout.tissue_dataset)
     if dset is None:
@@ -158,11 +154,11 @@ def write_tissue(
     """
     Write tissue polygons to H5 as JSON using the internal nested-rings contract.
 
-    Accepts:
-        [
-            [ring0, hole1, ...],   # polygon 1
-            [ring0],               # polygon 2
-        ]
+    Args:
+        slide_artifact: Open target slide artifact.
+        tissue_polygons: Nested polygons containing outer and optional hole
+            rings.
+        layout: Dataset layout used to locate the tissue payload.
     """
     polygons = _ensure_tissue_polygons(tissue_polygons)
     write_json_dataset(slide_artifact.h5, layout.tissue_dataset, polygons)
