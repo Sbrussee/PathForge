@@ -90,7 +90,7 @@ Running Inference from a Bundle
 
 .. code-block:: bash
 
-   pathforge-infer \
+pathforge-infer-model \
      --model_path /exports/luad_abmil_bundle/model_package.pt \
      --input /data/artifacts/test/SLIDE_001.h5 \
      --output /data/predictions/SLIDE_001.json

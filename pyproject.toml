@@ -30,7 +30,6 @@ dependencies = [
     "einops>=0.8.2",
     "einops-exts>=0.0.4",
     "torchstain>=1.4.1",
-    "tcga-tools",
     "scikit-survival>=0.27.0",
     "plotly",
     "kaleido",
@@ -60,6 +59,7 @@ mil-backends = [
     "pycox",
 ]
 survival = ["scikit-survival"]
+tcga = ["tcga-tools"]
 gnn = ["torch-geometric>=2.5"]
 hf = [
     "huggingface_hub>=0.25,<1.0",

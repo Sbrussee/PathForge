@@ -14,8 +14,11 @@ the README/docs stay correct.
 from __future__ import annotations
 
 import importlib
+import io
 import re
+import shlex
 import tomllib
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 import pytest
@@ -36,6 +39,9 @@ DOC_FILES = [
 CONSOLE_SCRIPT_RE = re.compile(r"\bpathforge(?:-[a-z0-9]+)+\b")
 PYTHON_M_RE = re.compile(r"python -m (pathforge\.cli\.[a-z_]+)")
 TYPER_INVOCATION_RE = re.compile(r"\bpathforge ([a-z-]+) ([a-z][a-z-]*)\b")
+DOCUMENTED_COMMAND_RE = re.compile(
+    r"(?m)^\s*(?:uv run )?(pathforge(?:-[a-z0-9]+)*(?:\s+[^\n|;]+)?)$"
+)
 
 
 def _declared_console_scripts() -> set[str]:
@@ -104,6 +110,83 @@ def test_documented_typer_commands_exist() -> None:
         f"Docs reference unknown 'pathforge <group> <command>' invocations: {offenders}. "
         f"Valid: { {g: sorted(c) for g, c in command_map.items()} }"
     )
+
+
+def _documented_pathforge_commands(text: str) -> list[list[str]]:
+    """Return tokenized PathForge commands from shell examples."""
+    normalized = re.sub(r"\\\s*\n\s*", " ", text)
+    commands: list[list[str]] = []
+    for match in DOCUMENTED_COMMAND_RE.finditer(normalized):
+        try:
+            tokens = shlex.split(match.group(1))
+        except ValueError:
+            continue
+        if tokens and (tokens[0] == "pathforge" or tokens[0].startswith("pathforge-")):
+            commands.append(tokens)
+    return commands
+
+
+def _console_script_help(script: str) -> str:
+    """Render ``--help`` for one declared argparse console script."""
+    data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    target = data["project"]["scripts"][script]
+    module_name, callable_name = target.split(":", maxsplit=1)
+    callback = getattr(importlib.import_module(module_name), callable_name)
+    output = io.StringIO()
+    with redirect_stdout(output), redirect_stderr(output):
+        with pytest.raises(SystemExit) as exit_info:
+            callback(["--help"])
+    assert exit_info.value.code == 0
+    return output.getvalue()
+
+
+def _typer_help(tokens: list[str]) -> str:
+    """Render help for one documented umbrella-command path."""
+    from typer.testing import CliRunner
+
+    from pathforge.cli.app import app
+
+    command_path = tokens[1:3]
+    result = CliRunner().invoke(app, [*command_path, "--help"])
+    assert result.exit_code == 0, result.output
+    return result.output
+
+
+def test_documented_cli_options_exist() -> None:
+    """Every documented PathForge option must exist on the shown command."""
+    declared = _declared_console_scripts()
+    help_cache: dict[tuple[str, ...], str] = {}
+    offenders: dict[str, list[str]] = {}
+
+    for path, text in _doc_texts().items():
+        for tokens in _documented_pathforge_commands(text):
+            script = tokens[0]
+            if script == "pathforge":
+                if len(tokens) < 3:
+                    continue
+                key = tuple(tokens[:3])
+                help_text = help_cache.setdefault(key, _typer_help(tokens))
+                argument_tokens = tokens[3:]
+            elif script in declared:
+                key = (script,)
+                help_text = help_cache.setdefault(key, _console_script_help(script))
+                argument_tokens = tokens[1:]
+            else:
+                continue
+
+            unknown = sorted(
+                {
+                    token.split("=", maxsplit=1)[0]
+                    for token in argument_tokens
+                    if token.startswith("--")
+                    and token.split("=", maxsplit=1)[0] not in help_text
+                }
+            )
+            if unknown:
+                label = f"{path.relative_to(REPO_ROOT)} :: {' '.join(key)}"
+                offenders.setdefault(label, []).extend(unknown)
+
+    assert not offenders, f"Docs use options not exposed by the shown command: {offenders}"
 
 
 def _yaml_code_blocks(text: str) -> list[str]:

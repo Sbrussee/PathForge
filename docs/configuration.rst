@@ -247,6 +247,12 @@ A list of dataset entries. Each entry:
 TCGA Dataset Entry
 ~~~~~~~~~~~~~~~~~~
 
+Install the optional TCGA integration before using remote dataset entries:
+
+.. code-block:: bash
+
+   uv sync --extra tcga
+
 When ``source: gdc``, use these fields instead of ``slides_dir``/``name``:
 
 .. code-block:: yaml
