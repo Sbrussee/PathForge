@@ -6,6 +6,10 @@ H5 artifact generation, tile overview reports, MIL benchmarking, hyperparameter-
 regression, survival and retrieval tasks, and support for model inference and
 visualization.
 
+For a complete worked workflow—from slide and annotation preparation through
+feature extraction, MIL training, evaluation, and packaged-model inference—see
+the [end-to-end classification tutorial](docs/tutorials/end_to_end.rst).
+
 ## What PathForge-MIL Does
 
 PathForge-MIL is organized around a config-driven workflow:
