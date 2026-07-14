@@ -38,6 +38,15 @@ autodoc_default_options = {
     "show-inheritance": True,
 }
 
+# Keep every callable's complete typed signature visible and repeat type
+# information alongside parameter descriptions. This makes inherited and
+# otherwise sparsely documented callables usable from the generated reference.
+autodoc_class_signature = "separated"
+autodoc_preserve_defaults = True
+autodoc_typehints = "both"
+autodoc_typehints_description_target = "all"
+autodoc_typehints_format = "short"
+
 autodoc_mock_imports = [
     "lazyslide",
     "wsidata",

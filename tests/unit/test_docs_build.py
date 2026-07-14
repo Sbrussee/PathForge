@@ -225,3 +225,8 @@ def test_sphinx_build_no_errors(tmp_path: Path) -> None:
     ).read_text(encoding="utf-8")
     assert "mathjax" in metrics_html.lower()
     assert 'class="math notranslate nohighlight"' in metrics_html
+    examples_html = (build_dir / "api" / "examples.html").read_text(
+        encoding="utf-8"
+    )
+    assert "build_bag_id" in examples_html
+    assert "pathforge benchmark run --help" in examples_html
