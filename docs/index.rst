@@ -11,10 +11,6 @@ PathForge follows a Clean Architecture: policies and trainers resolve
 implementations through PathForge interfaces and registries, while concrete
 third-party packages live in adapter modules.
 
-.. image:: ../design.png
-   :alt: PathForge architecture diagram
-   :align: center
-
 ----
 
 .. toctree::
