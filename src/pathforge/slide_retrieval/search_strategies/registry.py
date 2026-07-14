@@ -92,12 +92,10 @@ def import_search_strategy_modules(
     """
     Import the canonical search strategy package.
 
-    Inputs:
-    - `package_name`: `str` package root containing the `strategies`
-      subpackage.
+    Args:
+        package_name: Package root containing the ``strategies`` subpackage.
 
-    Returns:
-    - `None`. Import side effects register all search strategies.
+    Import side effects register all search strategies.
     """
     global _SEARCH_STRATEGIES_IMPORTED
 

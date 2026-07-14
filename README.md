@@ -6,13 +6,18 @@ H5 artifact generation, tile overview reports, MIL benchmarking, hyperparameter-
 regression, survival and retrieval tasks, and support for model inference and
 visualization.
 
+PathForge is the successor to and replacement for
+[PathBench-MIL](https://github.com/Sbrussee/PathBench-MIL). PathBench-MIL is
+expected to be deprecated; new development and new projects should use
+PathForge.
+
 For a complete worked workflow—from slide and annotation preparation through
 feature extraction, MIL training, evaluation, and packaged-model inference—see
 the [end-to-end classification tutorial](docs/tutorials/end_to_end.rst).
 
-## What PathForge-MIL Does
+## What PathForge Does
 
-PathForge-MIL is organized around a config-driven workflow:
+PathForge is organized around a config-driven workflow:
 
 1. Read a YAML config.
 2. Create an experiment folder with copied annotations and metadata.
@@ -856,8 +861,8 @@ Persisted heatmap contracts:
 - `metadata`: JSON with backend, explainer key, model path, score path, optional
   coordinate path, optional mask path, score range, and coordinate space.
 
-This path still follows Clean Architecture: inference resolves the heatmap
-implementation through `EXPLAINERS`; TorchMIL-specific behavior remains in
+Inference resolves the heatmap implementation through `EXPLAINERS`, while
+TorchMIL-specific behavior remains in
 `pathforge.adapters.torchmil.heatmap_explainer`.
 
 ## Registries And Extensibility
@@ -895,7 +900,7 @@ class MyMIL(MILModelBase):
 Optional backends should be registered conditionally through dynamic registry
 population so missing packages do not break imports.
 
-## Clean Architecture Guarantees
+## Integration Boundaries
 
 The integration is intentionally interface-first:
 
@@ -976,3 +981,49 @@ For CI, use at least two profiles:
 - Optional-backend profile with `.[mil-backends]`: verifies TorchMIL
   construction, TorchMIL collation, TorchMetrics classification metrics,
   TorchSurv survival losses/metrics, and heatmap explanation.
+
+## Acknowledgements and third-party backends
+
+PathForge builds on and integrates several open-source projects. If you use a
+specific backend in published work, please also follow that project's citation
+guidance:
+
+- [LazySlide](https://github.com/rendeirolab/LazySlide) provides tissue
+  segmentation, tiling, and feature-extraction operations used by
+  `pathforge.core.slide_processing.lazyslide`.
+- [WSIData](https://github.com/rendeirolab/wsidata) provides whole-slide image
+  loading and the interoperable slide data model used by the LazySlide backend.
+- [timm](https://github.com/huggingface/pytorch-image-models) provides image
+  encoder models available to the feature-extraction backend.
+- [torchmil](https://github.com/Franblueee/torchmil) provides optional MIL
+  models, collation behavior, task-output normalization, and heatmap support
+  integrated through `pathforge.adapters.torchmil`.
+- [TorchMetrics](https://github.com/Lightning-AI/torchmetrics) provides the
+  optional classification metrics exposed by `pathforge.adapters.metrics`.
+- [TorchSurv](https://github.com/Novartis/torchsurv) provides optional survival
+  losses and continuous-survival metrics exposed by
+  `pathforge.adapters.losses` and `pathforge.adapters.metrics.survival`.
+- [PyTorch Lightning](https://github.com/Lightning-AI/pytorch-lightning)
+  provides the training runtime used by `pathforge.training.lightning`.
+- [Optuna](https://github.com/optuna/optuna) provides hyperparameter search and
+  pruning for `pathforge.policy.optimization`.
+
+We thank the authors and contributors of these projects. PathForge's adapters
+do not replace the need to cite the underlying methods and software used in an
+experiment.
+
+## Citation
+
+If you use PathForge, cite the PathBench-MIL framework paper:
+
+```bibtex
+@misc{brussee2025pathbenchmilcomprehensiveautomlbenchmarking,
+      title={PathBench-MIL: A Comprehensive AutoML and Benchmarking Framework for Multiple Instance Learning in Histopathology},
+      author={Siemen Brussee and Pieter A. Valkema and Jurre A. J. Weijer and Thom Doeleman and Anne M. R. Schrader and Jesper Kers},
+      year={2025},
+      eprint={2512.17517},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2512.17517},
+}
+```

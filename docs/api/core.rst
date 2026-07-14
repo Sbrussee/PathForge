@@ -3,6 +3,12 @@ pathforge.core
 
 Stable domain abstractions and task orchestration shared by the other layers.
 
+Common contracts
+----------------
+
+.. automodule:: pathforge.core.base
+   :members:
+
 Models
 ------
 
@@ -142,6 +148,12 @@ Datasets
    :members:
    :show-inheritance:
 
+.. automodule:: pathforge.core.datasets.factory
+   :members:
+
+.. automodule:: pathforge.core.datasets.utils
+   :members:
+
 Experiments
 -----------
 
@@ -156,6 +168,15 @@ Experiments
 .. automodule:: pathforge.core.experiments.combinations
    :members:
    :show-inheritance:
+
+.. automodule:: pathforge.core.experiments.combo_ids
+   :members:
+
+Feature helpers
+---------------
+
+.. automodule:: pathforge.core.features.utils
+   :members:
 
 H5 I/O
 ------

@@ -31,17 +31,16 @@ def resolve_sample_patch_mean_rgb(
     """
     Load or materialize row-aligned patch mean RGB descriptors for one sample.
 
-    Inputs:
-    - `sample`: sample-like object exposing `slide_ids`, `artifact_paths`, and
-      `metadata`.
-    - `bag_id`: canonical tiling identifier used in the slide H5 layout.
-    - `config`: config-like object exposing `slide_processing.backend` and
-      `datasets`.
+    Args:
+        sample: Object exposing slide IDs, artifact paths, and metadata.
+        bag_id: Canonical tiling identifier used in the slide H5 layout.
+        config: Configuration containing slide-processing and dataset entries.
 
     Returns:
-    - `np.ndarray[float32]` with shape `(N, 3)` aligned with the retrieval bag.
+        ``float32`` array shaped ``(N, 3)`` and aligned with the retrieval bag.
 
     Example:
+
     .. code-block:: python
 
         mean_rgb = resolve_sample_patch_mean_rgb(

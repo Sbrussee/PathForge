@@ -18,6 +18,22 @@ from pathlib import Path
 import pytest
 
 DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
+REPO_ROOT = DOCS_DIR.parent
+
+
+# ---------------------------------------------------------------------------
+# Test 0 — canonical product name
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "path",
+    [REPO_ROOT / "README.md", *DOCS_DIR.rglob("*.rst"), *DOCS_DIR.rglob("*.md")],
+)
+def test_legacy_pathforge_mil_branding_is_absent(path: Path) -> None:
+    """Use the canonical ``PathForge`` product name in user-facing docs."""
+    text = path.read_text(encoding="utf-8")
+    legacy_name = "PathForge" + "-MIL"
+    assert legacy_name not in text
 
 
 # ---------------------------------------------------------------------------

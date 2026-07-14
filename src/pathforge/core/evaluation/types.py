@@ -9,18 +9,10 @@ from pathforge.core.experiments.combinations import ComboConfig
 
 @dataclass(frozen=True, slots=True)
 class MetricRequest:
-    """
-    Parsed evaluation-metric request.
-
-    Inputs:
-    - `raw_name`: metric string requested in config.
-    - `canonical_name`: registered metric or metric-family name.
-    - `params`: parsed metric parameters.
-
-    Returns:
-    - Immutable request consumed by the evaluation orchestrator.
+    """Parsed, immutable evaluation-metric request.
 
     Example:
+
     .. code-block:: python
 
         request = MetricRequest(
@@ -38,20 +30,7 @@ class MetricRequest:
 
 @dataclass(frozen=True, slots=True)
 class EvaluationRunContext:
-    """
-    Evaluation context for one discovered run.
-
-    Inputs:
-    - `task_name`: registered task name.
-    - `run_dir`: absolute path to the discovered run directory.
-    - `combo_cfg`: benchmark combination used for run discovery.
-    - `manifest`: parsed run manifest payload.
-    - `label_column`: annotation label column used for truth resolution.
-    - `aggregation_level`: aggregation level used by the task outputs.
-
-    Returns:
-    - Immutable run context consumed by task evaluators and metrics.
-    """
+    """Immutable evaluation context for one discovered run."""
 
     task_name: str
     run_dir: Path
@@ -74,16 +53,7 @@ class EvaluationRunContext:
 
 @dataclass(frozen=True, slots=True)
 class EvaluationSummary:
-    """
-    JSON-serializable evaluation summary for one run.
-
-    Inputs:
-    - `run_context`: evaluation run context carrying the shared run metadata.
-    - `metrics`: mapping from requested metric string to metric payload.
-
-    Returns:
-    - Immutable summary that can be written directly to disk as JSON.
-    """
+    """JSON-serializable evaluation summary for one run."""
 
     run_context: EvaluationRunContext
     metrics: dict[str, Any]

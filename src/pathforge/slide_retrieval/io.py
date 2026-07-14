@@ -81,9 +81,8 @@ def build_slide_retrieval_inference_output_root(
     """
     Build the flat inference output root for one slide-retrieval combo.
 
-    Layout:
-    - `{inference_run_root}/{tiling_id}_{feature_name}/`
-      `{slide_representation}_{search_method}_{run_hash12}/`
+    The output path contains a tiling/feature directory followed by a
+    representation/search directory with a 12-character run hash.
     """
     tiling_component = (
         f"{_safe_inference_output_name(tiling_id)}_"

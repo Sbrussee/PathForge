@@ -1,9 +1,11 @@
 Architecture
 ============
 
-PathForge follows the `Clean Architecture <https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html>`_
-pattern. Concrete implementations depend on abstractions; abstractions never
-depend on implementations.
+PathForge separates shared contracts, workflow orchestration, command-line
+entry points, and third-party integrations where practical. The boundaries are
+intended to improve testability and extension, but they are not strict rings:
+some task, configuration, training, and registry modules deliberately compose
+across packages.
 
 Layer Overview
 --------------
@@ -22,10 +24,10 @@ Layer Overview
    └──────────────────────┬──────────────────────────┘
                           │
    ┌──────────────────────▼──────────────────────────┐
-   │  Core / Domain  (stable, framework-agnostic)     │
-   │  Models, Losses, Datasets, Experiments, IO       │
+   │  Core  (shared contracts and implementations)    │
+   │  Models, Losses, Datasets, Experiments, I/O      │
    └──────────────┬──────────────────────────────────┘
-                  │ ◄── depends on abstractions only
+                  │
    ┌──────────────▼──────────────────────────────────┐
    │  Infrastructure / Adapters                       │
    │  LightningTrainer, TorchMILBackendModel,         │
@@ -37,8 +39,8 @@ Layer Overview
    │  Drives all layer construction                   │
    └─────────────────────────────────────────────────┘
 
-Dependency Rule
----------------
+Package Dependency Guidelines
+-----------------------------
 
 Dependencies generally point toward stable contracts:
 
@@ -51,14 +53,16 @@ Dependencies generally point toward stable contracts:
 - ``adapters/`` and ``infrastructure/`` implement ``core/`` interfaces and
   register themselves.
 
-The stable contracts remain independently testable; orchestration modules may
-require the dependencies of the workflow they expose.
+Shared contracts remain independently testable where possible; orchestration
+modules may require the dependencies of the workflows they expose.
 
 Core Layer (``pathforge.core``)
 --------------------------------
 
-The stable domain layer. Contains abstractions that never change when
-frameworks are swapped.
+Shared abstractions plus selected models, storage implementations, reports,
+visualization helpers, and task orchestration. This package is not entirely
+framework-independent: concrete scientific and slide-processing dependencies
+are used by several subpackages.
 
 .. list-table::
    :widths: 30 70

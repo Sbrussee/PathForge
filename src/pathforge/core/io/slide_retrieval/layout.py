@@ -5,61 +5,11 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class RetrievalH5Layout:
-    """
-    Path builder for retrieval-artifact H5 files.
+    """Build canonical dataset paths inside a retrieval-artifact H5 file.
 
-    One retrieval H5 file lives at:
-        artifacts_dir/slide_retrieval/{aggregation_level}/{sample_id}.h5
-
-    Inside that file, data is organized per tiling configuration:
-
-        bags/{tile_id}/
-          descriptors/{descriptor_name}
-
-          retrieval_representations/
-            {representation_id}/
-              (for case/patient aggregation)
-                {entry_id}/
-                  representation_type
-                  metadata
-                  params
-                  embedding
-                  additional_data/
-                    {name}
-              (for slide aggregation)
-                representation_type
-                metadata
-                params
-                embedding
-                additional_data/
-                  {name}
-
-    Meanings:
-    - `tile_id`:
-        Canonical tiling identifier, e.g. `256px_0.5mpp`.
-    - `descriptor_name`:
-        Retrieval-side per-patch descriptor cache name, e.g. `mean_rgb`.
-    - `representation_id`:
-        Stable identifier for one retrieval-representation configuration.
-        It is built from:
-            `feature_extraction_retrieval_representation_{params_hash}`
-        where `params_hash` is derived from the normalized strategy params.
-    - `entry_id`:
-        Stable identifier for the concrete member set stored in this file for
-        multi-slide aggregations (`case`/`patient`):
-            `members_{sha1(sorted_slide_ids)[:16]}`
-        For `slide` aggregation no entry layer is used, and datasets are stored
-        directly under `{representation_id}`.
-    - `representation_type`:
-        Human-readable output kind/schema for compatibility checks.
-    - `metadata`:
-        JSON payload with retrieval item metadata, including membership/provenance.
-    - `params`:
-        JSON payload with the readable retrieval-strategy parameters.
-    - `embedding`:
-        Main numeric retrieval representation array for this entry.
-    - `additional_data`:
-        Extra arrays attached by specific retrieval strategies.
+    Per-tiling descriptors and representations live below ``bags/{tile_id}``.
+    Slide representations are stored directly below their representation ID;
+    multi-slide aggregations add an entry ID for the concrete member set.
     """
 
     retrieval_representations_group_name: str = "retrieval_representations"
