@@ -68,6 +68,7 @@ Individual extras:
 |---|---|
 | `lazyslide` | `lazyslide`, `wsidata`, `timm`, `geopandas`, `anndata` |
 | `mil-backends` | `torchmil`, `torchmetrics`, `torchsurv` |
+| `tcga` | `tcga-tools` integration for TCGA/TCIA datasets |
 | `cu128` | CUDA 12.8 PyTorch builds (via the `pytorch-cu128` index) |
 | `gnn` | `torch-geometric` |
 | `hf` | `huggingface_hub`, `typer` |
@@ -187,6 +188,16 @@ artifacts_dir/{slide_id}.h5
 PathForge can call the `tcga-tools` package to check whether requested datasets
 exist in TCGA or TCIA, download metadata first, select the configured task
 column, and download image data only when it is missing.
+
+Install this optional integration before using remote dataset declarations:
+
+```bash
+uv sync --extra tcga
+```
+
+`tcga-tools` is intentionally optional because the repository supplies it as a
+local `uv` source and it is not published on PyPI. Standard `pip` and Read the
+Docs installations therefore do not attempt to resolve it.
 
 ```yaml
 datasets:

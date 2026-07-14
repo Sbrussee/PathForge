@@ -20,7 +20,7 @@ Run prediction on a single slide:
 
 .. code-block:: bash
 
-   pathforge-infer \
+   pathforge-infer-model \
      --model_path /experiments/luad_benchmark/checkpoints/best_package.pt \
      --input /data/artifacts/train/TCGA-A1-A0SB-01Z.h5 \
      --output /data/predictions/TCGA-A1-A0SB-01Z.json
@@ -48,7 +48,7 @@ Loop over all slides in a cohort:
 
    for H5 in /data/artifacts/test/*.h5; do
      SLIDE=$(basename "$H5" .h5)
-     pathforge-infer \
+     pathforge-infer-model \
        --model_path /experiments/luad_benchmark/checkpoints/best_package.pt \
        --input "$H5" \
        --output "/data/predictions/${SLIDE}.json"
@@ -104,7 +104,7 @@ Step 2 — Run inference with heatmap generation
 
 .. code-block:: bash
 
-   pathforge-infer \
+   pathforge-infer-model \
      --model_path /experiments/luad_benchmark/checkpoints/best.ckpt \
      --input /data/artifacts/train/TCGA-A1-A0SB-01Z.h5 \
      --output /data/predictions/TCGA-A1-A0SB-01Z.json \
