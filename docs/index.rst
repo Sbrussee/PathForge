@@ -37,7 +37,6 @@ adapter modules where practical.
    testing
    backends
    architecture
-   design
    HDF5_structure
    slide_retrieval_h5_structure
    slide-retrieval-results-and-metrics
