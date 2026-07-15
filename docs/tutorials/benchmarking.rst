@@ -59,7 +59,7 @@ Save as ``benchmark.yaml``:
      tile_px: [224, 256]
      tile_mpp: [0.5, 1.0]
      feature_extraction: [resnet50, uni]
-     mil: [AttentionMIL, TransMIL]
+     mil: [PerceiverMIL, VarMIL]
      loss: [CrossEntropyLoss, FocalLoss]
      activation_function: [ReLU]
      optimizer: [Adam, AdamW]
@@ -174,7 +174,7 @@ Compare multiple feature extractors in a single run:
      mil: [PerceiverMIL]
      loss: [CrossEntropyLoss]
 
-This generates ``2 × 1 × 2 × 1 × 1 = 4`` pipeline combinations before any
+This generates ``2 × 1 × 3 × 1 × 1 = 6`` pipeline combinations before any
 training-hyperparameter grids are multiplied in. H5 artifacts must
 already exist for all combinations (run feature extraction first with the
 same tile_px/tile_mpp/feature_extraction values).

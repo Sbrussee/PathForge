@@ -78,7 +78,10 @@ Check available extractors at runtime:
 MIL Backends
 -------------
 
-Configured via ``mil.backend``.
+For benchmark and optimization workflows, select concrete model names through
+``benchmark_parameters.mil`` and PathForge infers the backend. ``mil.backend``
+and the fixed backend-model fields remain available for legacy or direct-run
+configs.
 
 native
 ~~~~~~
@@ -121,10 +124,10 @@ The ``torchmil`` backend wraps any TorchMIL model class through a single
 generic adapter :class:`~pathforge.adapters.torchmil.backend.TorchMILBackendModel`.
 Requires the ``mil-backends`` extra.
 
-Available TorchMIL models — see the `TorchMIL model API
-<https://torchmil.readthedocs.io/en/latest/api/models/>`_ for the full list.
-Common models include ``ABMIL``, ``DSMIL``, ``TransMIL``,
-``CLAM_SB``, ``CLAM_MB``.
+PathForge currently catalogs ``ABMIL``, ``DSMIL``, and ``CLAM``. See the
+`TorchMIL model API <https://torchmil.readthedocs.io/en/latest/api/models/>`_
+for upstream model documentation; an upstream model is selectable only after
+PathForge adds it to its adapter catalog.
 
 Example config:
 
@@ -150,6 +153,15 @@ mil-lab
 The ``mil-lab`` backend is an optional third backend registered conditionally
 when the ``mil-lab`` package is installed. Available models are listed in the
 `MIL-Lab repository <https://github.com/mahmoodlab/MIL-Lab>`_.
+
+MIL-Lab is not installed by the ``mil-backends`` extra because it is consumed
+from an upstream checkout. Follow the upstream installation instructions, then
+verify availability with
+:func:`~pathforge.utils.optional.mil_lab.is_mil_lab_available`.
+
+PathForge catalogs ``abmil``, ``clam``, ``dftd``, ``dsmil``, ``ilra``,
+``rrt``, ``transformer``, ``transmil``, and ``wikg``. These adapter entries
+currently declare classification support.
 
 Use concrete available MIL-Lab names in the same grid:
 

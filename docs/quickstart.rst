@@ -94,7 +94,7 @@ Benchmarking
      tile_px: [256]
      tile_mpp: [0.5]
      feature_extraction: [resnet18]
-     mil: [AttentionMIL]
+     mil: [PerceiverMIL]
      loss: [CrossEntropyLoss]
 
 **Run:**
@@ -141,7 +141,7 @@ Pipeline Optimization
      tile_px: [256]
      tile_mpp: [0.5]
      feature_extraction: [resnet18]
-     mil: [AttentionMIL]
+     mil: [PerceiverMIL]
      loss: [CrossEntropyLoss]
 
 **Run:**

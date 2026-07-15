@@ -183,7 +183,7 @@ Dynamic population of optional backends:
 .. code-block:: python
 
    from pathforge.utils.registries import populate_dynamic_registries
-   populate_dynamic_registries()  # conditionally registers TorchMIL, TorchMetrics, TorchSurv
+   populate_dynamic_registries()  # registers installed TorchMIL, MIL-Lab, and metric adapters
 
 H5 Artifact Contract
 --------------------

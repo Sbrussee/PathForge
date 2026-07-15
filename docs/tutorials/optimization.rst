@@ -65,7 +65,7 @@ Save as ``optimize.yaml``:
      tile_px: [256, 512]
      tile_mpp: [0.5, 1.0]
      feature_extraction: [resnet50, uni]
-     mil: [AttentionMIL, TransMIL]
+     mil: [PerceiverMIL, VarMIL]
      loss: [CrossEntropyLoss, FocalLoss]
      optimizer: [Adam, AdamW]
 

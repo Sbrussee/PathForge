@@ -106,9 +106,7 @@ Copy the feature config to ``tutorial-benchmark.yaml`` and make these changes:
      aggregation_level: slide
      num_workers: 0
 
-   classification:
-     split_technique: fixed
-     val_fraction: 0.25
+   mil:
      balancing: none
      class_weighting: false
      epochs: 2
@@ -132,7 +130,7 @@ Copy the feature config to ``tutorial-benchmark.yaml`` and make these changes:
      tile_px: [256]
      tile_mpp: [0.5]
      feature_extraction: [resnet18]
-     mil: [AttentionMIL]
+     mil: [PerceiverMIL]
      loss: [CrossEntropyLoss]
      activation_function: [ReLU]
      optimizer: [Adam]

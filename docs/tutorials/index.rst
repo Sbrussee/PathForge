@@ -2,18 +2,19 @@ Tutorials
 =========
 
 These tutorials walk through the complete PathForge workflow from raw slides to
-trained models and inference heatmaps.
+trained models and inference heatmaps. Start with the end-to-end example to see
+how the stages fit together, then use the focused tutorials for each subtask.
 
 .. toctree::
    :maxdepth: 2
 
-   feature_extraction
    end_to_end
+   feature_extraction
    benchmarking
-   slide_retrieval
    optimization
    inference
    model_packaging
+   slide_retrieval
    cli
 
 Workflow Overview

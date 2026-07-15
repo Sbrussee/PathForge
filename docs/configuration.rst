@@ -11,7 +11,7 @@ Top-Level Structure
 .. code-block:: yaml
 
    experiment: ...
-   classification: ...        # for task: classification
+   classification: ...        # optional compatibility block
    slide_retrieval: ...       # for task: slide_retrieval
    mil: ...
    slide_processing: ...
@@ -88,7 +88,11 @@ Universal project lifecycle settings.
 ``classification``
 ------------------
 
-Classification-only settings used when ``experiment.task: classification``.
+Compatibility settings retained in the schema for older classification
+configs. Current training-loop and architecture settings belong under
+``mil``; do not place ``epochs``, ``batch_size``, or optimizer settings here.
+The split fields below are accepted by the schema but are not currently
+consumed by the benchmark policy.
 
 .. list-table::
    :widths: 25 15 60
