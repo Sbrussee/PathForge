@@ -112,6 +112,9 @@ class BenchmarkingPolicy(PolicyBase):
         )
 
         num_runs = 0
+        rows: list[dict[str, Any]] = []
+        objective_metric = str(self.cfg.mil.best_epoch_based_on)
+        minimize = metric_should_minimize(objective_metric)
         for bag_group_index, (bag_id, combinations_for_bag_id) in enumerate(
             combinations_by_bag_id.items(),
             start=1,
@@ -148,12 +151,54 @@ class BenchmarkingPolicy(PolicyBase):
                     combo_index,
                     len(combinations_for_bag_id),
                 )
-                self.task.execute(
-                    combo_cfg=full_combo_cfg,
-                    datasets_by_use=datasets_by_use,
-                )
+                run_cfg = copy.deepcopy(self.cfg)
+                apply_search_params(run_cfg, full_combo_cfg.to_dict())
+                try:
+                    task_output = self.task.execute(
+                        combo_cfg=full_combo_cfg,
+                        datasets_by_use=datasets_by_use,
+                    )
+                    rows.append(
+                        collect_run_summary_row(
+                            run_cfg,
+                            run_index=num_runs,
+                            status=str(task_output.get("status", "success")),
+                            objective_metric=objective_metric,
+                            objective_value=task_output.get("objective_value"),
+                            checkpoint_path=task_output.get("checkpoint_path"),
+                            extra_fields={
+                                key: value
+                                for key, value in task_output.items()
+                                if key
+                                not in {
+                                    "status",
+                                    "objective_value",
+                                    "checkpoint_path",
+                                }
+                            },
+                        )
+                    )
+                except Exception as error:
+                    logger.exception(
+                        "[Benchmark] Combination %d failed.",
+                        num_runs,
+                    )
+                    rows.append(
+                        collect_run_summary_row(
+                            run_cfg,
+                            run_index=num_runs,
+                            status="failed",
+                            objective_metric=objective_metric,
+                            error=str(error),
+                        )
+                    )
                 num_runs += 1
 
+        self._summary_rows = rows
+        self._summary_objective_metric = objective_metric
+        self._summary_minimize = minimize
+        self._summary_output_path = Path(self.experiment.project_root) / "benchmark_results.csv"
+        self._save_report()
         logger.info("[Benchmark] Benchmarking complete. Total runs: %d", num_runs)
         return {"status": "benchmark_done", "num_runs": num_runs}
 

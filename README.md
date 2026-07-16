@@ -17,13 +17,15 @@ PathForge.
 Start with the [documentation home](https://pathforge.readthedocs.io/), then
 use the page that matches your task:
 
+- [End-to-end classification tutorial](https://pathforge.readthedocs.io/en/latest/tutorials/end_to_end.html)
+  and the [complete tutorial index](https://pathforge.readthedocs.io/en/latest/tutorials/index.html)
+- [Introduction](https://pathforge.readthedocs.io/en/latest/introduction.html)
+  for PathForge's purpose, supported tasks, and pipeline-level approach
 - [Installation](https://pathforge.readthedocs.io/en/latest/installation.html)
   and [quickstart](https://pathforge.readthedocs.io/en/latest/quickstart.html)
 - [Data preparation](https://pathforge.readthedocs.io/en/latest/data_preparation.html)
 - [Configuration reference](https://pathforge.readthedocs.io/en/latest/configuration.html)
 - [MIL benchmark and optimization options](https://pathforge.readthedocs.io/en/latest/mil_options.html)
-- [End-to-end classification tutorial](https://pathforge.readthedocs.io/en/latest/tutorials/end_to_end.html)
-  and the [complete tutorial index](https://pathforge.readthedocs.io/en/latest/tutorials/index.html)
 - [Backend integrations](https://pathforge.readthedocs.io/en/latest/backends.html)
 - [API reference](https://pathforge.readthedocs.io/en/latest/api/index.html) and
   [API usage examples](https://pathforge.readthedocs.io/en/latest/api/examples.html)
@@ -37,6 +39,9 @@ extraction, MIL training, evaluation, and packaged-model inference. The
 configuration reference defines the complete YAML schema; the MIL options page
 identifies benchmark grids, installed backend catalogs, and config-defined
 Optuna search spaces.
+
+Ready-to-edit benchmark, optimization, feature-extraction, and distributed
+SLURM templates are provided in [`default_config/`](default_config/README.md).
 
 ## What PathForge Does
 
@@ -64,8 +69,8 @@ Primary functionality:
 - **Inference:** config-driven inference over a CSV of slides
   (`pathforge-infer`), plus packaged-model prediction and heatmap generation
   from a single feature artifact (`pathforge-infer-model`).
-- **Backends:** native PathForge MIL models or optional TorchMIL models through
-  one generic adapter.
+- **Backends:** native PathForge models plus optional TorchMIL and MIL-Lab
+  models through backend adapters.
 - **Metrics/loss adapters:** optional TorchMetrics and TorchSurv integrations.
 - **Explainability:** optional heatmap adapter for per-instance MIL scores.
 
@@ -98,6 +103,7 @@ Individual extras:
 | `tcga` | `tcga-tools` integration for TCGA/TCIA datasets |
 | `cu128` | CUDA 12.8 PyTorch builds (via the `pytorch-cu128` index) |
 | `gnn` | `torch-geometric` |
+| `distributed` | Dask, dask-jobqueue, and PostgreSQL driver |
 | `hf` | `huggingface_hub`, `typer` |
 | `dev` | `pytest`, `pytest-cov` |
 
@@ -109,6 +115,11 @@ Individual extras:
 
 These packages are optional. Native PathForge workflows must remain import-safe
 and runnable without them.
+
+MIL-Lab is also supported as an optional MIL backend, but it is not distributed
+through the `mil-backends` extra. Install it from the
+[MIL-Lab repository](https://github.com/mahmoodlab/MIL-Lab) following its
+upstream instructions; PathForge detects the installed builder at runtime.
 
 ## Command Line Entry Points
 
@@ -124,7 +135,14 @@ pathforge features slide  --config features.yaml --dataset TrainingSet --input /
 pathforge benchmark run   --config benchmark.yaml
 pathforge evaluate run    --config benchmark.yaml
 pathforge visualize run   --config benchmark.yaml
+pathforge visualize summary --input /project/benchmark_results.csv
 pathforge optimize run    --config optimize.yaml
+pathforge optimize worker --config optimize.yaml --trials 10
+pathforge optimize finalize --config optimize.yaml
+pathforge execution plan  --config benchmark.yaml --output /project/work/plan
+pathforge execution run   --plan /project/work/plan/plan.json --stage features --backend local
+pathforge execution status --plan /project/work/plan/plan.json
+pathforge execution aggregate --plan /project/work/plan/plan.json
 pathforge report tiles    --config features.yaml
 pathforge retrieval representations --config retrieval.yaml
 pathforge retrieval mean-rgb        --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
@@ -156,7 +174,7 @@ and can optionally attach a heatmap:
 
 ```bash
 pathforge-infer-model \
-  --model_path checkpoints/best.ckpt \
+  --model_path checkpoints/best_package.pt \
   --input artifacts/SLIDE_001.h5 \
   --output predictions/SLIDE_001.json
 ```
@@ -298,8 +316,9 @@ Top-level sections:
 - `experiment`: project lifecycle, task, mode, reporting, and workers.
 - `slide_processing`: WSI backend and tissue/tiling behavior.
 - `datasets`: slide directories, artifact directories, and dataset roles.
-- `benchmark_parameters`: grids for tiling, feature extractors, MIL models,
-  losses, activations, and optimizers.
+- `benchmark_parameters`: candidate pipeline values. Each task selects its own
+  active grid keys; current MIL benchmarks vary feature extractor, tile size,
+  resolution, MIL model, and loss.
 - `mil`: training loop, backend selection, model kwargs, and MIL hyperparameters.
 - `metrics`: metric backend selection.
 - `explainability`: heatmap backend selection.
@@ -434,22 +453,26 @@ Invariants:
 
 ## MIL Backends
 
-PathForge supports two MIL backend modes:
+PathForge supports three MIL backend modes:
 
 - `native`: use PathForge model classes registered directly in `MODELS`.
 - `torchmil`: use one generic TorchMIL adapter registered under the PathForge
   model key `torchmil`.
+- `mil-lab`: use one generic MIL-Lab adapter registered under the PathForge
+  model key `mil-lab`.
 
-TorchMIL, TorchMetrics, and TorchSurv are optional integrations. They are not
-required to import PathForge or to run native workflows. Package-specific imports
+TorchMIL, MIL-Lab, TorchMetrics, and TorchSurv are optional integrations. They
+are not required to import PathForge or to run native workflows.
+``mil-backends`` installs TorchMIL and the metric packages; MIL-Lab must be
+installed separately from its upstream repository. Package-specific imports
 are confined to:
 
 - `src/pathforge/adapters/...`
 - `src/pathforge/utils/optional/...`
 
 Trainer, policy, config, and domain code select implementations through
-configuration and registries. They do not call `torchmil`, `torchmetrics`, or
-`torchsurv` directly.
+configuration and registries. They do not call `torchmil`, MIL-Lab,
+`torchmetrics`, or `torchsurv` directly.
 
 ### Native Backend
 
@@ -562,6 +585,8 @@ Datasets and collate adapters use the canonical bag dictionary throughout.
 ## Benchmarking
 
 Benchmark mode evaluates combinations from `benchmark_parameters`.
+It writes one ranked global `benchmark_results.csv` containing every
+combination, its pipeline choices, objective value, status, and checkpoint.
 
 Run:
 
@@ -592,8 +617,6 @@ benchmark_parameters:
   feature_extraction: [resnet18]
   mil: [PerceiverMIL]
   loss: [CrossEntropyLoss]
-  activation_function: [ReLU]
-  optimizer: [Adam]
 ```
 
 For a TorchMIL benchmark, every run resolves:
@@ -615,6 +638,16 @@ constructor kwargs are incompatible.
 
 Optimization mode runs Optuna studies while preserving the same registry
 boundary as benchmarking.
+It writes the raw Optuna table plus a normalized, ranked global
+`optimization_results.csv` with the same core result columns as benchmarking.
+
+Either global CSV can be visualized later without retraining:
+
+```bash
+pathforge visualize summary \
+  --input /project/benchmark_results.csv \
+  --output /project/benchmark_summary_visualizations
+```
 
 Run:
 
@@ -734,7 +767,7 @@ Outputs are written to:
 ```text
 project_root/{project_name}/slide_retrieval/{tiling_id}/{feature}/{representation}/{search}/run_{hash}/
 ├── manifest.json       — run configuration and summary counts
-└── query_results.csv   — ranked hits per query slide
+└── query_results.xlsx  — ranked hits per query slide
 ```
 
 ## Metrics
@@ -833,12 +866,13 @@ prediction namespace rather than overloading existing tile overview datasets.
 
 ## Inference
 
-The inference CLI currently provides a small stable surface for checkpoint-style
-prediction workflows:
+The inference CLI provides a stable surface for packaged-model prediction
+workflows. Pass the ``*_package.pt`` file written beside a successful training
+checkpoint, not the raw Lightning ``.ckpt`` file:
 
 ```bash
 pathforge-infer-model \
-  --model_path checkpoint.ckpt \
+  --model_path checkpoint_package.pt \
   --input /data/artifacts/SLIDE_001.h5 \
   --output predictions.json
 ```
@@ -851,7 +885,7 @@ TorchMIL heatmap inference example:
 
 ```bash
 pathforge-infer-model \
-  --model_path /models/abmil.ckpt \
+  --model_path /models/abmil_package.pt \
   --input /data/artifacts/SLIDE_001.h5 \
   --output /data/predictions/SLIDE_001.json \
   --heatmap-backend torchmil \
@@ -941,11 +975,13 @@ The integration is intentionally interface-first:
 - Optional package guards live under `pathforge.utils.optional`.
 - TorchMIL model/collate/output/heatmap code lives under
   `pathforge.adapters.torchmil`.
+- MIL-Lab model construction and output normalization live under
+  `pathforge.adapters.mil_lab`.
 - TorchMetrics and TorchSurv code lives under `pathforge.adapters.metrics`.
 - Dynamic registry population conditionally registers optional implementations
   only when packages are installed.
 - Trainer code accepts canonical batches but does not import `torchmil`,
-  `torchmetrics`, or `torchsurv`.
+  MIL-Lab, `torchmetrics`, or `torchsurv`.
 - Policies continue to use `MODELS`, `LOSSES`, `TRAINERS`, and other
   registries.
 
@@ -957,6 +993,11 @@ adapter and optional-guard modules.
 `MIL backend 'torchmil' selected, but 'torchmil' is not installed.`
 
 : Install `.[mil-backends]`, install `torchmil`, or set `mil.backend: native`.
+
+`MIL backend 'mil-lab' selected, but 'MIL-Lab' is not installed.`
+
+: Install [MIL-Lab](https://github.com/mahmoodlab/MIL-Lab) following its
+  upstream instructions, or select a native or TorchMIL model.
 
 `Classification metrics backend requires 'torchmetrics'.`
 
@@ -1008,11 +1049,14 @@ uv run pytest -q
 
 For CI, use at least two profiles:
 
-- Base profile without `torchmil`, `torchmetrics`, or `torchsurv`: verifies that
-  imports, native configs, and missing-backend errors behave correctly.
+- Base profile without `torchmil`, MIL-Lab, `torchmetrics`, or `torchsurv`:
+  verifies that imports, native configs, and missing-backend errors behave
+  correctly.
 - Optional-backend profile with `.[mil-backends]`: verifies TorchMIL
   construction, TorchMIL collation, TorchMetrics classification metrics,
   TorchSurv survival losses/metrics, and heatmap explanation.
+- MIL-Lab profile with an upstream MIL-Lab checkout installed: verifies model
+  construction and normalized output handling through the MIL-Lab adapter.
 
 ## Acknowledgements and third-party backends
 
@@ -1030,6 +1074,8 @@ guidance:
 - [torchmil](https://github.com/Franblueee/torchmil) provides optional MIL
   models, collation behavior, task-output normalization, and heatmap support
   integrated through `pathforge.adapters.torchmil`.
+- [MIL-Lab](https://github.com/mahmoodlab/MIL-Lab) provides optional MIL model
+  implementations integrated through `pathforge.adapters.mil_lab`.
 - [TorchMetrics](https://github.com/Lightning-AI/torchmetrics) provides the
   optional classification metrics exposed by `pathforge.adapters.metrics`.
 - [TorchSurv](https://github.com/Novartis/torchsurv) provides optional survival

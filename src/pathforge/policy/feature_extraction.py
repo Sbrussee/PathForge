@@ -642,10 +642,17 @@ class FeatureExtractionPolicy(PolicyBase):
         return {"tile_px": combo_cfg.tile_px, "tile_mpp": combo_cfg.tile_mpp, "params": {}}
 
     def _build_feat_config(self, combo_cfg: ComboConfig) -> dict[str, Any]:
+        runtime = self.config.slide_processing.feature_extraction
+        model_params = combo_cfg.get_hyperparams("feature_extraction")
         return {
             "model": combo_cfg.feature_extraction,
             "color_norm": combo_cfg.get("color_norm"),
-            "params": {},
+            "params": {
+                "batch_size": runtime.batch_size,
+                "num_workers": runtime.num_workers,
+                "amp": runtime.amp,
+                **model_params,
+            },
         }
 
     def _ensure_coords_array(self, coords_array: Any) -> np.ndarray:

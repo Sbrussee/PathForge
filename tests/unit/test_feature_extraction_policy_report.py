@@ -13,6 +13,7 @@ import pytest
 import pathforge.policy.feature_extraction as fe_mod
 from pathforge.core.datasets.wsi_dataset import WSI
 from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.config.config import FeatureExtractionRuntimeConfig
 from pathforge.policy.feature_extraction import FeatureExtractionPolicy
 
 
@@ -89,6 +90,32 @@ def _make_policy(report: bool) -> FeatureExtractionPolicy:
         experiment=SimpleNamespace(report=report, thumbnail=False)
     )
     return policy
+
+
+def test_feature_runtime_config_is_forwarded_to_backend() -> None:
+    policy = FeatureExtractionPolicy.__new__(FeatureExtractionPolicy)
+    policy.config = SimpleNamespace(
+        slide_processing=SimpleNamespace(
+            feature_extraction=FeatureExtractionRuntimeConfig(
+                batch_size=24,
+                num_workers=3,
+                amp=True,
+            )
+        )
+    )
+    combo = ComboConfig(
+        tile_px=256,
+        tile_mpp=0.5,
+        feature_extraction="resnet18",
+    )
+
+    feature_config = policy._build_feat_config(combo)
+
+    assert feature_config["params"] == {
+        "batch_size": 24,
+        "num_workers": 3,
+        "amp": True,
+    }
 
 
 def _make_wsi(tmp_path: Path) -> WSI:

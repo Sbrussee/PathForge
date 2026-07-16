@@ -140,6 +140,49 @@ def test_tutorials_select_concrete_mil_model_names() -> None:
     assert not offenders, f"Legacy MIL backend sentinels remain in tutorials: {offenders}"
 
 
+def test_documented_tutorial_models_are_in_backend_catalog() -> None:
+    """Keep inline tutorial model grids aligned with the public model catalog."""
+    from pathforge.utils.registries import list_mil_models
+
+    paths = [REPO_ROOT / "README.md", *DOCS_DIR.joinpath("tutorials").rglob("*.rst")]
+    documented: set[str] = set()
+    pattern = re.compile(r"^\s*mil:\s*\[([^]]*)\]", re.MULTILINE)
+    for path in paths:
+        for match in pattern.finditer(path.read_text(encoding="utf-8")):
+            documented.update(
+                name.strip() for name in match.group(1).split(",") if name.strip()
+            )
+
+    catalog = {entry.name for entry in list_mil_models()}
+    unknown = sorted(documented - catalog)
+    assert not unknown, f"Tutorials reference MIL models outside the catalog: {unknown}"
+
+
+def test_end_to_end_tutorial_is_first() -> None:
+    """Present the complete workflow before focused subtask tutorials."""
+    text = (DOCS_DIR / "tutorials" / "index.rst").read_text(encoding="utf-8")
+    assert text.index("   end_to_end") < text.index("   feature_extraction")
+
+
+def test_introduction_leads_getting_started_and_covers_supported_tasks() -> None:
+    """Introduce PathForge's purpose and tasks before setup instructions."""
+    index_text = (DOCS_DIR / "index.rst").read_text(encoding="utf-8")
+    assert index_text.index("   introduction") < index_text.index("   installation")
+
+    introduction = (DOCS_DIR / "introduction.rst").read_text(encoding="utf-8")
+    required_topics = {
+        "Benchmarking",
+        "Pipeline optimization",
+        "Classification",
+        "Regression",
+        "Continuous survival",
+        "Discrete survival",
+        "Slide Retrieval",
+    }
+    missing = sorted(topic for topic in required_topics if topic not in introduction)
+    assert not missing, f"Introduction is missing required topics: {missing}"
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

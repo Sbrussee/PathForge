@@ -4,8 +4,8 @@ PathForge
 **PathForge** is a modular benchmarking framework for multiple instance
 learning (MIL) in computational pathology. It supports whole-slide image (WSI)
 feature extraction, H5 artifact generation, tile overview reports, MIL
-benchmarking, pipeline optimization, optional TorchMIL backends, metric
-adapters, and explainability hooks.
+benchmarking, pipeline optimization, optional TorchMIL and MIL-Lab backends,
+metric adapters, and explainability hooks.
 
 Policies and trainers resolve implementations through PathForge interfaces and
 registries, while concrete third-party integrations are concentrated in
@@ -17,6 +17,7 @@ adapter modules where practical.
    :maxdepth: 1
    :caption: Getting Started
 
+   introduction
    installation
    data_preparation
    quickstart
@@ -36,12 +37,12 @@ adapter modules where practical.
    testing
    backends
    architecture
-   design
    HDF5_structure
    slide_retrieval_h5_structure
    slide-retrieval-results-and-metrics
    task_outputs
    supported_slide_files
+   scaling
    troubleshooting
 
 .. toctree::
@@ -70,7 +71,7 @@ Key Capabilities
    * - Inference
      - Checkpoint-based prediction and per-instance attention heatmap generation.
    * - Backends
-     - Native PathForge MIL models *or* TorchMIL via one generic adapter.
+     - Native PathForge models, TorchMIL, or MIL-Lab via backend adapters.
    * - Metrics/losses
      - Optional TorchMetrics (classification) and TorchSurv (survival) integrations.
    * - Explainability

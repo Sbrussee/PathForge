@@ -227,6 +227,29 @@ study has insufficient completed trials or the required plotting backend is
 unavailable. Search dimensions must be declared in config as described in
 :doc:`mil_options` and :doc:`tutorials/optimization`.
 
+Global benchmark and optimization summaries
+-------------------------------------------
+
+MIL benchmarking writes ``benchmark_results.csv`` and optimization writes
+``optimization_results.csv``. Both are ranked global tables with the common
+columns ``run_index``, ``status``, ``objective_metric``, ``objective_value``,
+``rank``, task/pipeline selections, and checkpoint paths when available.
+Optimization additionally retains Optuna's raw ``params_*`` and
+``user_attrs_*`` columns for auditability.
+
+Generate fresh standalone HTML charts from either saved CSV without rerunning
+training:
+
+.. code-block:: bash
+
+   pathforge visualize summary \
+     --input /project/benchmark_results.csv \
+     --output /project/benchmark_summary_visualizations
+
+The command writes ``global_results_ranked.html`` and
+``global_results_rank_scatter.html``. It validates the required result columns
+and ignores failed runs or rows without a numeric objective value.
+
 Inference
 ---------
 

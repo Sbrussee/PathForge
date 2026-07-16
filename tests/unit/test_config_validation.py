@@ -69,7 +69,12 @@ assert MODELS.is_available(TORCHMIL_BACKEND_NAME)
 
 
 # Now import config models (after registration)
-from pathforge.config.config import Config, BenchmarkParameters, SearchSpaceParameter  # noqa: E402
+from pathforge.config.config import (  # noqa: E402
+    BenchmarkParameters,
+    Config,
+    FeatureExtractionRuntimeConfig,
+    SearchSpaceParameter,
+)
 
 
 # --- Tests ---
@@ -99,6 +104,15 @@ def test_invalid_tile_mpp():
     with pytest.raises(ValidationError) as excinfo:
         BenchmarkParameters(tile_mpp=[0.0])
     assert "Must be > 0" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("batch_size", 0), ("num_workers", -1)],
+)
+def test_invalid_feature_extraction_runtime_values(field: str, value: int) -> None:
+    with pytest.raises(ValidationError):
+        FeatureExtractionRuntimeConfig.model_validate({field: value})
 
 
 def test_search_space_parameter_accepts_documented_type_alias() -> None:

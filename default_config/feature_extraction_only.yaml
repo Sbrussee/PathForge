@@ -1,0 +1,27 @@
+experiment:
+  project_name: feature_extraction_only
+  annotation_file: /path/to/annotations.csv
+  project_root: /path/to/results
+  mode: feature_extraction
+  num_workers: 4
+  mixed_precision: true
+slide_processing:
+  backend: lazyslide
+  segmentation_method: otsu
+  save_tiles: false
+  feature_extraction:
+    batch_size: 32
+    num_workers: 4
+    amp: true
+datasets:
+  - name: cohort
+    slides_dir: /path/to/slides
+    artifacts_dir: /path/to/artifacts
+    used_for: training
+benchmark_parameters:
+  tile_px: [224]
+  tile_mpp: [0.5, 1.0]
+  color_norm: [null, macenko]
+  feature_extraction: [h-optimus-1, uni2, virchow2, gpfm]
+  mil: []
+  loss: []

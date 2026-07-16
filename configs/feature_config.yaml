@@ -10,7 +10,11 @@ experiment:
 
 slide_processing:
   backend: lazyslide
-  
+  feature_extraction:
+    batch_size: 32
+    num_workers: 4
+    amp: true
+
 datasets:
   - name: Example-Dataset
     slides_dir: /path/to/data/Example-Dataset/slides

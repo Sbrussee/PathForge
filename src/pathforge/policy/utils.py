@@ -357,7 +357,8 @@ def experiment_output_root(config: Config) -> Path:
         Path: Absolute output directory used for experiment-wide reports.
     """
 
-    root = Path(config.experiment.project_root or ".").resolve()
+    base = Path(config.experiment.project_root or ".").resolve()
+    root = base / config.experiment.project_name
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -578,6 +579,109 @@ def save_benchmark_visualizations(
     return exported
 
 
+def save_global_summary_visualizations(
+    summary_csv_path: Path,
+    *,
+    output_dir: Path,
+    title_prefix: str = "Pipeline Results",
+) -> list[Path]:
+    """Render reusable ranked HTML views from a saved global results CSV.
+
+    Args:
+        summary_csv_path: Benchmark or optimization summary written by
+            :func:`write_experiment_summary_csv`.
+        output_dir: Directory receiving the standalone HTML files.
+        title_prefix: Human-readable label used in chart titles.
+
+    Returns:
+        list[Path]: Created HTML paths. An empty list is returned when the CSV
+            has no successful finite objective values.
+
+    Example:
+        .. code-block:: python
+
+            files = save_global_summary_visualizations(
+                Path("benchmark_results.csv"),
+                output_dir=Path("summary_visualizations"),
+            )
+
+    """
+
+    summary_path = Path(summary_csv_path).expanduser().resolve()
+    if not summary_path.is_file():
+        raise FileNotFoundError(f"Global results CSV not found: {summary_path}")
+    df = pd.read_csv(summary_path)
+    required = {"status", "objective_metric", "objective_value"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise ValueError(
+            f"Global results CSV is missing required columns: {missing}."
+        )
+    values = pd.to_numeric(df["objective_value"], errors="coerce")
+    successful = df["status"].astype(str).str.lower().isin(
+        {"success", "complete", "completed"}
+    )
+    plot_df = df.loc[successful & values.notna()].copy()
+    if plot_df.empty:
+        return []
+    plot_df["objective_value"] = values.loc[plot_df.index]
+    if "rank" not in plot_df or plot_df["rank"].isna().all():
+        metric = str(plot_df["objective_metric"].iloc[0])
+        plot_df = plot_df.sort_values(
+            ["objective_value"],
+            ascending=metric_should_minimize(metric),
+            kind="stable",
+        )
+        plot_df["rank"] = range(1, len(plot_df) + 1)
+    plot_df["run_label"] = plot_df.apply(
+        lambda row: f"#{int(row['rank'])} {row.get('model') or 'run'}",
+        axis=1,
+    )
+    figures = _load_plotly_modules()
+    if figures is None:
+        return []
+    px, _ = figures
+    output_dir = Path(output_dir).expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    hover_columns = [
+        column
+        for column in (
+            "task",
+            "model",
+            "loss",
+            "feature_extraction",
+            "tile_px",
+            "tile_mpp",
+            "batch_size",
+            "epochs",
+            "lr",
+            "dropout_p",
+            "checkpoint_path",
+        )
+        if column in plot_df and plot_df[column].notna().any()
+    ]
+    metric = str(plot_df["objective_metric"].iloc[0])
+    ranked_path = output_dir / "global_results_ranked.html"
+    rank_path = output_dir / "global_results_rank_scatter.html"
+    px.bar(
+        plot_df,
+        x="run_label",
+        y="objective_value",
+        color="model" if "model" in plot_df and plot_df["model"].notna().any() else None,
+        hover_data=hover_columns,
+        title=f"{title_prefix} Ranked by {metric}",
+    ).write_html(str(ranked_path))
+    px.scatter(
+        plot_df,
+        x="rank",
+        y="objective_value",
+        color="model" if "model" in plot_df and plot_df["model"].notna().any() else None,
+        hover_data=hover_columns,
+        title=f"{title_prefix}: Rank vs {metric}",
+    ).write_html(str(rank_path))
+    return [ranked_path, rank_path]
+
+
 def save_optuna_visualizations(
     study: Any,
     *,
@@ -791,6 +895,7 @@ __all__ = [
     "optimization_search_space",
     "resolve_dataset_feature_dir",
     "save_benchmark_visualizations",
+    "save_global_summary_visualizations",
     "save_optuna_visualizations",
     "suggest_parameter",
     "write_experiment_summary_csv",

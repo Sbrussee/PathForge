@@ -160,14 +160,17 @@ Cluster (SLURM) Jobs
 
 **Array jobs write to the same project directory.**
 
-When ``SLURM_JOB_ID`` is set in the environment, PathForge automatically
-suffixes the project name with the job ID:
+For the single-slide feature-extraction command, PathForge suffixes the project
+name with the job ID when ``SLURM_JOB_ID`` is set:
 
 .. code-block:: text
 
    my_project_12345678/
 
 This prevents race conditions between array tasks.
+Other PathForge commands do not currently apply this suffix automatically. See
+:doc:`scaling` for the supported single-slide pattern and the proposed
+distributed execution model.
 
 **Single-slide extraction on a cluster.**
 

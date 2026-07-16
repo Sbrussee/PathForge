@@ -241,6 +241,86 @@ def test_execute_combination_resolves_features_builds_datasets_and_runs_one_task
     assert benchmark_policy.task.calls == [(full_combo, datasets_by_use)]
 
 
+def test_experiment_benchmark_writes_tutorial_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The production Experiment path writes the summary used by the tutorial."""
+
+    config = Config.model_validate(
+        {
+            "experiment": {
+                "project_name": "tutorial",
+                "annotation_file": str(tmp_path / "annotations.csv"),
+                "project_root": str(tmp_path),
+                "mode": "benchmark",
+                "task": "classification",
+            },
+            "metrics": {"classification_backend": "native"},
+            "datasets": [
+                {
+                    "name": "train",
+                    "slides_dir": str(tmp_path / "slides"),
+                    "artifacts_dir": str(tmp_path / "artifacts"),
+                    "used_for": "all",
+                }
+            ],
+            "benchmark_parameters": {
+                "tile_px": [256],
+                "tile_mpp": [0.5],
+                "feature_extraction": [DUMMY_FE],
+                "mil": [DUMMY_MIL],
+                "loss": ["CrossEntropyLoss"],
+            },
+        }
+    )
+    combo = ComboConfig(
+        feature_extraction=DUMMY_FE,
+        tile_px=256,
+        tile_mpp=0.5,
+        mil=DUMMY_MIL,
+        loss="CrossEntropyLoss",
+    )
+
+    class SuccessfulTask:
+        @classmethod
+        def get_grid_keys(cls) -> list[str]:
+            return ["feature_extraction", "tile_px", "tile_mpp", "mil", "loss"]
+
+        def execute(self, **_: object) -> dict[str, object]:
+            return {
+                "status": "success",
+                "checkpoint_path": str(tmp_path / "best.ckpt"),
+                "objective_value": 0.25,
+            }
+
+    experiment = SimpleNamespace(
+        cfg=config,
+        project_root=str(tmp_path / "tutorial"),
+        load_annotations=lambda: pd.DataFrame({"slide": ["S1"]}),
+    )
+    monkeypatch.setattr(benchmark_mod, "import_task_modules", lambda: None)
+    monkeypatch.setattr(
+        benchmark_mod,
+        "build_task",
+        lambda task_name, experiment: SuccessfulTask(),
+    )
+    monkeypatch.setattr(benchmark_mod, "build_combinations", lambda **kwargs: [combo])
+    policy = BenchmarkingPolicy(experiment)
+    monkeypatch.setattr(policy, "ensure_bag_features_exist", lambda **kwargs: None)
+    monkeypatch.setattr(policy, "build_bag_datasets_for_combo", lambda **kwargs: [])
+    monkeypatch.setattr(policy, "group_bag_datasets_by_use", lambda datasets: {"all": []})
+    monkeypatch.setattr(policy, "_validate_dataset_uses", lambda **kwargs: None)
+
+    result = policy.execute()
+
+    summary = pd.read_csv(tmp_path / "tutorial" / "benchmark_results.csv")
+    assert result == {"status": "benchmark_done", "num_runs": 1}
+    assert summary.loc[0, "status"] == "success"
+    assert summary.loc[0, "checkpoint_path"].endswith("best.ckpt")
+    assert summary.loc[0, "objective_value"] == pytest.approx(0.25)
+
+
 def test_build_feature_extraction_dataset_raises_runtime_error_for_missing_slides(
     benchmark_policy: BenchmarkingPolicy,
     monkeypatch: pytest.MonkeyPatch,
@@ -535,8 +615,9 @@ def test_benchmark_execute_writes_sorted_summary_and_visualizations(
 
     BenchmarkingPolicy(cfg).execute()
 
-    summary_path = tmp_path / "project" / "benchmark_results.csv"
-    vis_dir = tmp_path / "project" / "benchmark_visualizations"
+    output_root = tmp_path / "project" / "bench_summary"
+    summary_path = output_root / "benchmark_results.csv"
+    vis_dir = output_root / "benchmark_visualizations"
     assert summary_path.exists()
     df = pd.read_csv(summary_path)
     assert set(df["objective_value"].dropna().tolist()) == {0.6, 0.9}

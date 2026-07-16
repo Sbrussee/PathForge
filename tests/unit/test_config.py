@@ -28,6 +28,10 @@ def test_from_yaml_loads_minimal_valid_config(tmp_path):
 
         slide_processing:
             backend: lazyslide
+            feature_extraction:
+                batch_size: 16
+                num_workers: 2
+                amp: true
 
         datasets: []
 
@@ -47,6 +51,9 @@ def test_from_yaml_loads_minimal_valid_config(tmp_path):
     assert cfg.experiment.mode == "feature_extraction"
     assert cfg.experiment.task is None
     assert cfg.slide_processing.backend == "lazyslide"
+    assert cfg.slide_processing.feature_extraction.batch_size == 16
+    assert cfg.slide_processing.feature_extraction.num_workers == 2
+    assert cfg.slide_processing.feature_extraction.amp is True
     assert cfg.benchmark_parameters.tile_px == [256]
 
 

@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 
 from . import benchmark_run, evaluate_run, features_run, features_slide
-from . import infer_run, report_tiles
+from . import execution, infer_run, optimize_run, report_tiles
 from . import retrieval_mean_rgb, retrieval_representations, retrieval_sish_vqvae, visualize_run
 
 app = typer.Typer(
@@ -21,6 +21,7 @@ visualize_app = typer.Typer(help="Visualization workflows.", no_args_is_help=Tru
 report_app = typer.Typer(help="Reporting workflows.", no_args_is_help=True)
 infer_app = typer.Typer(help="Inference workflows.", no_args_is_help=True)
 optimize_app = typer.Typer(help="Optimization workflows.", no_args_is_help=True)
+execution_app = typer.Typer(help="Distributed execution workflows.", no_args_is_help=True)
 
 features_app.command("run")(features_run.run_command)
 features_app.command("slide")(features_slide.run_command)
@@ -32,6 +33,7 @@ retrieval_app.command("sish-vqvae")(retrieval_sish_vqvae.run_command)
 benchmark_app.command("run")(benchmark_run.run_command)
 evaluate_app.command("run")(evaluate_run.run_command)
 visualize_app.command("run")(visualize_run.run_command)
+visualize_app.command("summary")(visualize_run.summary_command)
 report_app.command("tiles")(report_tiles.run_command)
 infer_app.command("run")(infer_run.run_command)
 
@@ -45,6 +47,14 @@ def _run_optimize_command(
 
 
 optimize_app.command("run")(_run_optimize_command)
+optimize_app.command("worker")(optimize_run.worker_command)
+optimize_app.command("finalize")(optimize_run.finalize_command)
+
+execution_app.command("plan")(execution.plan_command)
+execution_app.command("worker")(execution.worker_command)
+execution_app.command("aggregate")(execution.aggregate_command)
+execution_app.command("status")(execution.status_command)
+execution_app.command("run")(execution.run_command)
 
 app.add_typer(features_app, name="features")
 app.add_typer(retrieval_app, name="retrieval")
@@ -54,6 +64,7 @@ app.add_typer(visualize_app, name="visualize")
 app.add_typer(report_app, name="report")
 app.add_typer(infer_app, name="infer")
 app.add_typer(optimize_app, name="optimize")
+app.add_typer(execution_app, name="execution")
 
 
 def main() -> None:

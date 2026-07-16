@@ -11,8 +11,8 @@ Requirements
 Recommended Install
 -------------------
 
-LazySlide feature extraction is installed by default. Add the MIL backends
-(TorchMIL, TorchMetrics, and TorchSurv) with:
+LazySlide feature extraction is installed by default. Add the TorchMIL model
+backend and optional TorchMetrics/TorchSurv integrations with:
 
 .. code-block:: bash
 
@@ -45,6 +45,9 @@ Optional Extras
      - CUDA 12.8 PyTorch builds (via the ``pytorch-cu128`` index)
    * - ``gnn``
      - ``torch-geometric``
+   * - ``distributed``
+     - Dask distributed, dask-jobqueue, and the PostgreSQL driver used by
+       shared Optuna studies
    * - ``hf``
      - ``huggingface_hub``, ``typer``
    * - ``dev``
@@ -60,6 +63,11 @@ The ``mil-backends`` extra installs:
 
 These are optional. Native PathForge workflows are import-safe and runnable
 without them.
+
+MIL-Lab is a separate optional MIL backend and is not part of
+``mil-backends``. Install it from its `upstream repository
+<https://github.com/mahmoodlab/MIL-Lab>`_ following the upstream instructions.
+PathForge discovers its ``src.builder`` or ``builder`` module at runtime.
 
 Installing for Documentation
 -----------------------------
@@ -88,6 +96,9 @@ Check optional backends:
        is_torchmetrics_available,
        is_torchsurv_available,
    )
+   from pathforge.utils.optional.mil_lab import is_mil_lab_available
+
    print(is_torchmil_available())
+   print(is_mil_lab_available())
    print(is_torchmetrics_available())
    print(is_torchsurv_available())

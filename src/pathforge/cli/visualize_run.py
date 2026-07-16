@@ -9,6 +9,7 @@ from pathforge.config.config import Config
 from pathforge.cli.common import LOG_LEVEL_CHOICES, configure_logging
 from pathforge.core.experiments.base import Experiment
 from pathforge.core.visualization import VisualizationOrchestrator
+from pathforge.policy.utils import save_global_summary_visualizations
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,35 @@ def run_command(
 ) -> None:
     """Typer command that runs visualization from the provided config option."""
     raise SystemExit(run_visualization(config=config, log_level=log_level))
+
+
+def summary_command(
+    input_csv: Path = typer.Option(
+        ...,
+        "--input",
+        help="Global benchmark_results.csv or optimization_results.csv.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Output directory; defaults beside the input CSV.",
+    ),
+    title: str = typer.Option(
+        "Pipeline Results",
+        "--title",
+        help="Title prefix used by the generated charts.",
+    ),
+) -> None:
+    """Create standalone ranked HTML charts from a saved global results CSV."""
+
+    output_dir = output or input_csv.parent / f"{input_csv.stem}_visualizations"
+    created = save_global_summary_visualizations(
+        input_csv,
+        output_dir=output_dir,
+        title_prefix=title,
+    )
+    for path in created:
+        typer.echo(str(path))
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -155,18 +155,17 @@ PathForge writes one run directory per combination under the experiment root:
 .. code-block:: text
 
    project_root/tcga_retrieval/
-   └── slide_retrieval/
-       └── {tiling_id}/{feature_name}/{representation}/{search_method}/
+   └── eval_slide_retrieval/
+       └── {tiling_id}_{feature_name}/{representation}/{search_method}/
            └── run_{hash}/
                ├── manifest.json      — run configuration and summary counts
-               └── query_results.csv  — ranked hits per query slide
+               └── query_results.xlsx — ranked hits per query slide
 
-``query_results.csv`` contains one row per (query, hit) pair with:
+``query_results.xlsx`` contains one row per query. Its columns are:
 
-- ``query_id``: query slide identifier
-- ``hit_id``: retrieved reference slide identifier
-- ``rank``: rank in the result list (1 = closest)
-- ``score``: similarity score from the search strategy
+- ``query_sample_id``: query sample identifier
+- ``rank_<k>_sample_id``: identifier of the hit at rank ``k``
+- ``rank_<k>_score``: similarity score of the hit at rank ``k``
 
 ``manifest.json`` records the full run configuration including
 ``representation_id``, ``exclusion_level``, ``num_queries``,

@@ -58,6 +58,11 @@ mil-backends = [
 survival = ["scikit-survival"]
 tcga = ["tcga-tools"]
 gnn = ["torch-geometric>=2.5"]
+distributed = [
+    "dask[distributed]",
+    "dask-jobqueue",
+    "psycopg[binary]",
+]
 hf = [
     "huggingface_hub>=0.25,<1.0",
 ]

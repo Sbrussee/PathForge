@@ -125,8 +125,9 @@ def test_benchmark_cli_writes_summary_and_visualizations(
     exit_code = main(["--config", str(cfg_path)])
 
     assert exit_code == 0
-    summary_path = project_root / "benchmark_results.csv"
-    vis_dir = project_root / "benchmark_visualizations"
+    output_root = project_root / "smoke_benchmark_cli"
+    summary_path = output_root / "benchmark_results.csv"
+    vis_dir = output_root / "benchmark_visualizations"
     assert summary_path.exists(), "benchmark_results.csv not written by CLI"
     summary_df = pd.read_csv(summary_path)
     assert {"run_index", "status", "objective_value", "rank"}.issubset(summary_df.columns)

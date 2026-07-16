@@ -1,6 +1,7 @@
 from __future__ import annotations
 import copy
 import logging
+from pathlib import Path
 from typing import Optional
 
 import optuna
@@ -90,6 +91,13 @@ class OptimizationPolicy(PolicyBase):
 
     def objective(self, trial: optuna.Trial) -> float:
         trial_cfg = copy.deepcopy(self.config)
+        base_root = Path(trial_cfg.experiment.project_root or ".").resolve()
+        trial_cfg.experiment.project_root = str(
+            base_root
+            / trial_cfg.experiment.project_name
+            / "trials"
+            / f"trial_{trial.number:06d}"
+        )
         suggested_params = {
             name: suggest_parameter(trial, name=name, spec=spec)
             for name, spec in optimization_search_space(trial_cfg).items()
@@ -149,7 +157,7 @@ class OptimizationPolicy(PolicyBase):
 
         try:
             best_path, best_score = trainer.fit(model, ds_train, ds_val, loss_fn)
-            _ = best_path
+            trial.set_user_attr("checkpoint_path", str(best_path))
             return best_score
         except Exception as e:
             logger.exception("Optimization trial failed: %s", e)
@@ -157,7 +165,28 @@ class OptimizationPolicy(PolicyBase):
                 float("inf") if self._get_direction() == "minimize" else float("-inf")
             )
 
-    def execute(self) -> None:
+    def _get_storage(self) -> str | optuna.storages.BaseStorage | None:
+        """Build the configured Optuna storage, including worker heartbeats."""
+
+        storage_url = self.config.optimization.storage
+        if storage_url is None:
+            return None
+        if self.config.optimization.heartbeat_interval is None:
+            return storage_url
+        return optuna.storages.RDBStorage(
+            url=storage_url,
+            heartbeat_interval=self.config.optimization.heartbeat_interval,
+            grace_period=self.config.optimization.stale_trial_timeout,
+        )
+
+    def execute(
+        self,
+        *,
+        n_trials: int | None = None,
+        finalize: bool = True,
+    ) -> optuna.Study:
+        """Run local or shared-storage trials and optionally write study outputs."""
+
         logger.info(
             "Starting optimization study '%s'.",
             self.config.optimization.study_name,
@@ -172,10 +201,17 @@ class OptimizationPolicy(PolicyBase):
             sampler=sampler,
             pruner=pruner,
             study_name=self.config.optimization.study_name,
-            load_if_exists=self.config.optimization.load_study,
+            storage=self._get_storage(),
+            load_if_exists=(
+                self.config.optimization.load_study
+                or self.config.optimization.storage is not None
+            ),
         )
 
-        study.optimize(self.objective, n_trials=self.config.optimization.trials)
+        study.optimize(
+            self.objective,
+            n_trials=n_trials if n_trials is not None else self.config.optimization.trials,
+        )
 
         logger.info("Best Params: %s", study.best_params)
         logger.info(
@@ -184,7 +220,9 @@ class OptimizationPolicy(PolicyBase):
             study.best_value,
         )
 
-        self._save_study_outputs(study)
+        if finalize:
+            self._save_study_outputs(study)
+        return study
 
     def _resolve_train_val_entries(
         self,
@@ -239,10 +277,20 @@ class OptimizationPolicy(PolicyBase):
                 "objective_metric": objective_metric,
                 "objective_value": trial.get("value"),
                 "trial_number": int(trial["number"]),
+                "checkpoint_path": trial.get("user_attrs_checkpoint_path"),
             }
             for column, value in trial.items():
                 if column in row:
                     continue
                 row[str(column)] = value
+                if str(column).startswith("params_"):
+                    row[str(column).removeprefix("params_")] = value
+            for field_name in ("mil", "loss", "feature_extraction"):
+                value = row.get(field_name)
+                if value is None:
+                    candidates = self.config.benchmark_parameters.get_values(field_name)
+                    value = candidates[0] if len(candidates) == 1 else None
+                target_name = "model" if field_name == "mil" else field_name
+                row[target_name] = value
             rows.append(row)
         return rows

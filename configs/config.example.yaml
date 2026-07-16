@@ -38,6 +38,10 @@ slide_processing:
   save_tiles: false
   segmentation_method: "otsu"
   qc_filters: []   # passed as kwargs to lazyslide find_tissues; keep empty unless you know supported params
+  feature_extraction:
+    batch_size: 32
+    num_workers: 4
+    amp: true
 
 optimization:
   study_name: "HyperParam_Optimization"
@@ -48,6 +52,29 @@ optimization:
   sampler: "TPESampler"
   trials: 50
   pruner: "MedianPruner"
+  # Set a shared PostgreSQL URL when multiple optimization workers participate.
+  storage: null
+  trials_per_worker: 5
+  heartbeat_interval: null
+  stale_trial_timeout: null
+
+execution:
+  backend: "local"             # local, slurm, or dask
+  work_dir: "./pathforge-work"
+  resume: true
+  max_workers: 4
+  resources:
+    feature_extraction: {cpus: 4, gpus: 1, memory_gb: 32, time: "12:00:00"}
+    benchmarking: {cpus: 4, gpus: 1, memory_gb: 32, time: "12:00:00"}
+    optimization: {cpus: 4, gpus: 1, memory_gb: 32, time: "12:00:00"}
+    aggregation: {cpus: 1, gpus: 0, memory_gb: 8, time: "01:00:00"}
+  slurm:
+    partition: null
+    account: null
+    qos: null
+    constraint: null
+    max_concurrent: 16
+    extra_directives: []
 
 evaluation:
   label_column: "category"

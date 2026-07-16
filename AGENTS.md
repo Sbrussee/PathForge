@@ -1,7 +1,4 @@
 - Shared reference docs are stored in `docs/` (except this `AGENTS.md` file).
-- Code must adhere to the design standards set in `docs/design.md`
-- File formatting, typing and shapes should adhere to the standards set in `docs/design.md`
-
 - Docstrings should be implemented as follows:
     - Clarify the expected inputs and outputs with typing and shapes
     - Clarify the semantic goal of the functions / classes

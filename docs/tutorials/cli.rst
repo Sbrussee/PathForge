@@ -38,7 +38,7 @@ Flat console scripts (shortcuts for the common workflows):
    pathforge-mean-rgb    --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
    pathforge-slide-retrieval-representations --config retrieval.yaml
    pathforge-infer       --config inference.yaml --input-csv slides.csv
-   pathforge-infer-model --model_path best.ckpt --input artifact.h5 --output predictions.json
+   pathforge-infer-model --model_path best_package.pt --input artifact.h5 --output predictions.json
 
 ``pathforge-features``
 -----------------------
@@ -167,7 +167,7 @@ heatmap. Use this for ad-hoc prediction/explainability outside the config flow.
                                 [--heatmap-output HEATMAP_OUTPUT]
 
    options:
-     --model_path           Path to packaged model checkpoint.
+     --model_path           Path to a packaged PathForge model (.pt).
      --input                Feature artifact (.h5 / .pt / .npy / .npz).
      --output               Output JSON for predictions.
      --heatmap-backend      Heatmap explainer backend (e.g. torchmil).
@@ -183,7 +183,7 @@ Example (prediction only):
 .. code-block:: bash
 
    pathforge-infer-model \
-     --model_path checkpoints/best.ckpt \
+     --model_path checkpoints/best_package.pt \
      --input artifacts/SLIDE_001.h5 \
      --output predictions/SLIDE_001.json
 
@@ -192,7 +192,7 @@ Example (with heatmap):
 .. code-block:: bash
 
    pathforge-infer-model \
-     --model_path checkpoints/best.ckpt \
+     --model_path checkpoints/best_package.pt \
      --input artifacts/SLIDE_001.h5 \
      --output predictions/SLIDE_001.json \
      --heatmap-backend torchmil \

@@ -181,6 +181,10 @@ H5 I/O
    :members:
    :show-inheritance:
 
+.. automodule:: pathforge.core.io.h5.descriptors
+   :members:
+   :show-inheritance:
+
 .. automodule:: pathforge.core.io.h5.tiles
    :members:
    :show-inheritance:
