@@ -348,12 +348,23 @@ class SearchSpaceParameter(BaseModel):
         return self
 
 
+class FeatureExtractionRuntimeConfig(BaseModel):
+    """Runtime controls forwarded to slide-backend feature extraction."""
+
+    batch_size: int = Field(32, gt=0)
+    num_workers: int = Field(0, ge=0)
+    amp: bool = False
+
+
 class SlideProcessingConfig(BaseModel):
     """Settings for slide processing backends."""
 
     backend: Literal["lazyslide", "openslide", "cucim"] = "lazyslide"
     save_tiles: bool = False
     segmentation_method: Optional[str] = None
+    feature_extraction: FeatureExtractionRuntimeConfig = Field(
+        default_factory=FeatureExtractionRuntimeConfig
+    )
 
     qc_filters: List[Dict[str, Any]] = Field(default_factory=list)
 
@@ -370,6 +381,10 @@ class OptimizationConfig(BaseModel):
     sampler: str = "TPESampler"
     trials: int = Field(100, gt=0)
     pruner: Optional[str] = "HyperbandPruner"
+    storage: Optional[str] = None
+    trials_per_worker: int = Field(1, gt=0)
+    heartbeat_interval: Optional[int] = Field(default=None, gt=0)
+    stale_trial_timeout: Optional[int] = Field(default=None, gt=0)
     search_space: dict[str, SearchSpaceParameter] = Field(
         default_factory=lambda: {
             "lr": SearchSpaceParameter(kind="float", low=1e-5, high=1e-3, log=True),
@@ -387,6 +402,58 @@ class OptimizationConfig(BaseModel):
             ),
         }
     )
+
+
+class StageResourceConfig(BaseModel):
+    """Resource request used when rendering one distributed execution stage."""
+
+    cpus: int = Field(1, gt=0)
+    gpus: int = Field(0, ge=0)
+    memory_gb: int = Field(8, gt=0)
+    time: str = "01:00:00"
+
+
+class ExecutionResourcesConfig(BaseModel):
+    """Per-stage resource requests for generated scheduler jobs."""
+
+    feature_extraction: StageResourceConfig = Field(
+        default_factory=lambda: StageResourceConfig(
+            cpus=4, gpus=1, memory_gb=32, time="04:00:00"
+        )
+    )
+    benchmarking: StageResourceConfig = Field(
+        default_factory=lambda: StageResourceConfig(
+            cpus=4, gpus=1, memory_gb=24, time="08:00:00"
+        )
+    )
+    optimization: StageResourceConfig = Field(
+        default_factory=lambda: StageResourceConfig(
+            cpus=4, gpus=1, memory_gb=24, time="08:00:00"
+        )
+    )
+    aggregation: StageResourceConfig = Field(default_factory=StageResourceConfig)
+
+
+class SlurmExecutionConfig(BaseModel):
+    """SLURM-specific rendering controls for distributed execution plans."""
+
+    partition: Optional[str] = None
+    account: Optional[str] = None
+    qos: Optional[str] = None
+    constraint: Optional[str] = None
+    max_concurrent: int = Field(20, gt=0)
+    extra_directives: list[str] = Field(default_factory=list)
+
+
+class ExecutionConfig(BaseModel):
+    """Global scheduler-neutral settings for distributed PathForge work."""
+
+    backend: Literal["local", "slurm", "dask"] = "local"
+    work_dir: Optional[str] = None
+    resume: bool = True
+    max_workers: int = Field(1, gt=0)
+    resources: ExecutionResourcesConfig = Field(default_factory=ExecutionResourcesConfig)
+    slurm: SlurmExecutionConfig = Field(default_factory=SlurmExecutionConfig)
 
 
 class EvaluationConfig(BaseModel):
@@ -825,6 +892,7 @@ class Config(BaseModel):
     explainability: ExplainabilityConfig = Field(default_factory=ExplainabilityConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     datasets: List[DatasetEntry] = Field(default_factory=list)
     benchmark_parameters: BenchmarkParameters = Field(default_factory=BenchmarkParameters)

@@ -60,16 +60,7 @@ Save as ``benchmark.yaml``:
      tile_mpp: [0.5, 1.0]
      feature_extraction: [resnet50, uni]
      mil: [PerceiverMIL, VarMIL]
-     loss: [CrossEntropyLoss, FocalLoss]
-     activation_function: [ReLU]
-     optimizer: [Adam, AdamW]
-     epochs: [20, 40]
-     batch_size: [1, 4]
-     lr: [1e-4, 5e-4]
-     weight_decay: [1e-5, 1e-4]
-     dropout_p: [0.1, 0.3]
-     z_dim: [128, 256]
-     bag_size: [256, 512]
+     loss: [CrossEntropyLoss, NLLLoss]
 
 Step 2 — Run Benchmarking
 --------------------------
@@ -83,7 +74,7 @@ For each combination PathForge:
 1. Builds the bag dataset from H5 features.
 2. Resolves the MIL model and loss via registries.
 3. Instantiates a ``LightningTrainer``.
-4. Applies sampled training and architecture settings such as ``epochs``, ``lr``, ``dropout_p``, and ``z_dim``.
+4. Uses the fixed training and architecture settings from the ``mil`` block.
 5. Trains for up to ``epochs`` with early stopping.
 6. Evaluates on the test set and logs metrics.
 
@@ -155,7 +146,7 @@ For discrete survival:
      task: survival_discrete
 
    benchmark_parameters:
-     loss: [NLLSurvLoss]
+     loss: [DiscreteTimeNLLLoss]
 
 The annotation CSV must contain valid survival time and event columns. The
 event column must be binary (0 = censored, 1 = observed event).
@@ -174,8 +165,7 @@ Compare multiple feature extractors in a single run:
      mil: [PerceiverMIL]
      loss: [CrossEntropyLoss]
 
-This generates ``2 × 1 × 3 × 1 × 1 = 6`` pipeline combinations before any
-training-hyperparameter grids are multiplied in. H5 artifacts must
+This generates ``2 × 1 × 3 × 1 × 1 = 6`` pipeline combinations. H5 artifacts must
 already exist for all combinations (run feature extraction first with the
 same tile_px/tile_mpp/feature_extraction values).
 
@@ -199,8 +189,8 @@ visualizations under the experiment root:
 
 - active pipeline choices such as ``tile_px``, ``tile_mpp``,
   ``feature_extraction``, ``model``, and ``loss``
-- sampled training settings such as ``batch_size``, ``epochs``, ``lr``,
-  ``weight_decay``, ``dropout_p``, and ``z_dim``
+- fixed training settings from the ``mil`` block, such as ``batch_size``,
+  ``epochs``, ``lr``, ``weight_decay``, ``dropout_p``, and ``z_dim``
 - run outputs such as ``status``, ``objective_metric``, ``objective_value``,
   ``checkpoint_path``, and ``rank``
 
@@ -208,6 +198,13 @@ The rows are sorted by performance. Metrics such as accuracy, AUROC, and
 ``c_index`` are ranked highest-first, while loss/error metrics are ranked
 lowest-first. The HTML visualizations are generated from this same CSV so the
 experiment-wide ranking remains auditable from a single artifact.
+
+Recreate global summary charts later, without training again:
+
+.. code-block:: bash
+
+   pathforge visualize summary \
+     --input /data/pathforge_projects/luad_benchmark/benchmark_results.csv
 
 Slide Retrieval
 ---------------

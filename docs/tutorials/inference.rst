@@ -105,7 +105,7 @@ Step 2 — Run inference with heatmap generation
 .. code-block:: bash
 
    pathforge-infer-model \
-     --model_path /experiments/luad_benchmark/checkpoints/best.ckpt \
+     --model_path /experiments/luad_benchmark/checkpoints/best_package.pt \
      --input /data/artifacts/train/TCGA-A1-A0SB-01Z.h5 \
      --output /data/predictions/TCGA-A1-A0SB-01Z.json \
      --heatmap-backend torchmil \

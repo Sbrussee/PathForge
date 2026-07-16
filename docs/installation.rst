@@ -45,6 +45,9 @@ Optional Extras
      - CUDA 12.8 PyTorch builds (via the ``pytorch-cu128`` index)
    * - ``gnn``
      - ``torch-geometric``
+   * - ``distributed``
+     - Dask distributed, dask-jobqueue, and the PostgreSQL driver used by
+       shared Optuna studies
    * - ``hf``
      - ``huggingface_hub``, ``typer``
    * - ``dev``

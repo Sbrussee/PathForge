@@ -51,14 +51,14 @@ Classification
 Classification predicts a categorical label, such as disease subtype,
 mutation status, or treatment-response group. PathForge supports binary and
 multiclass MIL experiments and reports classification metrics such as
-accuracy, balanced accuracy, F1, AUROC, precision-recall AUC, and Brier score.
+accuracy, balanced accuracy, F1, AUROC, and precision-recall AUC.
 
 Regression
 ~~~~~~~~~~
 
 Regression predicts a continuous target, such as a biomarker value or
-quantitative tissue property. Supported metrics include MAE, MSE, RMSE, and
-:math:`R^2`.
+quantitative tissue property. The current configurable regression metric
+registry exposes MAE and MSE.
 
 Survival Analysis
 ~~~~~~~~~~~~~~~~~
@@ -83,6 +83,9 @@ It reuses stored feature bags and supports configurable representation and
 search strategies, retrieval metrics, ranked-result tables, and retrieval
 visualizations. This is useful for cohort exploration, case-based search, and
 content-based pathology retrieval without fitting a predictive MIL model.
+Slide retrieval is supported through benchmarking and inference; the current
+Optuna optimization policy trains MIL prediction models and does not optimize
+retrieval strategies.
 
 Where to Go Next
 ----------------
@@ -98,4 +101,3 @@ Where to Go Next
   backend details.
 - Use :doc:`tutorials/slide_retrieval` for the retrieval workflow and
   :doc:`api/index` when integrating PathForge from Python.
-

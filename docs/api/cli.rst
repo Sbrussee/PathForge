@@ -41,6 +41,13 @@ Optimization
    :members:
    :show-inheritance:
 
+Distributed Execution
+---------------------
+
+.. automodule:: pathforge.cli.execution
+   :members:
+   :show-inheritance:
+
 Inference
 ---------
 

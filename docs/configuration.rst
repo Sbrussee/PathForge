@@ -214,6 +214,28 @@ WSI loading and tissue segmentation settings.
    * - ``qc_filters``
      - ``[]``
      - List of quality-control filter names applied per tile before feature extraction.
+   * - ``feature_extraction.batch_size``
+     - ``32``
+     - Number of tiles per model-inference batch. Reduce this after GPU
+       out-of-memory errors.
+   * - ``feature_extraction.num_workers``
+     - ``0``
+     - CPU data-loading workers used by the slide backend during feature
+       extraction.
+   * - ``feature_extraction.amp``
+     - ``false``
+     - Enable automatic mixed-precision feature inference on supported devices.
+
+Example:
+
+.. code-block:: yaml
+
+   slide_processing:
+     backend: lazyslide
+     feature_extraction:
+       batch_size: 32
+       num_workers: 4
+       amp: true
 
 ``datasets``
 ------------
@@ -429,6 +451,19 @@ PathForge does not infer numeric ranges from model constructors.
    * - ``trials``
      - ``100``
      - Number of Optuna trials to run.
+   * - ``storage``
+     - ``null``
+     - Shared Optuna storage URL. Required for multiple optimization workers;
+       PostgreSQL is recommended on clusters.
+   * - ``trials_per_worker``
+     - ``1``
+     - Maximum number of trials claimed by each distributed worker.
+   * - ``heartbeat_interval``
+     - ``null``
+     - RDB heartbeat interval in seconds for interrupted-worker detection.
+   * - ``stale_trial_timeout``
+     - ``null``
+     - Missing-heartbeat grace period in seconds.
    * - ``search_space``
      - See below
      - Mapping from parameter names to typed search-space specifications.
@@ -475,6 +510,18 @@ fixed config in the current implementation; arbitrary dotted keys or kwargs in
 Use separate configs to optimize different backend constructor layouts.
 Concrete model names from different backends may share a search space only
 when their shared constructor settings are compatible.
+
+``execution``
+-------------
+
+Global local, Dask, and SLURM orchestration settings. ``backend`` is one of
+``local``, ``dask``, or ``slurm``; ``resume`` skips successful work records and
+``max_workers`` controls local process execution. ``resources`` contains
+``feature_extraction``, ``benchmarking``, ``optimization``, and ``aggregation``
+blocks with ``cpus``, ``gpus``, ``memory_gb``, and ``time``. The ``slurm`` block
+accepts ``partition``, ``account``, ``qos``, ``constraint``,
+``max_concurrent``, and ``extra_directives``. See :doc:`scaling` for complete
+examples and worker commands.
 
 Top-Level Fields
 ----------------

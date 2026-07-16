@@ -153,12 +153,14 @@ Pipeline Optimization
 Inference
 ---------
 
-Run a packaged checkpoint on one feature artifact:
+Run a packaged model on one feature artifact. Benchmarking and optimization
+write a ``*_package.pt`` model beside each successful Lightning checkpoint;
+the raw ``.ckpt`` file is not a self-contained inference input.
 
 .. code-block:: bash
 
    pathforge-infer-model \
-     --model_path /experiments/my_benchmark/checkpoints/best.ckpt \
+     --model_path /experiments/my_benchmark/checkpoints/best_package.pt \
      --input /data/artifacts/train/SLIDE_001.h5 \
      --output predictions.json
 
@@ -167,7 +169,7 @@ Generate an attention heatmap alongside the prediction:
 .. code-block:: bash
 
    pathforge-infer-model \
-     --model_path /experiments/my_benchmark/checkpoints/best.ckpt \
+     --model_path /experiments/my_benchmark/checkpoints/best_package.pt \
      --input /data/artifacts/train/SLIDE_001.h5 \
      --output predictions.json \
      --heatmap-backend torchmil \
@@ -195,9 +197,9 @@ A typical classification project chains four commands. Reusing the configs above
    # 3. (Optional) Re-run metrics/visualizations from saved predictions.
    pathforge-evaluate --config benchmark.yaml
 
-   # 4. Predict on one slide with the best checkpoint.
+   # 4. Predict on one slide with its packaged model.
    pathforge-infer-model \
-     --model_path /experiments/my_benchmark/checkpoints/best.ckpt \
+     --model_path /experiments/my_benchmark/checkpoints/best_package.pt \
      --input /data/artifacts/train/SLIDE_001.h5 \
      --output predictions.json
 

@@ -40,6 +40,9 @@ configuration reference defines the complete YAML schema; the MIL options page
 identifies benchmark grids, installed backend catalogs, and config-defined
 Optuna search spaces.
 
+Ready-to-edit benchmark, optimization, feature-extraction, and distributed
+SLURM templates are provided in [`default_config/`](default_config/README.md).
+
 ## What PathForge Does
 
 PathForge is organized around a config-driven workflow:
@@ -100,6 +103,7 @@ Individual extras:
 | `tcga` | `tcga-tools` integration for TCGA/TCIA datasets |
 | `cu128` | CUDA 12.8 PyTorch builds (via the `pytorch-cu128` index) |
 | `gnn` | `torch-geometric` |
+| `distributed` | Dask, dask-jobqueue, and PostgreSQL driver |
 | `hf` | `huggingface_hub`, `typer` |
 | `dev` | `pytest`, `pytest-cov` |
 
@@ -131,7 +135,14 @@ pathforge features slide  --config features.yaml --dataset TrainingSet --input /
 pathforge benchmark run   --config benchmark.yaml
 pathforge evaluate run    --config benchmark.yaml
 pathforge visualize run   --config benchmark.yaml
+pathforge visualize summary --input /project/benchmark_results.csv
 pathforge optimize run    --config optimize.yaml
+pathforge optimize worker --config optimize.yaml --trials 10
+pathforge optimize finalize --config optimize.yaml
+pathforge execution plan  --config benchmark.yaml --output /project/work/plan
+pathforge execution run   --plan /project/work/plan/plan.json --stage features --backend local
+pathforge execution status --plan /project/work/plan/plan.json
+pathforge execution aggregate --plan /project/work/plan/plan.json
 pathforge report tiles    --config features.yaml
 pathforge retrieval representations --config retrieval.yaml
 pathforge retrieval mean-rgb        --config retrieval.yaml --dataset ReferenceSet --slide-id SLIDE_001
@@ -163,7 +174,7 @@ and can optionally attach a heatmap:
 
 ```bash
 pathforge-infer-model \
-  --model_path checkpoints/best.ckpt \
+  --model_path checkpoints/best_package.pt \
   --input artifacts/SLIDE_001.h5 \
   --output predictions/SLIDE_001.json
 ```
@@ -305,8 +316,9 @@ Top-level sections:
 - `experiment`: project lifecycle, task, mode, reporting, and workers.
 - `slide_processing`: WSI backend and tissue/tiling behavior.
 - `datasets`: slide directories, artifact directories, and dataset roles.
-- `benchmark_parameters`: grids for tiling, feature extractors, MIL models,
-  losses, activations, and optimizers.
+- `benchmark_parameters`: candidate pipeline values. Each task selects its own
+  active grid keys; current MIL benchmarks vary feature extractor, tile size,
+  resolution, MIL model, and loss.
 - `mil`: training loop, backend selection, model kwargs, and MIL hyperparameters.
 - `metrics`: metric backend selection.
 - `explainability`: heatmap backend selection.
@@ -573,6 +585,8 @@ Datasets and collate adapters use the canonical bag dictionary throughout.
 ## Benchmarking
 
 Benchmark mode evaluates combinations from `benchmark_parameters`.
+It writes one ranked global `benchmark_results.csv` containing every
+combination, its pipeline choices, objective value, status, and checkpoint.
 
 Run:
 
@@ -603,8 +617,6 @@ benchmark_parameters:
   feature_extraction: [resnet18]
   mil: [PerceiverMIL]
   loss: [CrossEntropyLoss]
-  activation_function: [ReLU]
-  optimizer: [Adam]
 ```
 
 For a TorchMIL benchmark, every run resolves:
@@ -626,6 +638,16 @@ constructor kwargs are incompatible.
 
 Optimization mode runs Optuna studies while preserving the same registry
 boundary as benchmarking.
+It writes the raw Optuna table plus a normalized, ranked global
+`optimization_results.csv` with the same core result columns as benchmarking.
+
+Either global CSV can be visualized later without retraining:
+
+```bash
+pathforge visualize summary \
+  --input /project/benchmark_results.csv \
+  --output /project/benchmark_summary_visualizations
+```
 
 Run:
 
@@ -745,7 +767,7 @@ Outputs are written to:
 ```text
 project_root/{project_name}/slide_retrieval/{tiling_id}/{feature}/{representation}/{search}/run_{hash}/
 ├── manifest.json       — run configuration and summary counts
-└── query_results.csv   — ranked hits per query slide
+└── query_results.xlsx  — ranked hits per query slide
 ```
 
 ## Metrics
@@ -844,12 +866,13 @@ prediction namespace rather than overloading existing tile overview datasets.
 
 ## Inference
 
-The inference CLI currently provides a small stable surface for checkpoint-style
-prediction workflows:
+The inference CLI provides a stable surface for packaged-model prediction
+workflows. Pass the ``*_package.pt`` file written beside a successful training
+checkpoint, not the raw Lightning ``.ckpt`` file:
 
 ```bash
 pathforge-infer-model \
-  --model_path checkpoint.ckpt \
+  --model_path checkpoint_package.pt \
   --input /data/artifacts/SLIDE_001.h5 \
   --output predictions.json
 ```
@@ -862,7 +885,7 @@ TorchMIL heatmap inference example:
 
 ```bash
 pathforge-infer-model \
-  --model_path /models/abmil.ckpt \
+  --model_path /models/abmil_package.pt \
   --input /data/artifacts/SLIDE_001.h5 \
   --output /data/predictions/SLIDE_001.json \
   --heatmap-backend torchmil \

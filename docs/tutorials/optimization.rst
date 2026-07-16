@@ -66,7 +66,7 @@ Save as ``optimize.yaml``:
      tile_mpp: [0.5, 1.0]
      feature_extraction: [resnet50, uni]
      mil: [PerceiverMIL, VarMIL]
-     loss: [CrossEntropyLoss, FocalLoss]
+     loss: [CrossEntropyLoss, NLLLoss]
      optimizer: [Adam, AdamW]
 
 Step 2 — Run Optimization
@@ -177,10 +177,10 @@ That includes pipeline components such as:
 - ``loss``
 - ``optimizer``
 
-Benchmarking uses the same lists as a full grid, while optimization samples
-from them trial-by-trial and combines them with ranged hyperparameters such as
-``lr``, ``weight_decay``, ``dropout_p``, ``epochs``, ``z_dim``, and
-``bag_size``.
+Optimization samples these lists trial-by-trial and combines them with ranged
+hyperparameters such as ``lr``, ``weight_decay``, ``dropout_p``, ``epochs``,
+``z_dim``, and ``bag_size``. Fixed benchmarking uses only the grid keys declared
+by its selected task; see :doc:`../mil_options` for the current MIL keys.
 
 TorchMIL Optimization
 ----------------------
@@ -216,8 +216,19 @@ Optimize TorchMIL model hyperparameters:
 Resuming a Study
 ----------------
 
-Optuna persists study state in a SQLite database under the experiment
-directory. Rerun the same command to resume:
+Without ``optimization.storage``, Optuna uses in-memory storage and the study
+cannot be resumed after the process exits. Configure an explicit storage URL
+to persist it; PathForge loads an existing named study whenever storage is
+configured. SQLite is suitable for a single-node local study; use PostgreSQL
+for concurrent workers on separate cluster nodes:
+
+.. code-block:: yaml
+
+   optimization:
+     study_name: luad_abmil_search
+     storage: sqlite:////data/pathforge_projects/luad_optimization/study.db
+
+Then rerun the same command:
 
 .. code-block:: bash
 
@@ -247,6 +258,13 @@ experiment root:
 ``luad_abmil_search_results.csv`` is the raw ``study.trials_dataframe()``
 export from Optuna. ``optimization_results.csv`` is the experiment-wide summary
 used for ranking completed trials by the configured objective metric.
+
+Recreate ranked global charts from the normalized summary at any later time:
+
+.. code-block:: bash
+
+   pathforge visualize summary \
+     --input /data/pathforge_projects/luad_optimization/optimization_results.csv
 
 Optuna study results are also accessible via the Optuna API:
 

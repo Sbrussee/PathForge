@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 import sys
 import types
 
 import optuna
 import pandas as pd
+import pytest
 
 import pathforge.policy.optimization as opt_mod
 import pathforge.policy.utils as policy_utils
@@ -87,6 +89,39 @@ def test_optimization_policy_selects_pruner(tmp_path: Path) -> None:
 def test_optimization_policy_maps_max_mode_to_maximize(tmp_path: Path) -> None:
     policy = OptimizationPolicy(_make_cfg(tmp_path, objective_mode="max"))
     assert policy._get_direction() == "maximize"
+
+
+def test_parallel_optimization_workers_share_one_optuna_study(tmp_path: Path) -> None:
+    """Concurrent PathForge workers claim distinct trials through shared storage."""
+
+    storage = f"sqlite:///{tmp_path / 'parallel-optuna.db'}"
+    optuna.create_study(
+        study_name="study",
+        storage=storage,
+        direction="maximize",
+    )
+    policies: list[OptimizationPolicy] = []
+    base_cfg = _make_cfg(tmp_path, sampler="RandomSampler", pruner="NopPruner")
+    for _ in range(2):
+        cfg = base_cfg.model_copy(deep=True)
+        cfg.optimization.storage = storage
+        cfg.optimization.load_study = True
+        policy = OptimizationPolicy(cfg)
+        policy.objective = lambda trial: trial.suggest_float("x", 0.0, 1.0)
+        policies.append(policy)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        studies = list(
+            executor.map(
+                lambda policy: policy.execute(n_trials=2, finalize=False),
+                policies,
+            )
+        )
+
+    loaded = optuna.load_study(study_name="study", storage=storage)
+    assert len(loaded.trials) == 4
+    assert all(trial.state == optuna.trial.TrialState.COMPLETE for trial in loaded.trials)
+    assert {study.study_name for study in studies} == {"study"}
 
 
 def test_optimization_policy_maps_loss_metric_to_minimize_when_mode_unknown(
@@ -286,6 +321,9 @@ def test_optimization_objective_uses_dataset_use_semantics_and_does_not_mutate_b
     monkeypatch.setattr(opt_mod, "build_mil_model_for_config", lambda config, **kwargs: object())
     monkeypatch.setattr(opt_mod.LOSSES, "get", lambda name: (lambda: object()))
     monkeypatch.setattr(opt_mod.TRAINERS, "get", lambda name: _FakeTrainer)
+    from pathforge.utils import registries as registry_module
+
+    monkeypatch.setattr(registry_module, "resolve_mil_model_backend", lambda name: "native")
 
     trial = optuna.trial.FixedTrial({"mil": "DummyMIL2", "batch_size": 4})
     score = OptimizationPolicy(cfg).objective(trial)
@@ -374,14 +412,16 @@ def test_optimization_execute_writes_summary_csv_and_visualizations(
 
     policy.execute()
 
-    raw_results = tmp_path / "project" / "study_results.csv"
-    summary_results = tmp_path / "project" / "optimization_results.csv"
-    vis_dir = tmp_path / "project" / "optimization_visualizations"
+    output_root = tmp_path / "project" / "opt_policy"
+    raw_results = output_root / "study_results.csv"
+    summary_results = output_root / "optimization_results.csv"
+    vis_dir = output_root / "optimization_visualizations"
     assert raw_results.exists()
     assert summary_results.exists()
     summary_df = pd.read_csv(summary_results)
     assert summary_df["objective_value"].tolist()[:2] == [0.82, 0.61]
     assert summary_df["rank"].tolist()[:2] == [1, 2]
+    assert summary_df["lr"].tolist()[:2] == pytest.approx([1e-4, 5e-4])
     assert exported_dirs == [vis_dir]
     assert (vis_dir / "plot_optimization_history.html").exists()
 

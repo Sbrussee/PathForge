@@ -18,14 +18,16 @@ PathForge writes checkpoints to the experiment directory:
        ├── {epoch}-{val_loss:.2f}.ckpt
        └── {epoch}-{val_loss:.2f}_package.pt   ← self-contained inference package
 
-For an optimization run the best trial checkpoint is saved in the same
-``checkpoints/`` directory under the optimization project:
+For an optimization run, each trial has an isolated output directory. Its
+checkpoint and package are saved inside that trial directory:
 
 .. code-block:: text
 
    project_root/{project_name}/
-   └── checkpoints/
-       └── {epoch}-{val_loss:.2f}.ckpt
+   └── trials/trial_{number:06d}/
+       └── checkpoints/
+           ├── {epoch}-{val_loss:.2f}.ckpt
+           └── {epoch}-{val_loss:.2f}_package.pt
 
 Loading the Packaged Model
 --------------------------
@@ -90,7 +92,7 @@ Running Inference from a Bundle
 
 .. code-block:: bash
 
-pathforge-infer-model \
+   pathforge-infer-model \
      --model_path /exports/luad_abmil_bundle/model_package.pt \
      --input /data/artifacts/test/SLIDE_001.h5 \
      --output /data/predictions/SLIDE_001.json

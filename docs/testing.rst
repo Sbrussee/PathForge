@@ -40,6 +40,45 @@ Run one unit test module:
 
    uv run pytest -q tests/unit/test_config_validation.py
 
+Distributed Execution and Concurrent Optimization
+-------------------------------------------------
+
+The scheduler-neutral manifest, resumable worker state, SLURM generation, and
+aggregation behavior are covered without requiring a SLURM installation:
+
+.. code-block:: bash
+
+   uv run pytest -q tests/unit/test_distributed_execution.py
+
+The optimization policy suite includes a concurrent-worker test. Two workers
+join one shared Optuna study and claim independent trials through RDB storage:
+
+.. code-block:: bash
+
+   uv run pytest -q tests/unit/test_policy_optimization.py
+
+That test uses SQLite only as a lightweight temporary test database. Use
+PostgreSQL rather than SQLite for concurrent workers on different cluster
+nodes, as described in :doc:`scaling`.
+
+Run the distributed-execution smoke job on SLURM with:
+
+.. code-block:: bash
+
+   sbatch --partition=PATHgpu --time=01:00:00 \
+     scripts/run_distributed_smoke.sbatch
+
+The job validates manifest planning and resumability, concurrent Optuna
+workers sharing one study, and the optimization CLI smoke workflow. It writes
+the pytest log and smoke report below
+``test_logs/distributed-<job-id>/``. Monitor it with ``squeue -j <job-id>``
+and inspect ``slurm-distributed-smoke-<job-id>.out`` when it finishes.
+
+The script requests one GPU because the optimization CLI smoke workflow may
+load GPU-capable dependencies, although its scheduler and Optuna concurrency
+checks remain lightweight. Change the partition, wall time, or resource
+directives to match local cluster policy.
+
 Interface Tests
 ---------------
 

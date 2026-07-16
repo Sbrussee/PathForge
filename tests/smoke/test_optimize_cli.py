@@ -133,9 +133,10 @@ def test_optimize_cli_writes_summary_and_visualizations(
     exit_code = main(["--config", str(cfg_path)])
 
     assert exit_code == 0
-    raw_results = project_root / "smoke_opt_results.csv"
-    summary_results = project_root / "optimization_results.csv"
-    vis_dir = project_root / "optimization_visualizations"
+    output_root = project_root / "smoke_optimize_cli"
+    raw_results = output_root / "smoke_opt_results.csv"
+    summary_results = output_root / "optimization_results.csv"
+    vis_dir = output_root / "optimization_visualizations"
     assert raw_results.exists()
     assert summary_results.exists()
     summary_df = pd.read_csv(summary_results)

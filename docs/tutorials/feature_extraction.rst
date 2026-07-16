@@ -55,6 +55,10 @@ Save as ``features.yaml``:
      segmentation_method: otsu
      save_tiles: false
      qc_filters: []
+     feature_extraction:
+       batch_size: 32
+       num_workers: 4
+       amp: true
 
    datasets:
      - name: TrainingSet

@@ -42,6 +42,7 @@ adapter modules where practical.
    slide-retrieval-results-and-metrics
    task_outputs
    supported_slide_files
+   scaling
    troubleshooting
 
 .. toctree::

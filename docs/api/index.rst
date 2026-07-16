@@ -3,8 +3,9 @@ API Reference
 
 PathForge is organized into packages for shared contracts, workflow policies,
 integrations, training, and command-line entry points. This section documents
-the stable interfaces most useful to users and extension authors; internal
-implementation modules are intentionally omitted.
+the supported interfaces for users and extension authors. Private helpers and
+backend-specific strategy implementations remain internal and are intentionally
+omitted; their public registries and base contracts are documented instead.
 
 .. toctree::
    :maxdepth: 2
@@ -21,6 +22,7 @@ implementation modules are intentionally omitted.
    adapters
    utils
    inference
+   execution
    examples
 
 Package Map
@@ -51,10 +53,12 @@ Package Map
    * - :doc:`training`
      - Trainer abstractions and the Lightning implementation.
    * - :doc:`adapters`
-     - Concrete integrations: TorchMIL, TorchMetrics, TorchSurv, LazySlide.
+     - Concrete integrations: TorchMIL, MIL-Lab, TorchMetrics, TorchSurv, and TCGA Tools.
    * - :doc:`utils`
      - Registries, optional guards, constants, logging utilities.
    * - :doc:`inference`
      - Heatmap generation and H5-backed inference visualization helpers.
+   * - :doc:`execution`
+     - Distributed plans, manifests, workers, statuses, and result aggregation.
    * - :doc:`examples`
      - Copyable examples for configuration, identifiers, registries, and CLI use.

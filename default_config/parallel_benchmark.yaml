@@ -1,0 +1,46 @@
+experiment:
+  project_name: parallel_benchmark_classification
+  annotation_file: /path/to/annotations.csv
+  project_root: /path/to/results
+  task: classification
+  mode: benchmark
+  label_column: category
+  report: true
+  mixed_precision: true
+mil:
+  epochs: 20
+  batch_size: 1
+  optimizer: Adam
+  lr: 0.0001
+  weight_decay: 0.00001
+  bag_size: 512
+  z_dim: 256
+  dropout_p: 0.1
+slide_processing:
+  backend: lazyslide
+  segmentation_method: otsu
+  feature_extraction: {batch_size: 32, num_workers: 4, amp: true}
+datasets:
+  - {name: train, slides_dir: /path/to/train/slides, artifacts_dir: /path/to/train/artifacts, used_for: training}
+  - {name: validation, slides_dir: /path/to/validation/slides, artifacts_dir: /path/to/validation/artifacts, used_for: validation}
+benchmark_parameters:
+  tile_px: [224]
+  tile_mpp: [0.5, 1.0]
+  color_norm: [null, macenko]
+  feature_extraction: [h-optimus-1, uni2, virchow2, gpfm]
+  mil: [ABMIL, DSMIL, TransMIL]
+  loss: [CrossEntropyLoss, NLLLoss]
+execution:
+  backend: slurm
+  work_dir: /path/to/shared/work
+  resume: true
+  max_workers: 4
+  resources:
+    feature_extraction: {cpus: 8, gpus: 1, memory_gb: 48, time: "08:00:00"}
+    benchmarking: {cpus: 4, gpus: 1, memory_gb: 32, time: "08:00:00"}
+    optimization: {cpus: 4, gpus: 1, memory_gb: 32, time: "08:00:00"}
+    aggregation: {cpus: 2, gpus: 0, memory_gb: 8, time: "01:00:00"}
+  slurm:
+    partition: PATHgpu
+    max_concurrent: 16
+    extra_directives: []

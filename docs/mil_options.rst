@@ -5,8 +5,11 @@ This page summarizes the choices accepted by the current PathForge code. The
 source of truth is
 :class:`pathforge.config.config.BenchmarkParameters`, its Pydantic validators,
 and the catalogs in :mod:`pathforge.utils.registries`. Lists under
-``benchmark_parameters`` form a Cartesian benchmark grid. Optuna ranges are
-configured separately under ``optimization.search_space``.
+Only the keys declared by the selected task form its Cartesian benchmark grid.
+For MIL prediction tasks, the current keys are ``feature_extraction``,
+``tile_px``, ``tile_mpp``, ``mil``, and ``loss``. Optuna ranges are configured
+separately under ``optimization.search_space`` and can additionally vary the
+supported training settings described below.
 
 Preprocessing grid
 ------------------
@@ -147,6 +150,13 @@ Losses
 Training grid
 -------------
 
+These fields are accepted by ``BenchmarkParameters``, but the current MIL
+benchmark task does **not** include them in ``get_grid_keys()``. Consequently,
+multi-value lists here do not create extra fixed benchmark runs; set the
+corresponding scalar in ``mil`` for a benchmark, or put a range under
+``optimization.search_space`` for Optuna. This distinction prevents the schema
+from being mistaken for the task's active grid.
+
 .. list-table::
    :widths: 24 31 45
    :header-rows: 1
@@ -192,14 +202,15 @@ Training grid
      - Model-specific neighborhood or top-instance parameter.
    * - ``seeds``
      - Integers; default ``[1, 2, 3]``
-     - Repeated runs used to quantify seed variability.
+     - Reserved configuration field. It is excluded from Optuna and is not an
+       active MIL benchmark axis in the current implementation.
 
 Backend constructor options belong in an entry's ``hyperparams`` mapping or
 the backend-specific ``mil.*_model_kwargs`` mapping. Check the model API before
 assuming that general fields such as ``z_dim`` or ``k`` apply.
 
-Grid-search example
--------------------
+Fixed benchmark-grid example
+----------------------------
 
 .. code-block:: yaml
 
@@ -209,23 +220,14 @@ Grid-search example
    benchmark_parameters:
      tile_px: [256, 512]
      tile_mpp: [0.5, 1.0]
-     color_norm: [null, macenko]
      feature_extraction: [uni2]
      mil: [PerceiverMIL, VarMIL]
      loss: [CrossEntropyLoss]
-     activation_function: [ReLU, GELU]
-     optimizer: [Adam, AdamW]
-     scheduler: [none, cosine]
-     batch_size: [8, 16]
-     epochs: [20, 40]
-     lr: [0.0001, 0.00001]
-     weight_decay: [0.0, 0.00001]
-     dropout_p: [0.1, 0.3]
-     bag_size: [256, 512]
-     z_dim: [128, 256]
-     encoder_layers: [1, 2]
-     k: [1, 2]
-     seeds: [1, 2, 3]
+
+For MIL benchmarking, ``color_norm`` affects feature-artifact generation but
+is not currently included in the downstream MIL task grid. Generate and select
+normalized artifacts deliberately rather than assuming this list doubles the
+number of MIL training runs.
 
 Optuna search spaces
 --------------------

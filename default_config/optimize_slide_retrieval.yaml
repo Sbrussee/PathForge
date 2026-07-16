@@ -1,0 +1,36 @@
+experiment:
+  project_name: optimize_slide_retrieval
+  annotation_file: /path/to/annotations.csv
+  project_root: /path/to/results
+  task: slide_retrieval
+  mode: optimization
+  label_column: category
+slide_retrieval:
+  exclusion_level: patient
+  search_workers: 4
+  visualization_metadata_columns: [dataset, patient, category]
+slide_processing:
+  backend: lazyslide
+  segmentation_method: otsu
+  feature_extraction: {batch_size: 32, num_workers: 4, amp: true}
+datasets:
+  - {name: reference, slides_dir: /path/to/reference/slides, artifacts_dir: /path/to/reference/artifacts, used_for: reference}
+  - {name: query, slides_dir: /path/to/query/slides, artifacts_dir: /path/to/query/artifacts, used_for: query}
+benchmark_parameters:
+  tile_px: [224]
+  tile_mpp: [0.5, 1.0]
+  color_norm: [null, macenko]
+  feature_extraction: [h-optimus-1, uni2, virchow2, gpfm]
+  mil: []
+  loss: []
+  retrieval_representation: [yottixel-features, sdm-features]
+  search_strategy: [yottixel, sish]
+optimization:
+  study_name: slide_retrieval_pipeline
+  objective_metric: val_loss
+  objective_mode: min
+  sampler: TPESampler
+  pruner: NopPruner
+  trials: 100
+  search_space:
+    bag_size: {kind: categorical, choices: [256, 512, 1024]}
