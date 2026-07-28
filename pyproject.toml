@@ -104,7 +104,7 @@ markers = [
 torch = [{ index = "pytorch-cu128", extra = "cu128" }]
 torchvision = [{ index = "pytorch-cu128", extra = "cu128" }]
 torchaudio = [{ index = "pytorch-cu128", extra = "cu128" }]
-tcga-tools = { path = "../TCGA_TOOLS_2.0", editable = true }
+tcga-tools = { git = "https://github.com/LUMCPathAI/TCGA-Tools.git", rev = "86b835e876c6109fb225ebb73804ce148aaa4159" }
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
