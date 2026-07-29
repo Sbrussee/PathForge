@@ -37,14 +37,28 @@ neither replaces nor invalidates the other.
 
 | Descriptor | Shape per patch | What it retains | Used by |
 | --- | ---: | --- | --- |
-| `mean_rgb` | `(3,)` | One mean intensity for each R, G, and B channel. | Existing Yottixel RGB and SPLICE RGB representations. |
-| `histogram_rgb` | `(768,)` | A 256-bin value distribution for each R, G, and B channel, concatenated in RGB order. | `sish_rgb`. |
+| `mean_rgb` | `(3,)` | One mean intensity for each R, G, and B channel. | Default Yottixel RGB selection and SPLICE RGB. |
+| `histogram_rgb` | `(768,)` | A 256-bin value distribution for each R, G, and B channel, concatenated in RGB order. | `sish_rgb` and optional Yottixel RGB selection. |
 
 The linked Yottixel implementation calls its three-value mean vector an
 “RGB histogram”, but its code reduces all pixels to the channel means. PathForge
-therefore keeps `mean_rgb` for compatibility with that method. SISH uses actual
-per-channel histograms before its first colour K-means stage, so `sish_rgb`
-uses `histogram_rgb` instead.
+therefore uses `mean_rgb` as the default for upstream-compatible Yottixel colour
+selection. `yottixel-rgb` can instead use actual per-channel histograms for its
+first colour K-means stage:
+
+```yaml
+retrieval_representation:
+  yottixel-rgb:
+    colour_descriptor: mean_rgb  # default; matches the upstream code
+    # colour_descriptor: histogram_rgb
+```
+
+In both modes, RGB is used only to select mosaic patch indices. The retrieval
+representation and Yottixel barcodes use the configured foundation-model feature
+rows at those indices. `histogram_rgb` is therefore an experimental selection
+variant, not an upstream-code reproduction. SISH uses actual per-channel
+histograms before its first colour K-means stage, so `sish_rgb` uses
+`histogram_rgb` instead.
 
 Both descriptors are read from the retrieval H5 cache when valid and are
 created from the original source WSI when missing. `histogram_rgb` reads each

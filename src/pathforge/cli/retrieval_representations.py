@@ -9,19 +9,21 @@ import numpy as np
 import typer
 from torch.utils.data import DataLoader
 
+from ..config.config import Config
+from ..core.experiments.base import Experiment
+from ..core.experiments.combinations import ComboConfig, build_combinations
+from ..core.experiments.combo_ids import build_feature_name, build_tiling_id
+from ..core.features.utils import find_slides_with_missing_features
+from ..core.io.slide_artifacts import tiles as tiles_io
+from ..core.io.slide_artifacts.base import FileHandleH5
 from ..core.tasks.slide_retrieval import (
     SlideRetrievalTask,
     _retrieval_batch_collate,
 )
-from ..config.config import Config
-from ..core.experiments.base import Experiment
-from ..core.experiments.combo_ids import build_feature_name, build_tiling_id
-from ..core.experiments.combinations import ComboConfig, build_combinations
-from ..core.features.utils import find_slides_with_missing_features
-from ..core.io.slide_artifacts import tiles as tiles_io
-from ..core.io.slide_artifacts.base import FileHandleH5
 from ..policy.benchmarking import BenchmarkingPolicy
-from ..slide_retrieval.representation_strategies.mean_rgb import resolve_sample_patch_mean_rgb
+from ..slide_retrieval.representation_strategies.mean_rgb import (
+    resolve_sample_patch_mean_rgb,
+)
 from ..slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
 )
@@ -33,9 +35,10 @@ from .common import LOG_LEVEL_CHOICES, configure_logging
 
 logger = logging.getLogger(__name__)
 _VALID_RETRIEVAL_USES = {"reference", "query", "query_reference"}
-_RGB_MEAN_REPRESENTATIONS = {"yottixel-rgb", "splice-rgb"}
-_MISSING_MEAN_RGB_SLIDE_ERROR = (
-    "Missing stored patch mean RGB descriptors and no source slide is available"
+_RGB_MEAN_REPRESENTATIONS = {"splice-rgb"}
+_MISSING_RGB_DESCRIPTOR_SLIDE_ERRORS = (
+    "Missing stored patch mean RGB descriptors and no source slide is available",
+    "Missing stored histogram_rgb descriptors and no source slide is available",
 )
 
 
@@ -83,8 +86,11 @@ def _build_cli_sample_loader(
     return _load_sample_for_rgb
 
 
-def _is_missing_mean_rgb_slide_error(error_text: str) -> bool:
-    return _MISSING_MEAN_RGB_SLIDE_ERROR in str(error_text)
+def _is_missing_rgb_descriptor_slide_error(error_text: str) -> bool:
+    """Return whether descriptor creation needs an unavailable source slide."""
+    return any(
+        marker in str(error_text) for marker in _MISSING_RGB_DESCRIPTOR_SLIDE_ERRORS
+    )
 
 
 def _materialize_representations_for_combo(
@@ -206,12 +212,12 @@ def _materialize_representations_for_combo(
             tolerated_errors = {
                 sample_id: error_text
                 for sample_id, error_text in creation_errors_by_sample.items()
-                if _is_missing_mean_rgb_slide_error(error_text)
+                if _is_missing_rgb_descriptor_slide_error(error_text)
             }
             if tolerated_errors:
                 total_skipped_missing_descriptors += len(tolerated_errors)
                 logger.warning(
-                    "[SlideRetrieval] Skipping %d sample(s) with missing mean_rgb "
+                    "[SlideRetrieval] Skipping %d sample(s) with missing RGB "
                     "descriptors and no available source slide.",
                     len(tolerated_errors),
                 )

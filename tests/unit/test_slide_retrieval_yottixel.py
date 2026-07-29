@@ -10,6 +10,9 @@ import torch
 from pathforge.core.datasets.bag_dataset import BagSample
 from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.slide_retrieval.representation_strategies.storage import (
+    build_retrieval_representation_id,
+)
 from pathforge.slide_retrieval.representation_strategies.strategies.yottixel import (
     YottixelFeatures,
     YottixelRGB,
@@ -223,7 +226,9 @@ def test_yottixel_rgb_returns_selected_patch_rows_and_auxiliary_arrays(
         bag=bag,
         sample=sample,
         combo_cfg=combo_cfg,
-        mean_rgb=np.array([[0.2, 0.8, 0.1], [0.9, 0.1, 0.4]], dtype=np.float32),
+        colour_descriptors=np.array(
+            [[0.2, 0.8, 0.1], [0.9, 0.1, 0.4]], dtype=np.float32
+        ),
         coords=np.array([[0, 0], [100, 100]], dtype=np.int32),
         tiling_id=bag_id,
     )
@@ -235,10 +240,7 @@ def test_yottixel_rgb_returns_selected_patch_rows_and_auxiliary_arrays(
     )
     np.testing.assert_array_equal(
         np.sort(representation.data, axis=0),
-        np.sort(
-            np.array([[0.2, 0.8, 0.1], [0.9, 0.1, 0.4]], dtype=np.float32),
-            axis=0,
-        ),
+        np.sort(bag.numpy(), axis=0),
     )
     np.testing.assert_array_equal(
         _sort_rows(representation.additional_data["selected_coords"]),
@@ -271,7 +273,7 @@ def test_yottixel_rgb_handles_empty_patch_bag(tmp_path: Path) -> None:
         bag=bag,
         sample=sample,
         combo_cfg=combo_cfg,
-        mean_rgb=np.empty((0, 3), dtype=np.float32),
+        colour_descriptors=np.empty((0, 3), dtype=np.float32),
         coords=np.empty((0, 2), dtype=np.int32),
         tiling_id=bag_id,
     )
@@ -280,3 +282,157 @@ def test_yottixel_rgb_handles_empty_patch_bag(tmp_path: Path) -> None:
     assert representation.additional_data["selected_indices"].shape == (0,)
     assert representation.additional_data["group_ids"].shape == (0,)
     assert representation.additional_data["selected_coords"].shape == (0, 2)
+
+
+def test_yottixel_rgb_accepts_histograms_for_selection_and_returns_fm_rows(
+    tmp_path: Path,
+) -> None:
+    bag_id = "256px_0.5mpp"
+    artifact_path = _write_coords_artifact(
+        tmp_path,
+        artifact_name="slide.h5",
+        bag_id=bag_id,
+        coords_xy=np.array([[0, 0], [100, 100]], dtype=np.int32),
+    )
+    sample = _make_sample(artifact_path)
+    fm_bag = np.array([[9.0, 2.0, 1.0], [8.0, 3.0, 4.0]], dtype=np.float32)
+    histograms = np.zeros((2, 768), dtype=np.float32)
+    histograms[1, -1] = 1.0
+    strategy = YottixelRGB(
+        params={
+            "colour_descriptor": "histogram_rgb",
+            "n_clusters": 2,
+            "perc_selected": 50.0,
+        },
+        config=SimpleNamespace(experiment=SimpleNamespace(random_state=0)),
+    )
+
+    representation = strategy.run(
+        bag=fm_bag,
+        sample=sample,
+        combo_cfg=SimpleNamespace(tile_px=256, tile_mpp=0.5),
+        colour_descriptors=histograms,
+        coords=np.array([[0, 0], [100, 100]], dtype=np.int32),
+        tiling_id=bag_id,
+    )
+
+    assert strategy.hyperparam_values()["colour_descriptor"] == "histogram_rgb"
+    np.testing.assert_array_equal(_sort_rows(representation.data), _sort_rows(fm_bag))
+
+
+def test_yottixel_rgb_rejects_misaligned_fm_and_colour_rows(tmp_path: Path) -> None:
+    bag_id = "256px_0.5mpp"
+    artifact_path = _write_coords_artifact(
+        tmp_path,
+        artifact_name="slide.h5",
+        bag_id=bag_id,
+        coords_xy=np.array([[0, 0], [100, 100]], dtype=np.int32),
+    )
+
+    with pytest.raises(ValueError, match="Foundation-model bag rows"):
+        YottixelRGB().run(
+            bag=np.ones((1, 4), dtype=np.float32),
+            sample=_make_sample(artifact_path),
+            combo_cfg=SimpleNamespace(tile_px=256, tile_mpp=0.5),
+            colour_descriptors=np.ones((2, 3), dtype=np.float32),
+            coords=np.array([[0, 0], [100, 100]], dtype=np.int32),
+            tiling_id=bag_id,
+        )
+
+
+def test_yottixel_rgb_selection_uses_colour_rows_and_returns_matching_fm_rows(
+    tmp_path: Path,
+) -> None:
+    bag_id = "256px_0.5mpp"
+    artifact_path = _write_coords_artifact(
+        tmp_path,
+        artifact_name="slide.h5",
+        bag_id=bag_id,
+        coords_xy=np.array([[0, 0], [100, 0], [0, 100], [100, 100]]),
+    )
+    fm_bag = np.array(
+        [[0.0, 0.0], [10.0, 10.0], [0.0, 0.1], [10.0, 10.1]],
+        dtype=np.float32,
+    )
+    # Colour groups are [0, 1] and [2, 3], unlike the FM groups [0, 2] and [1, 3].
+    colour_descriptors = np.array(
+        [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
+        dtype=np.float32,
+    )
+    representation = YottixelRGB(
+        params={"n_clusters": 2, "perc_selected": 50.0},
+        config=SimpleNamespace(experiment=SimpleNamespace(random_state=0)),
+    ).run(
+        bag=fm_bag,
+        sample=_make_sample(artifact_path),
+        combo_cfg=SimpleNamespace(tile_px=256, tile_mpp=0.5),
+        colour_descriptors=colour_descriptors,
+        coords=np.array([[0, 0], [100, 0], [0, 100], [100, 100]], dtype=np.int32),
+        tiling_id=bag_id,
+    )
+
+    np.testing.assert_array_equal(
+        np.sort(representation.additional_data["selected_indices"]), np.array([0, 2])
+    )
+    np.testing.assert_array_equal(
+        _sort_rows(representation.data), _sort_rows(fm_bag[[0, 2]])
+    )
+
+
+@pytest.mark.parametrize(
+    ("colour_descriptor", "descriptor_shape"),
+    [("mean_rgb", (2, 3)), ("histogram_rgb", (2, 768))],
+)
+def test_yottixel_rgb_load_sample_loads_fm_and_selected_colour_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    colour_descriptor: str,
+    descriptor_shape: tuple[int, int],
+) -> None:
+    bag_id = "256px_0.5mpp"
+    artifact_path = _write_coords_artifact(
+        tmp_path,
+        artifact_name="slide.h5",
+        bag_id=bag_id,
+        coords_xy=np.array([[0, 0], [1, 1]], dtype=np.int32),
+    )
+    fm_bag = np.arange(8, dtype=np.float32).reshape(2, 4)
+    descriptor = np.ones(descriptor_shape, dtype=np.float32)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "pathforge.slide_retrieval.representation_strategies.strategies.yottixel.features_io.read_features",
+        lambda *args, **kwargs: fm_bag,
+    )
+    monkeypatch.setattr(
+        "pathforge.slide_retrieval.representation_strategies.strategies.yottixel.resolve_sample_patch_mean_rgb",
+        lambda **kwargs: calls.append("mean_rgb") or descriptor,
+    )
+    monkeypatch.setattr(
+        "pathforge.slide_retrieval.representation_strategies.strategies.yottixel.resolve_sample_patch_histogram_rgb",
+        lambda **kwargs: calls.append("histogram_rgb") or descriptor,
+    )
+    strategy = YottixelRGB(params={"colour_descriptor": colour_descriptor})
+
+    payload = strategy.load_sample(
+        index=0,
+        sample=_make_sample(artifact_path),
+        base_dataset=SimpleNamespace(tiling_id=bag_id, extractor_name="uni2"),
+    )
+
+    assert calls == [colour_descriptor]
+    np.testing.assert_array_equal(payload["bag"], fm_bag)
+    np.testing.assert_array_equal(payload["colour_descriptors"], descriptor)
+    assert payload["coords"].shape == (2, 2)
+
+
+def test_yottixel_rgb_descriptor_choice_changes_representation_identity() -> None:
+    mean_id = build_retrieval_representation_id(
+        "uni2", "yottixel-rgb", YottixelRGB().hyperparam_values()
+    )
+    histogram_id = build_retrieval_representation_id(
+        "uni2",
+        "yottixel-rgb",
+        YottixelRGB({"colour_descriptor": "histogram_rgb"}).hyperparam_values(),
+    )
+
+    assert mean_id != histogram_id
