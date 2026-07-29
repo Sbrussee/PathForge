@@ -30,6 +30,28 @@ the closest retained existing patch. LBP/filtering results are deliberately
 not cached; a missing `sish_rgb` representation therefore still requires its
 source WSI even if `histogram_rgb` is cached.
 
+### `histogram_rgb` versus `mean_rgb`
+
+`histogram_rgb` and `mean_rgb` are separate, row-aligned descriptor caches;
+neither replaces nor invalidates the other.
+
+| Descriptor | Shape per patch | What it retains | Used by |
+| --- | ---: | --- | --- |
+| `mean_rgb` | `(3,)` | One mean intensity for each R, G, and B channel. | Existing Yottixel RGB and SPLICE RGB representations. |
+| `histogram_rgb` | `(768,)` | A 256-bin value distribution for each R, G, and B channel, concatenated in RGB order. | `sish_rgb`. |
+
+The linked Yottixel implementation calls its three-value mean vector an
+“RGB histogram”, but its code reduces all pixels to the channel means. PathForge
+therefore keeps `mean_rgb` for compatibility with that method. SISH uses actual
+per-channel histograms before its first colour K-means stage, so `sish_rgb`
+uses `histogram_rgb` instead.
+
+Both descriptors are read from the retrieval H5 cache when valid and are
+created from the original source WSI when missing. `histogram_rgb` reads each
+existing stored tile, resizes it to 256 × 256 pixels, and records raw channel
+histogram counts; it does not perform trash filtering. Trash filtering belongs
+to `sish_rgb` representation creation and intentionally remains uncached.
+
 ### SISH model assets
 
 By default, SISH resolves downloaded assets from the repository-relative
