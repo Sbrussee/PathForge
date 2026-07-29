@@ -18,6 +18,43 @@ companion representations:
 The strategy works with the existing mosaic-selection representations. It does
 not require a separate benchmark mode or a separate tile grid.
 
+### SISH model assets
+
+By default, SISH resolves downloaded assets from the repository-relative
+directory `model_weights/slide_retrieval`. The directory is present in the
+repository, while its downloaded contents are ignored by Git. Configure a
+different shared or local location when needed:
+
+```yaml
+slide_retrieval:
+  weights_dir: /shared/model_weights/slide_retrieval
+```
+
+Place compatible upstream assets under these conventional names:
+
+```text
+sish_vqvae_checkpoint.pth
+sish_codebook.pt
+sish_trash_classifier.pkl
+```
+
+The VQ-VAE checkpoint and codebook are required when creating SISH descriptors
+or indices. The trash-classifier filename is reserved for the future
+upstream-compatible trash-filtering step and is not required today. Obtain the
+assets from the [upstream SISH project](https://github.com/mahmoodlab/SISH).
+PathForge verifies that the checkpoint loads into its supported VQ-VAE encoder,
+but intentionally does not require a fixed checksum, so compatible alternative
+weights can be used.
+
+For an exceptional layout, explicit legacy settings remain supported and take
+precedence over `weights_dir`:
+
+```yaml
+sish:
+  vqvae_checkpoint: /other/location/vqvae.pth
+  codebook_semantic: /other/location/codebook.pt
+```
+
 ### Canonical VQ-VAE crop
 
 The SISH VQ-VAE always receives a canonical `1024 × 1024` crop at `0.5 mpp`.

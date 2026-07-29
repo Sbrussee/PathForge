@@ -217,6 +217,7 @@ class SlideRetrievalConfig(BaseModel):
     visualization_metadata_columns: List[str] = Field(default_factory=list)
     visualization_top_k: int = Field(10, ge=1)
     prototypes_root: str | None = None
+    weights_dir: str = "model_weights/slide_retrieval"
 
     @field_validator("visualization_metadata_columns")
     @classmethod

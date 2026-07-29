@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import pickle
-from collections import Counter, OrderedDict, defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -31,22 +31,25 @@ from pathforge.slide_retrieval.search_strategies.base import BaseSearchStrategy
 from pathforge.slide_retrieval.search_strategies.registry import (
     register_search_strategy,
 )
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_assets import (
+    load_sish_codebook,
+    load_sish_vqvae_encoder,
+)
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_bits import (
+    pack_adjacent_feature_bits,
+    pack_adjacent_feature_row_bits,
+)
 from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_eval import (
     Clean,
     Filtered_BY_Prediction,
     Uncertainty_Cal,
 )
 from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_veb import VEB
-from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_bits import (
-    pack_adjacent_feature_bits,
-    pack_adjacent_feature_row_bits,
-)
 from pathforge.slide_retrieval.search_strategies.types import (
     SearchDatabaseItem,
     SearchHit,
     SearchResult,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -254,22 +257,6 @@ class SISHSearch(BaseSearchStrategy):
                 ("sish", "meta_database_path"),
             ],
             default=default_sish_dir / "meta.pkl",
-        )
-        self._codebook_path = self._resolve_path(
-            [
-                ("experiment", "sish", "codebook_semantic"),
-                ("experiment", "SISH_metrics", "codebook_semantic"),
-                ("sish", "codebook_semantic"),
-            ],
-            default=None,
-        )
-        self._checkpoint_path = self._resolve_path(
-            [
-                ("experiment", "sish", "vqvae_checkpoint"),
-                ("experiment", "SISH_metrics", "vqvae_checkpoint"),
-                ("sish", "vqvae_checkpoint"),
-            ],
-            default=None,
         )
 
     def build_database_item(
@@ -1172,31 +1159,10 @@ class SISHSearch(BaseSearchStrategy):
             and self.transform_vqvqe is not None
         ):
             return
-        if self._codebook_path is None or self._checkpoint_path is None:
-            raise ValueError(
-                "SISH VQ-VAE assets are missing from config. Expected "
-                "'codebook_semantic' and 'vqvae_checkpoint'."
-            )
-
         from torchvision import transforms
 
-        from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_vqvae import (
-            LargeVectorQuantizedVAE_Encode,
-        )
-
-        self.codebook_semantic = torch.load(self._codebook_path, map_location="cpu")
-        self.vqvae = LargeVectorQuantizedVAE_Encode(code_dim=256, code_size=128)
-        checkpoint = torch.load(self._checkpoint_path, map_location="cpu")["model"]
-        encoder_weights = OrderedDict(
-            (
-                key[len("module.") :],
-                value,
-            )
-            for key, value in checkpoint.items()
-            if key.startswith("module.encoder.") or key.startswith("module.codebook.")
-        )
-        self.vqvae.load_state_dict(encoder_weights, strict=False)
-        self.vqvae.to(self.device).eval()
+        self.codebook_semantic = load_sish_codebook(config=self.config)
+        self.vqvae = load_sish_vqvae_encoder(config=self.config, device=self.device)
         self.transform_vqvqe = transforms.Lambda(scale_to_minus1_to_1)
 
     def _payload_has_precomputed_indices(self, payload: Any) -> bool:

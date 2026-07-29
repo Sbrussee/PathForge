@@ -7,23 +7,23 @@ import numpy as np
 import torch
 
 from pathforge.core.datasets.wsi_dataset import WSI
+from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_artifacts.atomic import atomic_slide_artifact_write
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
-from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_retrieval import descriptors as descriptors_io
 from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
     _build_slide_processor,
     _resolve_sample_slide_paths,
     _slide_retrieval_artifact_path,
 )
-from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_vqvae import (
-    LargeVectorQuantizedVAE_Encode,
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_assets import (
+    configured_sish_asset_path,
+    load_sish_vqvae_encoder,
 )
 from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_crops import (
     read_canonical_sish_crop,
     sish_descriptor_contract,
 )
-
 
 SISH_VQVAE_DESCRIPTOR_NAME = "sish_vqvae_latent"
 
@@ -294,30 +294,8 @@ def _encode_latent_batch(
 
 
 def _load_sish_vqvae_encoder(*, config: Any) -> torch.nn.Module:
-    checkpoint_path = _resolve_path(
-        config,
-        [
-            ("experiment", "sish", "vqvae_checkpoint"),
-            ("experiment", "SISH_metrics", "vqvae_checkpoint"),
-            ("sish", "vqvae_checkpoint"),
-        ],
-    )
-    if checkpoint_path is None:
-        raise ValueError(
-            "SISH descriptor creation requires config path 'sish.vqvae_checkpoint'."
-        )
-
-    model = LargeVectorQuantizedVAE_Encode(code_dim=256, code_size=128)
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")["model"]
-    encoder_weights = {
-        key[len("module.") :]: value
-        for key, value in checkpoint.items()
-        if key.startswith("module.encoder.") or key.startswith("module.codebook.")
-    }
-    model.load_state_dict(encoder_weights, strict=False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device).eval()
-    return model
+    return load_sish_vqvae_encoder(config=config, device=device)
 
 
 def _descriptor_contract(config: Any | None) -> dict[str, object]:
@@ -330,26 +308,12 @@ def _descriptor_contract(config: Any | None) -> dict[str, object]:
         ``_descriptor_contract(config)["crop_mpp"] == 0.5``.
     """
     checkpoint = (
-        _resolve_path(
-            config,
-            [
-                ("experiment", "sish", "vqvae_checkpoint"),
-                ("experiment", "SISH_metrics", "vqvae_checkpoint"),
-                ("sish", "vqvae_checkpoint"),
-            ],
-        )
+        configured_sish_asset_path(config=config, asset="vqvae_checkpoint")
         if config is not None
         else None
     )
     codebook = (
-        _resolve_path(
-            config,
-            [
-                ("experiment", "sish", "codebook_semantic"),
-                ("experiment", "SISH_metrics", "codebook_semantic"),
-                ("sish", "codebook_semantic"),
-            ],
-        )
+        configured_sish_asset_path(config=config, asset="codebook_semantic")
         if config is not None
         else None
     )
@@ -357,13 +321,6 @@ def _descriptor_contract(config: Any | None) -> dict[str, object]:
         checkpoint_path=str(checkpoint) if checkpoint is not None else None,
         codebook_path=str(codebook) if codebook is not None else None,
     )
-
-
-def _resolve_path(source: Any, candidate_paths: list[tuple[str, ...]]) -> Path | None:
-    value = _get_config_value(source, candidate_paths, default=None)
-    if value is None:
-        return None
-    return Path(value)
 
 
 def _get_config_value(

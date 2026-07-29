@@ -19,8 +19,10 @@ from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
 from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_vqvae import (
-    LargeVectorQuantizedVAE_Encode,
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_assets import (
+    configured_sish_asset_path,
+    load_sish_codebook,
+    load_sish_vqvae_encoder,
 )
 from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_bits import (
     pack_adjacent_feature_bits,
@@ -453,19 +455,7 @@ class SISHPrecompute:
         if self._codebook_semantic is not None:
             return self._codebook_semantic
 
-        codebook_path = self._resolve_path(
-            [
-                ("experiment", "sish", "codebook_semantic"),
-                ("experiment", "SISH_metrics", "codebook_semantic"),
-                ("sish", "codebook_semantic"),
-            ]
-        )
-        if codebook_path is None:
-            raise ValueError(
-                "SISH descriptor decoding requires config path 'codebook_semantic'."
-            )
-
-        self._codebook_semantic = torch.load(codebook_path, map_location="cpu")
+        self._codebook_semantic = load_sish_codebook(config=self.config)
         return self._codebook_semantic
 
     def _load_models(self) -> None:
@@ -473,36 +463,8 @@ class SISHPrecompute:
         if self._vqvae is not None and self._codebook_semantic is not None:
             return
 
-        codebook_path = self._resolve_path(
-            [
-                ("experiment", "sish", "codebook_semantic"),
-                ("experiment", "SISH_metrics", "codebook_semantic"),
-                ("sish", "codebook_semantic"),
-            ]
-        )
-        checkpoint_path = self._resolve_path(
-            [
-                ("experiment", "sish", "vqvae_checkpoint"),
-                ("experiment", "SISH_metrics", "vqvae_checkpoint"),
-                ("sish", "vqvae_checkpoint"),
-            ]
-        )
-        if codebook_path is None or checkpoint_path is None:
-            raise ValueError(
-                "SISH preprocessing requires config paths for "
-                "'codebook_semantic' and 'vqvae_checkpoint'."
-            )
-
-        self._codebook_semantic = torch.load(codebook_path, map_location="cpu")
-        self._vqvae = LargeVectorQuantizedVAE_Encode(code_dim=256, code_size=128)
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")["model"]
-        encoder_weights = {
-            key[len("module.") :]: value
-            for key, value in checkpoint.items()
-            if key.startswith("module.encoder.") or key.startswith("module.codebook.")
-        }
-        self._vqvae.load_state_dict(encoder_weights, strict=False)
-        self._vqvae.to(self.device).eval()
+        self._codebook_semantic = load_sish_codebook(config=self.config)
+        self._vqvae = load_sish_vqvae_encoder(config=self.config, device=self.device)
 
     def _load_sample_full_coords(self, *, sample: Any, bag_id: str) -> np.ndarray:
         """Load concatenated ``(N, 5)`` patch coordinates for the full sample."""
@@ -786,23 +748,16 @@ class SISHPrecompute:
         Example:
             ``self._descriptor_contract()["crop_px"] == 1024``.
         """
-        checkpoint = self._resolve_path(
-            [("experiment", "sish", "vqvae_checkpoint"), ("sish", "vqvae_checkpoint")]
+        checkpoint = configured_sish_asset_path(
+            config=self.config, asset="vqvae_checkpoint"
         )
-        codebook = self._resolve_path(
-            [("experiment", "sish", "codebook_semantic"), ("sish", "codebook_semantic")]
+        codebook = configured_sish_asset_path(
+            config=self.config, asset="codebook_semantic"
         )
         return sish_descriptor_contract(
             checkpoint_path=str(checkpoint) if checkpoint is not None else None,
             codebook_path=str(codebook) if codebook is not None else None,
         )
-
-    def _resolve_path(self, candidate_paths: list[tuple[str, ...]]) -> Path | None:
-        """Resolve the first available filesystem path from config."""
-        value = self._get_config_value(candidate_paths, default=None)
-        if value is None:
-            return None
-        return Path(value)
 
     def _get_config_value(
         self,
