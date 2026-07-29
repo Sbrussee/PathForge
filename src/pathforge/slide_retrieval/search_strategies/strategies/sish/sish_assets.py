@@ -6,6 +6,7 @@ allowing callers to override individual legacy SISH asset paths.
 
 from __future__ import annotations
 
+import pickle
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,11 @@ _LEGACY_PATHS = {
         ("experiment", "sish", "codebook_semantic"),
         ("experiment", "SISH_metrics", "codebook_semantic"),
         ("sish", "codebook_semantic"),
+    ],
+    "trash_classifier": [
+        ("experiment", "sish", "trash_classifier"),
+        ("experiment", "SISH_metrics", "trash_classifier"),
+        ("sish", "trash_classifier"),
     ],
 }
 
@@ -185,6 +191,27 @@ def load_sish_vqvae_encoder(*, config: Any, device: torch.device) -> torch.nn.Mo
             f"Could not load a compatible SISH VQ-VAE checkpoint from {path}."
         ) from exc
     return model.to(device).eval()
+
+
+def load_sish_trash_classifier(*, config: Any) -> Any:
+    """Load the upstream-compatible SISH LBP trash classifier.
+
+    The returned object must implement ``predict`` over a ``(N, 128)`` LBP
+    histogram matrix.
+    """
+    path = require_sish_asset_path(config=config, asset="trash_classifier")
+    try:
+        with path.open("rb") as handle:
+            classifier = pickle.load(handle)
+    except Exception as exc:
+        raise ValueError(
+            f"Could not load a compatible SISH trash classifier from {path}."
+        ) from exc
+    if not callable(getattr(classifier, "predict", None)):
+        raise ValueError(
+            f"Could not load a compatible SISH trash classifier from {path}."
+        )
+    return classifier
 
 
 def _get_config_value(config: Any, candidate_paths: list[tuple[str, ...]]) -> Any:

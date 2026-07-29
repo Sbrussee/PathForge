@@ -15,6 +15,7 @@ from pathforge.slide_retrieval.representation_strategies.strategies.yottixel imp
     YottixelFeatures,
     YottixelRGB,
 )
+from pathforge.slide_retrieval.representation_strategies.strategies.sish_rgb import SISHRGB
 
 __all__ = [
     "HSHRFeatures",
@@ -24,4 +25,5 @@ __all__ = [
     "SPLICERGB",
     "YottixelFeatures",
     "YottixelRGB",
+    "SISHRGB",
 ]

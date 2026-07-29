@@ -15,8 +15,20 @@ companion representations:
 2. A binary code derived from the configured patch feature vector, used for
    Hamming-distance verification of candidate patches.
 
-The strategy works with the existing mosaic-selection representations. It does
-not require a separate benchmark mode or a separate tile grid.
+The strategy works with patch-vector retrieval representations. Use
+`sish_rgb` for SISH-style colour grouping and trash filtering without changing
+the existing tile grid.
+
+### `sish_rgb` representation
+
+`sish_rgb` uses a row-aligned `histogram_rgb` descriptor: three concatenated
+256-bin RGB channel histograms per existing patch. Materialize this cache in
+advance with `pathforge retrieval histogram-rgb`, or let `sish_rgb` create a
+missing descriptor when the source WSI is available. The representation then
+performs SISH white/LBP trash filtering and snaps spatial-cluster centroids to
+the closest retained existing patch. LBP/filtering results are deliberately
+not cached; a missing `sish_rgb` representation therefore still requires its
+source WSI even if `histogram_rgb` is cached.
 
 ### SISH model assets
 
@@ -39,9 +51,8 @@ sish_trash_classifier.pkl
 ```
 
 The VQ-VAE checkpoint and codebook are required when creating SISH descriptors
-or indices. The trash-classifier filename is reserved for the future
-upstream-compatible trash-filtering step and is not required today. Obtain the
-assets from the [upstream SISH project](https://github.com/mahmoodlab/SISH).
+or indices. `sish_rgb` additionally requires the upstream-compatible trash
+classifier. Obtain the assets from the [upstream SISH project](https://github.com/mahmoodlab/SISH).
 PathForge verifies that the checkpoint loads into its supported VQ-VAE encoder,
 but intentionally does not require a fixed checksum, so compatible alternative
 weights can be used.
@@ -53,6 +64,7 @@ precedence over `weights_dir`:
 sish:
   vqvae_checkpoint: /other/location/vqvae.pth
   codebook_semantic: /other/location/codebook.pt
+  trash_classifier: /other/location/trash_lgrlbp.pkl
 ```
 
 ### Canonical VQ-VAE crop
