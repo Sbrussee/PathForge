@@ -11,9 +11,12 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
 try:
     import torch
-except ImportError:  # pragma: no cover - optional runtime dependency for precomputed mode
+except (
+    ImportError
+):  # pragma: no cover - optional runtime dependency for precomputed mode
     torch = None
 try:
     import psutil
@@ -34,6 +37,10 @@ from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_eval impor
     Uncertainty_Cal,
 )
 from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_veb import VEB
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_bits import (
+    pack_adjacent_feature_bits,
+    pack_adjacent_feature_row_bits,
+)
 from pathforge.slide_retrieval.search_strategies.types import (
     SearchDatabaseItem,
     SearchHit,
@@ -103,14 +110,17 @@ def log_mem(tag: str) -> None:
 
     process = psutil.Process(os.getpid())
     rss_gb = process.memory_info().rss / 1e9
-    child_rss_gb = sum(
-        (
-            child.memory_info().rss
-            for child in process.children(recursive=True)
-            if child.is_running()
-        ),
-        0,
-    ) / 1e9
+    child_rss_gb = (
+        sum(
+            (
+                child.memory_info().rss
+                for child in process.children(recursive=True)
+                if child.is_running()
+            ),
+            0,
+        )
+        / 1e9
+    )
     if _torch_cuda_available():
         cuda_alloc_mb = torch.cuda.memory_allocated() / 1e6
         cuda_reserved_mb = torch.cuda.memory_reserved() / 1e6
@@ -167,7 +177,7 @@ class SISHSearch(BaseSearchStrategy):
     seed_fanout_t = HyperParam(int, default=10, min=1, help="seed fanout per side")
     pre_step = HyperParam(int, default=375, min=0, help="max predecessor steps")
     succ_step = HyperParam(int, default=375, min=0, help="max successor steps")
-    hamming_thr = HyperParam(int, default=512, min=0, help="Hamming accept threshold")
+    hamming_thr = HyperParam(int, default=128, min=0, help="Hamming accept threshold")
     resume_shards = HyperParam(bool, default=True, help="resume shard building")
     shard_size = HyperParam(int, default=25, min=1, help="slides per shard")
     return_patch_matches = HyperParam(
@@ -341,7 +351,10 @@ class SISHSearch(BaseSearchStrategy):
             item.item_id: item for item in self.search_database
         }
 
-        if any(self._payload_has_precomputed_indices(item.data) for item in self.search_database):
+        if any(
+            self._payload_has_precomputed_indices(item.data)
+            for item in self.search_database
+        ):
             self._build_index_in_memory()
             self._persist_final_index()
             return
@@ -378,12 +391,8 @@ class SISHSearch(BaseSearchStrategy):
             query_sample_id=query_item.item_id,
             hits=hits,
             metadata={
-                "predicted_category": (
-                    hits[0].metadata.category if hits else None
-                ),
-                "top_k_labels": [
-                    hit.metadata.category for hit in hits
-                ],
+                "predicted_category": (hits[0].metadata.category if hits else None),
+                "top_k_labels": [hit.metadata.category for hit in hits],
             },
         )
 
@@ -720,7 +729,9 @@ class SISHSearch(BaseSearchStrategy):
 
         return results
 
-    def postprocessing(self, raw_results: list[tuple[Any, ...]]) -> list[dict[str, Any]]:
+    def postprocessing(
+        self, raw_results: list[tuple[Any, ...]]
+    ) -> list[dict[str, Any]]:
         """
         Sort raw SISH patch matches and convert them into dictionaries.
 
@@ -1044,7 +1055,9 @@ class SISHSearch(BaseSearchStrategy):
         with self.meta_database_path.open("wb") as handle:
             pickle.dump(dict(self.meta), handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def _ensure_database_payload_ready(self, item: SearchDatabaseItem) -> dict[str, Any]:
+    def _ensure_database_payload_ready(
+        self, item: SearchDatabaseItem
+    ) -> dict[str, Any]:
         """Populate missing database payload fields lazily before indexing."""
         payload = dict(item.data)
         if payload.get("patch_indices") is None:
@@ -1176,7 +1189,7 @@ class SISHSearch(BaseSearchStrategy):
         checkpoint = torch.load(self._checkpoint_path, map_location="cpu")["model"]
         encoder_weights = OrderedDict(
             (
-                key[len("module."):],
+                key[len("module.") :],
                 value,
             )
             for key, value in checkpoint.items()
@@ -1216,7 +1229,10 @@ class SISHSearch(BaseSearchStrategy):
         for entry in candidates:
             if patient_id is not None and entry["patient_id"] == patient_id:
                 continue
-            if allowed_slide_ids is not None and entry["slide_name"] not in allowed_slide_ids:
+            if (
+                allowed_slide_ids is not None
+                and entry["slide_name"] not in allowed_slide_ids
+            ):
                 continue
             filtered.append(entry)
         return filtered
@@ -1235,8 +1251,7 @@ class SISHSearch(BaseSearchStrategy):
 
     def _pack_feature_bits(self, feature_row: np.ndarray) -> bytes:
         """Pack one dense feature row into the SISH binary byte representation."""
-        bits = (np.asarray(feature_row, dtype=np.float32) > 0).astype(np.uint8, copy=False)
-        return np.packbits(bits).tobytes()
+        return pack_adjacent_feature_row_bits(feature_row)
 
     def _normalize_packed_bits(self, bits: Any) -> bytes:
         """Normalize precomputed packed bits to raw bytes."""
@@ -1306,9 +1321,8 @@ class SISHSearch(BaseSearchStrategy):
                     features=representation.data,
                     item_id=representation.sample_id,
                 )
-                representation.additional_data["sish_packed_bits"] = np.packbits(
-                    (features > 0).astype(np.uint8, copy=False),
-                    axis=1,
+                representation.additional_data["sish_packed_bits"] = (
+                    pack_adjacent_feature_bits(features)
                 )
             return representation
 
@@ -1320,7 +1334,9 @@ class SISHSearch(BaseSearchStrategy):
             )
 
         if self._precompute is None:
-            from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_precompute import SISHPrecompute
+            from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_precompute import (
+                SISHPrecompute,
+            )
 
             self._precompute = SISHPrecompute(config=self.config)
 
@@ -1355,7 +1371,13 @@ class SISHSearch(BaseSearchStrategy):
         artifact_paths = [artifacts_dir / f"{slide_id}.h5" for slide_id in slide_ids]
 
         class _SampleLike:
-            def __init__(self, sample_id: str, slide_ids: list[str], artifact_paths: list[Path], metadata_dict: dict[str, Any]) -> None:
+            def __init__(
+                self,
+                sample_id: str,
+                slide_ids: list[str],
+                artifact_paths: list[Path],
+                metadata_dict: dict[str, Any],
+            ) -> None:
                 self.sample_id = sample_id
                 self.slide_ids = slide_ids
                 self.artifact_paths = artifact_paths
@@ -1374,7 +1396,9 @@ class SISHSearch(BaseSearchStrategy):
         for dataset_cfg in list(datasets):
             if str(self._get_value(dataset_cfg, "name")) == dataset_name:
                 return dataset_cfg
-        raise ValueError(f"SISH could not resolve dataset '{dataset_name}' from config.")
+        raise ValueError(
+            f"SISH could not resolve dataset '{dataset_name}' from config."
+        )
 
     def _get_value(self, source: Any, key: str, default: Any = ...) -> Any:
         """Read one config value from either mapping-like or attribute-like objects."""

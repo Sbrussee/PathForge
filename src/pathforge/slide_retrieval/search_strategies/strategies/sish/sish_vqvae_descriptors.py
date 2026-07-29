@@ -19,6 +19,10 @@ from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
 from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_vqvae import (
     LargeVectorQuantizedVAE_Encode,
 )
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_crops import (
+    read_canonical_sish_crop,
+    sish_descriptor_contract,
+)
 
 
 SISH_VQVAE_DESCRIPTOR_NAME = "sish_vqvae_latent"
@@ -37,11 +41,17 @@ def resolve_sample_patch_sish_vqvae_latent(
     if config is None:
         raise ValueError("config is required to resolve SISH VQ-VAE descriptors.")
 
-    artifact_paths = [Path(path) for path in list(getattr(sample, "artifact_paths", []) or [])]
-    slide_ids = [str(slide_id) for slide_id in list(getattr(sample, "slide_ids", []) or [])]
+    artifact_paths = [
+        Path(path) for path in list(getattr(sample, "artifact_paths", []) or [])
+    ]
+    slide_ids = [
+        str(slide_id) for slide_id in list(getattr(sample, "slide_ids", []) or [])
+    ]
 
     if not artifact_paths:
-        raise ValueError("sample.artifact_paths is required to resolve SISH VQ-VAE descriptors.")
+        raise ValueError(
+            "sample.artifact_paths is required to resolve SISH VQ-VAE descriptors."
+        )
     if len(slide_ids) != len(artifact_paths):
         raise ValueError(
             "sample.slide_ids and sample.artifact_paths must have the same length. "
@@ -67,6 +77,7 @@ def resolve_sample_patch_sish_vqvae_latent(
                     tile_id=bag_id,
                     descriptor_name=descriptor_name,
                     expected_rows=expected_rows,
+                    expected_metadata=_descriptor_contract(config),
                 ):
                     descriptor_parts.append(
                         descriptors_io.read_descriptor(
@@ -78,7 +89,9 @@ def resolve_sample_patch_sish_vqvae_latent(
                     continue
 
         if slide_paths_by_id is None:
-            slide_paths_by_id = _resolve_sample_slide_paths(sample=sample, config=config)
+            slide_paths_by_id = _resolve_sample_slide_paths(
+                sample=sample, config=config
+            )
         if slide_processor is None:
             slide_processor = _build_slide_processor(config=config)
         if model is None:
@@ -112,6 +125,7 @@ def load_or_create_slide_patch_sish_vqvae_latent(
     slide_processor: Any,
     slide_id: str,
     model: torch.nn.Module,
+    config: Any,
     descriptor_name: str = SISH_VQVAE_DESCRIPTOR_NAME,
     batch_size: int = 8,
 ) -> np.ndarray:
@@ -130,6 +144,7 @@ def load_or_create_slide_patch_sish_vqvae_latent(
                 tile_id=bag_id,
                 descriptor_name=descriptor_name,
                 expected_rows=expected_rows,
+                expected_metadata=_descriptor_contract(config),
             ):
                 return descriptors_io.read_descriptor(
                     retrieval_artifact,
@@ -152,6 +167,7 @@ def load_or_create_slide_patch_sish_vqvae_latent(
             tile_id=bag_id,
             descriptor_name=descriptor_name,
             descriptor_matrix=descriptor_matrix,
+            metadata=_descriptor_contract(config),
         )
     return descriptor_matrix
 
@@ -190,6 +206,7 @@ def _resolve_slide_patch_sish_vqvae_latent(
             model=model,
             descriptor_name=descriptor_name,
             batch_size=batch_size,
+            config=config,
         )
 
 
@@ -203,7 +220,10 @@ def _create_slide_patch_sish_vqvae_latent(
     model: torch.nn.Module,
     batch_size: int,
 ) -> np.ndarray:
-    coords = np.asarray(tiles_io.read_coords(slide_artifact, bag_id=bag_id), dtype=np.int32)
+    coords = np.asarray(
+        tiles_io.read_coords(slide_artifact, bag_id=bag_id), dtype=np.int32
+    )
+    tiling_spec = tiles_io.read_tiling_spec(slide_artifact, bag_id=bag_id)
     expected_rows = int(coords.shape[0])
     slide_wsi = WSI(
         slide=slide_id,
@@ -217,14 +237,14 @@ def _create_slide_patch_sish_vqvae_latent(
         latent_rows: list[np.ndarray] = []
         batch_tensors: list[torch.Tensor] = []
         for row in coords:
-            x0, y0, read_w, read_h, read_level = [int(value) for value in row]
-            patch = slide_processor.read_patch_region(
-                slide_wsi,
-                x=x0,
-                y=y0,
-                width=read_w,
-                height=read_h,
-                level=read_level,
+            x0, y0 = [int(value) for value in row[:2]]
+            patch = read_canonical_sish_crop(
+                slide_processor=slide_processor,
+                wsi=slide_wsi,
+                x_level0=x0,
+                y_level0=y0,
+                source_tile_px=int(tiling_spec["tile_px"]),
+                source_tile_mpp=float(tiling_spec["tile_mpp"]),
             )
             patch_array = np.asarray(patch, dtype=np.uint8)
             if patch_array.ndim != 3 or patch_array.shape[2] != 3:
@@ -290,7 +310,7 @@ def _load_sish_vqvae_encoder(*, config: Any) -> torch.nn.Module:
     model = LargeVectorQuantizedVAE_Encode(code_dim=256, code_size=128)
     checkpoint = torch.load(checkpoint_path, map_location="cpu")["model"]
     encoder_weights = {
-        key[len("module."):]: value
+        key[len("module.") :]: value
         for key, value in checkpoint.items()
         if key.startswith("module.encoder.") or key.startswith("module.codebook.")
     }
@@ -298,6 +318,45 @@ def _load_sish_vqvae_encoder(*, config: Any) -> torch.nn.Module:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device).eval()
     return model
+
+
+def _descriptor_contract(config: Any | None) -> dict[str, object]:
+    """Return the VQ-VAE cache contract for an optional SISH config.
+
+    Output:
+        Canonical crop attributes plus configured checkpoint/codebook paths.
+
+    Example:
+        ``_descriptor_contract(config)["crop_mpp"] == 0.5``.
+    """
+    checkpoint = (
+        _resolve_path(
+            config,
+            [
+                ("experiment", "sish", "vqvae_checkpoint"),
+                ("experiment", "SISH_metrics", "vqvae_checkpoint"),
+                ("sish", "vqvae_checkpoint"),
+            ],
+        )
+        if config is not None
+        else None
+    )
+    codebook = (
+        _resolve_path(
+            config,
+            [
+                ("experiment", "sish", "codebook_semantic"),
+                ("experiment", "SISH_metrics", "codebook_semantic"),
+                ("sish", "codebook_semantic"),
+            ],
+        )
+        if config is not None
+        else None
+    )
+    return sish_descriptor_contract(
+        checkpoint_path=str(checkpoint) if checkpoint is not None else None,
+        codebook_path=str(codebook) if codebook is not None else None,
+    )
 
 
 def _resolve_path(source: Any, candidate_paths: list[tuple[str, ...]]) -> Path | None:

@@ -5,6 +5,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def Uncertainty_Cal(
     bag: list[dict[str, object]],
     weight: dict[str, float],
@@ -24,13 +25,13 @@ def Uncertainty_Cal(
         hamming_dist = []
         label_count = defaultdict(float)
         for bres in bag:
-            label.append(bres['category'])
-            hamming_dist.append(bres['hamming_dist'])
+            label.append(bres["category"])
+            hamming_dist.append(bres["hamming_dist"])
 
         # Counting the diagnoiss by weigted count
         # If the count is less than 1, round to 1
         for lb_idx, lb in enumerate(label):
-            label_count[lb] += (1. / (lb_idx + 1)) * weight[lb]
+            label_count[lb] += (1.0 / (lb_idx + 1)) * weight[lb]
         for k, v in label_count.items():
             if v < 1.0:
                 v = 1.0
@@ -45,7 +46,7 @@ def Uncertainty_Cal(
         for k in label_count.keys():
             label_count[k] = label_count[k] / total
         for v in label_count.values():
-            ent += (-v * np.log2(v))
+            ent += -v * np.log2(v)
         return ent, label_count, hamming_dist
     else:
         return None, None, None
@@ -74,14 +75,17 @@ def Clean(
     if len(set(len_info)) <= LOW_FREQ_THRSH:
         pass
     else:
-        bag_summary = [b for b in bag_summary if b[-1]
-                       > np.percentile(len_info, LOW_PRECENT_THRSH)
-                       and b[-1] < np.percentile(len_info, HIGH_PERCENT_THRSH)]
+        bag_summary = [
+            b
+            for b in bag_summary
+            if b[-1] > np.percentile(len_info, LOW_PRECENT_THRSH)
+            and b[-1] < np.percentile(len_info, HIGH_PERCENT_THRSH)
+        ]
 
     # Remove the mosaic if its top5 mean hammign distance is bigger than average
     top5_hamming_dist = np.mean([np.mean(b[2][0:5]) for b in bag_summary])
 
-    bag_summary = sorted(bag_summary, key=lambda x: (x[1]))  # sort by certainty
+    bag_summary = sorted(bag_summary, key=lambda x: x[1])  # sort by certainty
     bag_summary = [b for b in bag_summary if np.mean(b[2][0:5]) <= top5_hamming_dist]
     return bag_summary, top5_hamming_dist
 
@@ -94,10 +98,10 @@ def Filtered_BY_Prediction(
     Implementation of Filtered_By_Prediction in the paper
     Input:
         bag_summary (list): The same as the output from Clean
-        label_count_summary (dict): The dictionary storing the diagnosis occurrence 
+        label_count_summary (dict): The dictionary storing the diagnosis occurrence
         of the retrieval result in each mosaic
     Output:
-        bag_removed: The index (positional) of moaic that should not be considered 
+        bag_removed: The index (positional) of moaic that should not be considered
         among the top5
     """
     voting_board = defaultdict(float)
@@ -112,7 +116,9 @@ def Filtered_BY_Prediction(
         bag_removed = {}
         for b in bag_summary[0:5]:
             bag_index = b[0]
-            max_vote = max(label_count_summary[bag_index].items(), key=operator.itemgetter(1))[0]
+            max_vote = max(
+                label_count_summary[bag_index].items(), key=operator.itemgetter(1)
+            )[0]
             if max_vote != final_vote:
                 bag_removed[bag_index] = 1
         if len(bag_removed) != len(bag_summary[0:5]):

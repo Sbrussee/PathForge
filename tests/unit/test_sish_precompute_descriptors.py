@@ -17,6 +17,9 @@ from pathforge.slide_retrieval.representation_strategies.types import (
 from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_precompute import (
     SISHPrecompute,
 )
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_crops import (
+    sish_descriptor_contract,
+)
 
 
 def test_sish_precompute_uses_selected_rows_from_retrieval_descriptor_h5(
@@ -44,6 +47,16 @@ def test_sish_precompute_uses_selected_rows_from_retrieval_descriptor_h5(
                 dtype=np.int32,
             ),
         )
+        tiles_io.write_tiling_spec(
+            slide_artifact,
+            bag_id,
+            {
+                "tile_px": 256,
+                "tile_mpp": 0.5,
+                "stride_px": 256,
+                "coord_space": "level0",
+            },
+        )
 
     retrieval_artifact_path.parent.mkdir(parents=True, exist_ok=True)
     with FileHandleH5(retrieval_artifact_path, mode="a") as retrieval_artifact:
@@ -60,6 +73,14 @@ def test_sish_precompute_uses_selected_rows_from_retrieval_descriptor_h5(
                 ],
                 dtype=np.float32,
             ),
+            metadata=sish_descriptor_contract(),
+        )
+        assert not descriptors_io.descriptor_exists(
+            retrieval_artifact,
+            bag_id,
+            descriptor_name,
+            expected_rows=4,
+            expected_metadata={"crop_px": 512},
         )
 
     representation = RetrievalRepresentation(
@@ -109,7 +130,7 @@ def test_sish_precompute_uses_selected_rows_from_retrieval_descriptor_h5(
     )
     np.testing.assert_array_equal(
         enriched.additional_data["sish_packed_bits"],
-        np.packbits((np.asarray(representation.data) > 0).astype(np.uint8), axis=1),
+        np.asarray([[32], [96]], dtype=np.uint8),
     )
 
 
@@ -134,6 +155,16 @@ def test_sish_precompute_rejects_descriptor_dim_that_conflicts_with_config(
     )
     with FileHandleH5(artifact_path, mode="a") as slide_artifact:
         tiles_io.write_coords(slide_artifact, bag_id, coords)
+        tiles_io.write_tiling_spec(
+            slide_artifact,
+            bag_id,
+            {
+                "tile_px": 256,
+                "tile_mpp": 0.5,
+                "stride_px": 256,
+                "coord_space": "level0",
+            },
+        )
     retrieval_artifact_path.parent.mkdir(parents=True, exist_ok=True)
     with FileHandleH5(retrieval_artifact_path, mode="a") as retrieval_artifact:
         descriptors_io.write_descriptor(
@@ -141,6 +172,7 @@ def test_sish_precompute_rejects_descriptor_dim_that_conflicts_with_config(
             bag_id,
             descriptor_name,
             np.ones((4, 4), dtype=np.float32),
+            metadata=sish_descriptor_contract(),
         )
 
     representation = RetrievalRepresentation(

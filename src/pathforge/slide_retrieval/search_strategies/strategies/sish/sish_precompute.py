@@ -22,6 +22,13 @@ from pathforge.slide_retrieval.representation_strategies.types import (
 from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_vqvae import (
     LargeVectorQuantizedVAE_Encode,
 )
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_bits import (
+    pack_adjacent_feature_bits,
+)
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_crops import (
+    read_canonical_sish_crop,
+    sish_descriptor_contract,
+)
 
 
 def _scale_to_minus1_to_1(x: torch.Tensor) -> torch.Tensor:
@@ -92,9 +99,8 @@ class _SelectedPatchSpec:
     slide_path: Path
     x: int
     y: int
-    read_w: int
-    read_h: int
-    level: int
+    source_tile_px: int
+    source_tile_mpp: float
 
 
 class SISHPrecompute:
@@ -280,6 +286,7 @@ class SISHPrecompute:
                         retrieval_artifact,
                         tile_id=bag_id,
                         descriptor_name=descriptor_name,
+                        expected_metadata=self._descriptor_contract(),
                     ):
                         descriptor_parts = []
                         break
@@ -621,15 +628,22 @@ class SISHPrecompute:
         for slide_id, artifact_path in zip(slide_ids, artifact_paths, strict=False):
             with FileHandleH5(artifact_path, mode="r") as slide_artifact:
                 num_rows = int(tiles_io.coords_num_rows(slide_artifact, bag_id=bag_id))
+                tiling_spec = tiles_io.read_tiling_spec(slide_artifact, bag_id=bag_id)
             end = start + num_rows
-            intervals.append((start, end, slide_id, artifact_path))
+            intervals.append((start, end, slide_id, artifact_path, tiling_spec))
             start = end
 
         for output_position, selected_index in enumerate(selected_indices.tolist()):
             slide_id: str | None = None
             artifact_path: Path | None = None
             local_index: int | None = None
-            for begin, end, current_slide_id, current_artifact_path in intervals:
+            for (
+                begin,
+                end,
+                current_slide_id,
+                current_artifact_path,
+                tiling_spec,
+            ) in intervals:
                 if begin <= selected_index < end:
                     slide_id = current_slide_id
                     artifact_path = current_artifact_path
@@ -654,9 +668,8 @@ class SISHPrecompute:
                     slide_path=slide_path,
                     x=int(coord_row[0]),
                     y=int(coord_row[1]),
-                    read_w=int(coord_row[2]),
-                    read_h=int(coord_row[3]),
-                    level=int(coord_row[4]),
+                    source_tile_px=int(tiling_spec["tile_px"]),
+                    source_tile_mpp=float(tiling_spec["tile_mpp"]),
                 )
             )
 
@@ -709,13 +722,13 @@ class SISHPrecompute:
                 tensors: list[torch.Tensor] = []
                 output_positions: list[int] = []
                 for spec in slide_specs:
-                    patch = self._slide_processor.read_patch_region(
-                        wsi,
-                        x=spec.x,
-                        y=spec.y,
-                        width=spec.read_w,
-                        height=spec.read_h,
-                        level=spec.level,
+                    patch = read_canonical_sish_crop(
+                        slide_processor=self._slide_processor,
+                        wsi=wsi,
+                        x_level0=spec.x,
+                        y_level0=spec.y,
+                        source_tile_px=spec.source_tile_px,
+                        source_tile_mpp=spec.source_tile_mpp,
                     )
                     patch_array = np.asarray(patch, dtype=np.uint8)
                     if patch_array.ndim != 3 or patch_array.shape[2] != 3:
@@ -760,14 +773,29 @@ class SISHPrecompute:
         ).astype(np.int64, copy=False)
 
     def _pack_bits(self, features: Any) -> np.ndarray:
-        """Pack foundation feature signs into one uint8 matrix for storage."""
-        feature_array = np.asarray(features, dtype=np.float32)
-        if feature_array.ndim != 2:
-            raise ValueError(
-                "SISH packed-bit export expects a 2D feature matrix. "
-                f"Got {feature_array.shape}."
-            )
-        return np.packbits((feature_array > 0).astype(np.uint8, copy=False), axis=1)
+        """Pack SISH/Yottixel adjacent-value feature bits for search."""
+        return pack_adjacent_feature_bits(np.asarray(features, dtype=np.float32))
+
+    def _descriptor_contract(self) -> dict[str, object]:
+        """Return the cache contract for this configured SISH VQ-VAE.
+
+        Output:
+            Descriptor HDF5 attributes covering the canonical crop and selected
+            VQ-VAE assets.
+
+        Example:
+            ``self._descriptor_contract()["crop_px"] == 1024``.
+        """
+        checkpoint = self._resolve_path(
+            [("experiment", "sish", "vqvae_checkpoint"), ("sish", "vqvae_checkpoint")]
+        )
+        codebook = self._resolve_path(
+            [("experiment", "sish", "codebook_semantic"), ("sish", "codebook_semantic")]
+        )
+        return sish_descriptor_contract(
+            checkpoint_path=str(checkpoint) if checkpoint is not None else None,
+            codebook_path=str(codebook) if codebook is not None else None,
+        )
 
     def _resolve_path(self, candidate_paths: list[tuple[str, ...]]) -> Path | None:
         """Resolve the first available filesystem path from config."""
