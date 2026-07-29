@@ -14,6 +14,7 @@ from pathforge.core.io.slide_retrieval import descriptors as descriptors_io
 from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
     _build_slide_processor,
     _resolve_sample_slide_paths,
+    _slide_retrieval_artifact_path,
 )
 from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
@@ -60,8 +61,7 @@ def _slide_to_index(
         feat = torch.from_numpy(np.stack(semantic_batch, axis=0))
     else:
         raise ValueError(
-            "Expected VQ-VAE latent array with ndim 2 or 3. "
-            f"Got {latent_array.ndim}."
+            f"Expected VQ-VAE latent array with ndim 2 or 3. Got {latent_array.ndim}."
         )
 
     level_sum_dict: dict[int, np.ndarray] = {}
@@ -183,7 +183,9 @@ class SISHPrecompute:
                 np.int64,
                 copy=False,
             )
-            representation.additional_data["sish_packed_bits"] = self._pack_bits(features)
+            representation.additional_data["sish_packed_bits"] = self._pack_bits(
+                features
+            )
             return representation
 
         patch_specs = self._build_patch_specs(
@@ -241,29 +243,62 @@ class SISHPrecompute:
         selected_indices: np.ndarray,
         expected_rows: int,
     ) -> np.ndarray | None:
-        """Load and slice the full precomputed SISH descriptor matrix when present."""
-        artifact_paths = list(getattr(sample, "artifact_paths", []) or [])
-        if not artifact_paths:
+        """Load selected rows from canonical slide-retrieval descriptor artifacts."""
+        artifact_paths = [
+            Path(path) for path in list(getattr(sample, "artifact_paths", []) or [])
+        ]
+        slide_ids = [
+            str(slide_id) for slide_id in list(getattr(sample, "slide_ids", []) or [])
+        ]
+        if not artifact_paths or not slide_ids:
             return None
+        if len(slide_ids) != len(artifact_paths):
+            raise ValueError(
+                "sample.slide_ids and sample.artifact_paths must have the same length "
+                "when loading SISH descriptors. "
+                f"Got {len(slide_ids)} and {len(artifact_paths)}."
+            )
 
         for descriptor_name in self._candidate_descriptor_names():
             descriptor_parts: list[np.ndarray] = []
-            for artifact_path in artifact_paths:
+            for slide_id, artifact_path in zip(slide_ids, artifact_paths, strict=False):
                 with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                    slide_expected_rows = int(
+                        tiles_io.coords_num_rows(slide_artifact, bag_id=bag_id)
+                    )
+                retrieval_artifact_path = _slide_retrieval_artifact_path(
+                    slide_artifact_path=artifact_path,
+                    slide_id=slide_id,
+                )
+                if not retrieval_artifact_path.is_file():
+                    descriptor_parts = []
+                    break
+                with FileHandleH5(
+                    retrieval_artifact_path, mode="r"
+                ) as retrieval_artifact:
                     if not descriptors_io.descriptor_exists(
-                        slide_artifact,
-                        bag_id,
-                        descriptor_name,
+                        retrieval_artifact,
+                        tile_id=bag_id,
+                        descriptor_name=descriptor_name,
                     ):
                         descriptor_parts = []
                         break
-                    descriptor_parts.append(
-                        descriptors_io.read_descriptor(
-                            slide_artifact,
-                            bag_id,
-                            descriptor_name,
-                        )
+                    descriptor_part = descriptors_io.read_descriptor(
+                        retrieval_artifact,
+                        tile_id=bag_id,
+                        descriptor_name=descriptor_name,
                     )
+                    self._validate_descriptor_matrix(
+                        descriptor_matrix=descriptor_part,
+                        descriptor_name=descriptor_name,
+                    )
+                    if int(descriptor_part.shape[0]) != slide_expected_rows:
+                        raise ValueError(
+                            "SISH descriptor rows must align with the source slide rows. "
+                            f"Got descriptors={descriptor_part.shape[0]} and "
+                            f"expected_rows={slide_expected_rows} for slide_id={slide_id!r}."
+                        )
+                    descriptor_parts.append(descriptor_part)
 
             if not descriptor_parts:
                 continue
@@ -275,12 +310,64 @@ class SISHPrecompute:
                     f"Got descriptors={full_descriptor_matrix.shape[0]} and "
                     f"expected_rows={expected_rows}."
                 )
+            self._validate_descriptor_matrix(
+                descriptor_matrix=full_descriptor_matrix,
+                descriptor_name=descriptor_name,
+            )
 
             return np.asarray(
                 full_descriptor_matrix[selected_indices],
             )
 
         return None
+
+    def _validate_descriptor_matrix(
+        self,
+        *,
+        descriptor_matrix: np.ndarray,
+        descriptor_name: str,
+    ) -> None:
+        """Validate an ``(N, D)`` latent matrix before SISH index conversion.
+
+        Inputs:
+            descriptor_matrix: Cached VQ-VAE descriptors with shape ``(N, D)``.
+            descriptor_name: H5 descriptor key used in validation errors.
+
+        Raises:
+            ValueError: If the matrix shape, configured dimension, or inferred
+                latent ``(H, W)`` shape is inconsistent.
+
+        Example:
+            A ``(8, 256)`` matrix is valid with ``descriptor_latent_hw=(16, 16)``.
+        """
+        rows = np.asarray(descriptor_matrix)
+        if rows.ndim != 2:
+            raise ValueError(
+                f"Stored SISH descriptor '{descriptor_name}' must have shape (N, D). "
+                f"Got {rows.shape}."
+            )
+        configured_dim = self._get_config_value(
+            [
+                ("experiment", "sish", "descriptor_dim"),
+                ("experiment", "SISH_metrics", "descriptor_dim"),
+                ("sish", "descriptor_dim"),
+            ],
+            default=None,
+        )
+        if configured_dim is not None and int(rows.shape[1]) != int(configured_dim):
+            raise ValueError(
+                f"Stored SISH descriptor '{descriptor_name}' has dim {rows.shape[1]}, "
+                f"expected configured descriptor_dim={configured_dim}."
+            )
+        if rows.shape[1] == 1:
+            return
+
+        latent_h, latent_w = self._resolve_latent_hw(int(rows.shape[1]))
+        if int(latent_h) * int(latent_w) != int(rows.shape[1]):
+            raise ValueError(
+                f"Stored SISH descriptor '{descriptor_name}' dim {rows.shape[1]} "
+                f"does not match latent shape ({latent_h}, {latent_w})."
+            )
 
     def _descriptor_rows_to_patch_indices(
         self,
@@ -293,8 +380,7 @@ class SISHPrecompute:
 
         if rows.ndim != 2:
             raise ValueError(
-                "Stored SISH descriptor rows must have shape (N, D). "
-                f"Got {rows.shape}."
+                f"Stored SISH descriptor rows must have shape (N, D). Got {rows.shape}."
             )
 
         if rows.shape[1] == 1:
@@ -404,7 +490,7 @@ class SISHPrecompute:
         self._vqvae = LargeVectorQuantizedVAE_Encode(code_dim=256, code_size=128)
         checkpoint = torch.load(checkpoint_path, map_location="cpu")["model"]
         encoder_weights = {
-            key[len("module."):]: value
+            key[len("module.") :]: value
             for key, value in checkpoint.items()
             if key.startswith("module.encoder.") or key.startswith("module.codebook.")
         }
@@ -521,8 +607,12 @@ class SISHPrecompute:
         selected_indices: np.ndarray,
     ) -> list[_SelectedPatchSpec]:
         """Build one backend-read spec per selected patch."""
-        slide_ids = [str(slide_id) for slide_id in list(getattr(sample, "slide_ids", []) or [])]
-        artifact_paths = [Path(path) for path in list(getattr(sample, "artifact_paths", []) or [])]
+        slide_ids = [
+            str(slide_id) for slide_id in list(getattr(sample, "slide_ids", []) or [])
+        ]
+        artifact_paths = [
+            Path(path) for path in list(getattr(sample, "artifact_paths", []) or [])
+        ]
         slide_paths = _resolve_sample_slide_paths(sample=sample, config=self.config)
 
         specs: list[_SelectedPatchSpec] = []
@@ -602,7 +692,11 @@ class SISHPrecompute:
             )
         )
 
-        for (slide_id, artifact_path, slide_path), slide_specs in specs_by_slide.items():
+        for (
+            slide_id,
+            artifact_path,
+            slide_path,
+        ), slide_specs in specs_by_slide.items():
             wsi = WSI(
                 slide=slide_id,
                 patient="",
@@ -630,25 +724,35 @@ class SISHPrecompute:
                             f"Got {patch_array.shape} for slide '{slide_id}'."
                         )
 
-                    tensor = torch.from_numpy(patch_array).permute(2, 0, 1).float() / 255.0
+                    tensor = (
+                        torch.from_numpy(patch_array).permute(2, 0, 1).float() / 255.0
+                    )
                     tensor = _scale_to_minus1_to_1(tensor)
                     tensors.append(tensor)
                     output_positions.append(spec.output_position)
 
                 for start in range(0, len(tensors), batch_size):
-                    batch_tensors = torch.stack(tensors[start : start + batch_size], dim=0)
+                    batch_tensors = torch.stack(
+                        tensors[start : start + batch_size], dim=0
+                    )
                     batch_tensors = batch_tensors.to(self.device)
                     with torch.no_grad():
-                        batch_latents = self._vqvae(batch_tensors).detach().cpu().numpy()
+                        batch_latents = (
+                            self._vqvae(batch_tensors).detach().cpu().numpy()
+                        )
                     for offset, latent in enumerate(batch_latents):
                         output_latents[output_positions[start + offset]] = latent
             finally:
                 self._slide_processor.close_wsi(wsi)
 
         if any(latent is None for latent in output_latents):
-            raise RuntimeError("Failed to materialize VQ-VAE latents for all selected patches.")
+            raise RuntimeError(
+                "Failed to materialize VQ-VAE latents for all selected patches."
+            )
 
-        latent_array = np.stack([latent for latent in output_latents if latent is not None], axis=0)
+        latent_array = np.stack(
+            [latent for latent in output_latents if latent is not None], axis=0
+        )
         return _slide_to_index(
             latent_array,
             self._codebook_semantic,

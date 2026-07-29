@@ -157,7 +157,9 @@ class SlideRetrievalTask(TaskBase):
         # ------------------------------------------------------------------
         # Build and run the representation stage
         # ------------------------------------------------------------------
-        logger.info("[SlideRetrieval] Stage 1/3: preparing retrieval representation strategy")
+        logger.info(
+            "[SlideRetrieval] Stage 1/3: preparing retrieval representation strategy"
+        )
         representation_strategy = build_representation_strategy(
             representation_name,
             params=combo_cfg.get_hyperparams("retrieval_representation"),
@@ -377,6 +379,8 @@ class SlideRetrievalTask(TaskBase):
             representation_id=representation_id,
             exclusion_level=exclusion_level,
             results=results,
+            query_representations=query_representations,
+            reference_representations=reference_representations,
         )
         run_dir = self._build_run_dir(
             output_mode=output_mode,
@@ -505,8 +509,7 @@ class SlideRetrievalTask(TaskBase):
         ]
         if missing_indices:
             raise RuntimeError(
-                "Search completed without results for query indices: "
-                f"{missing_indices}"
+                f"Search completed without results for query indices: {missing_indices}"
             )
         return [result for result in results_by_index if result is not None]
 
@@ -543,8 +546,7 @@ class SlideRetrievalTask(TaskBase):
 
         # Enforce a single aggregation level across all retrieval uses.
         aggregation_levels = {
-            str(bag_dataset.aggregation_level)
-            for bag_dataset in all_bag_datasets
+            str(bag_dataset.aggregation_level) for bag_dataset in all_bag_datasets
         }
         if aggregation_levels != {str(aggregation_level)}:
             raise ValueError(
@@ -716,25 +718,29 @@ class SlideRetrievalTask(TaskBase):
         # Materialize each retrieval batch concurrently with one thread per batch item.
         with ThreadPoolExecutor(max_workers=max(1, batch_thread_workers)) as executor:
             for retrieval_batch in retrieval_loader:
-                future_to_sample_id = {
-                    executor.submit(_materialize_one, dataset_item): str(
-                        dataset_item.sample.sample_id
+                results_by_index: list[RetrievalRepresentation | None] = [None] * len(
+                    retrieval_batch
+                )
+                future_to_item = {
+                    executor.submit(_materialize_one, dataset_item): (
+                        index,
+                        str(dataset_item.sample.sample_id),
                     )
-                    for dataset_item in retrieval_batch
+                    for index, dataset_item in enumerate(retrieval_batch)
                 }
                 for future in tqdm(
-                    as_completed(future_to_sample_id),
-                    total=len(future_to_sample_id),
+                    as_completed(future_to_item),
+                    total=len(future_to_item),
                     desc=f"[SlideRetrieval] Representations {bag_dataset.name}",
                     unit="sample",
                     mininterval=_PROGRESS_MIN_INTERVAL_SECONDS,
                     ncols=_PROGRESS_NCOLS,
                 ):
+                    index, sample_id = future_to_item[future]
                     try:
-                        created_retrieval_representations.append(future.result())
+                        results_by_index[index] = future.result()
                     except Exception as exc:
                         # Continue processing remaining items while collecting failures.
-                        sample_id = future_to_sample_id[future]
                         tb_text = "".join(
                             traceback.format_exception(
                                 type(exc),
@@ -744,6 +750,9 @@ class SlideRetrievalTask(TaskBase):
                         ).strip()
                         creation_errors_by_sample[sample_id] = tb_text
                         continue
+                created_retrieval_representations.extend(
+                    result for result in results_by_index if result is not None
+                )
 
         return created_retrieval_representations, creation_errors_by_sample
 
@@ -770,7 +779,9 @@ class SlideRetrievalTask(TaskBase):
             return None if sample.case_id is None else str(sample.case_id)
         if exclusion_level == "patient":
             return None if sample.patient_id is None else str(sample.patient_id)
-        raise ValueError(f"Unsupported slide retrieval exclusion level: {exclusion_level!r}")
+        raise ValueError(
+            f"Unsupported slide retrieval exclusion level: {exclusion_level!r}"
+        )
 
     def _split_representations_by_use(
         self,
@@ -785,11 +796,15 @@ class SlideRetrievalTask(TaskBase):
 
         # Shared items are intentionally included in both sets.
         reference_representations.extend(representations_by_use.get("reference", []))
-        reference_representations.extend(representations_by_use.get("query_reference", []))
+        reference_representations.extend(
+            representations_by_use.get("query_reference", [])
+        )
 
         query_representations.extend(representations_by_use.get("query", []))
         if include_query_reference_as_queries:
-            query_representations.extend(representations_by_use.get("query_reference", []))
+            query_representations.extend(
+                representations_by_use.get("query_reference", [])
+            )
 
         return reference_representations, query_representations
 
@@ -840,6 +855,8 @@ class SlideRetrievalTask(TaskBase):
         representation_id: str,
         exclusion_level: ExclusionLevel,
         results: list[SearchResult],
+        query_representations: list[RetrievalRepresentation],
+        reference_representations: list[RetrievalRepresentation],
     ) -> SlideRetrievalManifest:
         # Capture the run configuration and key output counters for reproducibility.
         return SlideRetrievalManifest(
@@ -857,6 +874,15 @@ class SlideRetrievalTask(TaskBase):
             num_queries=len(results),
             num_reference_items=len(search_strategy.search_database),
             top_k_saved=max((len(result.hits) for result in results), default=0),
+            combo_cfg=combo_cfg.to_dict(),
+            query_sample_ids=[
+                str(representation.sample_id).strip()
+                for representation in query_representations
+            ],
+            reference_sample_ids=[
+                str(representation.sample_id).strip()
+                for representation in reference_representations
+            ],
         )
 
     def _validate_combination_compatibility(
@@ -875,8 +901,7 @@ class SlideRetrievalTask(TaskBase):
             for bag_dataset in bag_datasets
         ]
         feature_levels = {
-            bag_dataset.get_feature_level()
-            for bag_dataset in all_bag_datasets
+            bag_dataset.get_feature_level() for bag_dataset in all_bag_datasets
         }
 
         # Stop early when dataset feature structure cannot be interpreted reliably.
@@ -903,7 +928,10 @@ class SlideRetrievalTask(TaskBase):
             )
 
         if len(feature_levels) != 1:
-            return False, f"Inconsistent feature levels across datasets: {sorted(feature_levels)}"
+            return (
+                False,
+                f"Inconsistent feature levels across datasets: {sorted(feature_levels)}",
+            )
 
         # The single shared level is used for all downstream compatibility checks.
         feature_level = next(iter(feature_levels))

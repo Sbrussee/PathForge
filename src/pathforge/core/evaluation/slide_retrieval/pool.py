@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import warnings
 
 import pandas as pd
 
 from pathforge.core.evaluation.slide_retrieval.data import (
+    SlideRetrievalEvaluationData,
     SlideRetrievalEvaluationQuery,
 )
 from pathforge.utils.constants import (
@@ -13,6 +15,23 @@ from pathforge.utils.constants import (
     PATIENT_ID_COL,
     SLIDE_ID_COL,
 )
+
+
+def normalize_text_id(value: object) -> str:
+    """Normalize annotation and retrieval identifiers for evaluation joins.
+
+    Inputs:
+        value: Raw identifier from a CSV, Excel file, manifest, or result row.
+
+    Returns:
+        A whitespace-trimmed identifier, or ``""`` for missing values.
+
+    Example:
+        ``normalize_text_id(" S1 ") == "S1"``.
+    """
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
 
 
 def compute_dcg(relevance_values: list[int]) -> float:
@@ -71,11 +90,15 @@ def build_exclusion_key_from_row(
         return str(row["sample_id"])
     if exclusion_level == "case":
         value = row.get(CASE_ID_COL)
-        return None if pd.isna(value) or value is None else str(value)
+        normalized_value = normalize_text_id(value)
+        return normalized_value or None
     if exclusion_level == "patient":
         value = row.get(PATIENT_ID_COL)
-        return None if pd.isna(value) or value is None else str(value)
-    raise ValueError(f"Unsupported slide retrieval exclusion level: {exclusion_level!r}")
+        normalized_value = normalize_text_id(value)
+        return normalized_value or None
+    raise ValueError(
+        f"Unsupported slide retrieval exclusion level: {exclusion_level!r}"
+    )
 
 
 def build_aggregated_reference_pool(
@@ -99,9 +122,15 @@ def build_aggregated_reference_pool(
     manifest = dict(getattr(run_context, "manifest", {}))
     exclusion_level = str(manifest.get("exclusion_level", "patient"))
     id_column = resolve_id_column_for_aggregation(aggregation_level)
+    reference_sample_ids = {
+        normalized_name
+        for name in manifest.get("reference_sample_ids", [])
+        if (normalized_name := normalize_text_id(name))
+    }
     reference_dataset_names = {
-        str(name)
+        normalized_name
         for name in manifest.get("reference_dataset_names", [])
+        if (normalized_name := normalize_text_id(name))
     }
 
     required_columns = {
@@ -126,11 +155,9 @@ def build_aggregated_reference_pool(
 
     working_df = annotations_df.copy()
     working_df = working_df[working_df[id_column].notna()].copy()
-    working_df["sample_id"] = working_df[id_column].astype(str).str.strip()
+    working_df["sample_id"] = working_df[id_column].map(normalize_text_id)
     working_df = working_df[working_df["sample_id"] != ""].copy()
-    working_df["_normalized_label"] = (
-        working_df[label_column].astype(str).str.strip()
-    )
+    working_df["_normalized_label"] = working_df[label_column].map(normalize_text_id)
     working_df = working_df[working_df["_normalized_label"] != ""].copy()
 
     def _aggregate_group(group_df: pd.DataFrame) -> pd.Series:
@@ -143,9 +170,9 @@ def build_aggregated_reference_pool(
 
         def _single_optional_value(column_name: str) -> str | None:
             values = [
-                str(value).strip()
+                normalized_value
                 for value in group_df[column_name].tolist()
-                if not pd.isna(value) and str(value).strip()
+                if (normalized_value := normalize_text_id(value))
             ]
             unique_values = sorted(set(values))
             if not unique_values:
@@ -160,9 +187,9 @@ def build_aggregated_reference_pool(
 
         dataset_values = sorted(
             {
-                str(value).strip()
+                normalized_value
                 for value in group_df[DATASET_COL].tolist()
-                if not pd.isna(value) and str(value).strip()
+                if (normalized_value := normalize_text_id(value))
             }
         )
 
@@ -191,10 +218,24 @@ def build_aggregated_reference_pool(
         axis=1,
     )
 
+    if reference_sample_ids:
+        reference_pool_df = all_items_df[
+            all_items_df["sample_id"].isin(reference_sample_ids)
+        ].copy()
+        return all_items_df, reference_pool_df
+
     if not reference_dataset_names:
         raise ValueError(
-            "ndcg_at_k could not determine any reference datasets from the run manifest."
+            "Could not determine reference items from the run manifest. "
+            "New runs should include reference_sample_ids; legacy runs require "
+            "reference_dataset_names."
         )
+    warnings.warn(
+        "Legacy slide-retrieval manifest lacks reference_sample_ids; using all "
+        "configured reference datasets as an approximate evaluation pool.",
+        UserWarning,
+        stacklevel=2,
+    )
     reference_pool_df = all_items_df[
         all_items_df[DATASET_COL].isin(reference_dataset_names)
     ].copy()
@@ -229,3 +270,35 @@ def count_relevant_reference_items_for_query(
         candidates_df["label"] == str(query.query_label)
     ]
     return int(len(relevant_candidates_df))
+
+
+def count_relevant_reference_items_by_query(
+    *,
+    evaluation_data: SlideRetrievalEvaluationData,
+    run_context: object | None,
+) -> dict[str, int] | None:
+    """Count findable references for each query in the persisted reference pool.
+
+    Inputs:
+        evaluation_data: Evaluated query rows and their resolved labels.
+        run_context: Persisted run metadata, or ``None`` for direct metric calls.
+
+    Returns:
+        Per-query counts, or ``None`` when no run context is available.
+
+    Example:
+        ``count_relevant_reference_items_by_query(evaluation_data=data, run_context=context)["S1"] == 2``.
+    """
+    if run_context is None:
+        return None
+    all_items_df, reference_pool_df = build_aggregated_reference_pool(
+        run_context=run_context
+    )
+    return {
+        str(query.query_id): count_relevant_reference_items_for_query(
+            query=query,
+            all_items_df=all_items_df,
+            reference_pool_df=reference_pool_df,
+        )
+        for query in evaluation_data.queries
+    }

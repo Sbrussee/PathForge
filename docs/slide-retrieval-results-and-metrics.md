@@ -113,8 +113,11 @@ This file stores the run configuration and a few summary counters. Typical field
 - `num_queries`
 - `num_reference_items`
 - `top_k_saved`
+- `combo_cfg` (the fully resolved benchmark combination)
+- `query_sample_ids` and `reference_sample_ids` (the exact populations searched and indexed)
 
-Use this file when you want to verify exactly which settings created the run.
+Use this file when you want to verify exactly which settings and sample
+populations created the run.
 
 ### `query_results.xlsx`
 

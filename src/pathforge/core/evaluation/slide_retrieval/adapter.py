@@ -15,8 +15,9 @@ from pathforge.core.evaluation.slide_retrieval.data import (
     SlideRetrievalEvaluationHit,
     SlideRetrievalEvaluationQuery,
 )
+from pathforge.core.evaluation.slide_retrieval.pool import normalize_text_id
 from pathforge.core.evaluation.types import EvaluationRunContext
-from pathforge.core.experiments.combinations import build_combinations
+from pathforge.core.experiments.combinations import ComboConfig, build_combinations
 from pathforge.core.experiments.combo_ids import build_feature_name, build_tiling_id
 from pathforge.slide_retrieval.io import (
     build_slide_retrieval_output_root,
@@ -82,15 +83,30 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
                     continue
 
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                manifest["reference_dataset_names"] = list(reference_dataset_names)
+                if not self._manifest_matches_combo(
+                    manifest=manifest, combo_cfg=combo_cfg
+                ):
+                    continue
+                manifest.setdefault(
+                    "reference_dataset_names", list(reference_dataset_names)
+                )
+                discovered_combo_cfg = self._resolve_run_combo_cfg(
+                    manifest=manifest,
+                    fallback_combo_cfg=combo_cfg,
+                )
                 run_contexts.append(
                     EvaluationRunContext(
                         task_name=self.task_name,
                         run_dir=run_dir.resolve(),
-                        combo_cfg=combo_cfg,
+                        combo_cfg=discovered_combo_cfg,
                         manifest=manifest,
                         label_column=label_column,
-                        aggregation_level=str(self.cfg.experiment.aggregation_level),
+                        aggregation_level=str(
+                            manifest.get(
+                                "aggregation_level",
+                                self.cfg.experiment.aggregation_level,
+                            )
+                        ),
                     )
                 )
 
@@ -102,7 +118,9 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
     ) -> SlideRetrievalEvaluationData:
         annotations_df = self.experiment.load_annotations()
         raw_results = self._load_raw_results(
-            resolve_slide_retrieval_results_path(run_context.run_dir / "query_results.xlsx")
+            resolve_slide_retrieval_results_path(
+                run_context.run_dir / "query_results.xlsx"
+            )
         )
         label_lookup = self._build_label_lookup(
             annotations_df=annotations_df,
@@ -113,11 +131,11 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
 
         queries: list[SlideRetrievalEvaluationQuery] = []
         for raw_result in raw_results:
-            query_id = str(raw_result["query_id"])
+            query_id = normalize_text_id(raw_result["query_id"])
             hits = [
                 SlideRetrievalEvaluationHit(
-                    sample_id=str(hit["sample_id"]),
-                    label=label_lookup[str(hit["sample_id"])],
+                    sample_id=normalize_text_id(hit["sample_id"]),
+                    label=label_lookup[normalize_text_id(hit["sample_id"])],
                     score=float(hit["score"]),
                     rank=int(hit["rank"]),
                 )
@@ -138,9 +156,18 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
             results_df = pd.read_excel(path)
         else:
             results_df = pd.read_csv(path)
+        if "query_sample_id" not in results_df.columns:
+            raise ValueError(
+                f"Slide-retrieval results file is missing required column 'query_sample_id': {path}"
+            )
         raw_results: list[dict[str, Any]] = []
-        for _, row in results_df.iterrows():
-            query_id = str(row["query_sample_id"])
+        for row_index, row in results_df.iterrows():
+            query_id = normalize_text_id(row["query_sample_id"])
+            if not query_id:
+                raise ValueError(
+                    "Slide-retrieval results contain an empty query_sample_id "
+                    f"at row {row_index + 2} in {path}."
+                )
             hits: list[dict[str, Any]] = []
             for column_name, value in row.items():
                 match = _RANK_SAMPLE_PATTERN.fullmatch(str(column_name))
@@ -148,12 +175,18 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
                     continue
 
                 rank = int(match.group("rank"))
+                sample_id = normalize_text_id(value)
+                if not sample_id:
+                    raise ValueError(
+                        "Slide-retrieval results contain an empty hit sample_id "
+                        f"at row {row_index + 2}, rank {rank} in {path}."
+                    )
                 score_column = f"rank_{rank}_score"
                 score_value = row.get(score_column)
                 score = 0.0 if pd.isna(score_value) else float(score_value)
                 hits.append(
                     {
-                        "sample_id": str(value),
+                        "sample_id": sample_id,
                         "score": score,
                         "rank": rank,
                     }
@@ -185,12 +218,26 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
         label_column: str,
     ) -> dict[str, str]:
         id_column = self._resolve_id_column(aggregation_level)
+        required_columns = {id_column, label_column}
+        missing_columns = sorted(required_columns - set(annotations_df.columns))
+        if missing_columns:
+            raise ValueError(
+                "annotations.csv is missing required column(s) for "
+                "slide-retrieval evaluation: " + ", ".join(missing_columns)
+            )
+        working_df = annotations_df.copy()
+        working_df["_evaluation_sample_id"] = working_df[id_column].map(
+            normalize_text_id
+        )
         missing_labels: list[str] = []
         inconsistent_groups: list[str] = []
         label_lookup: dict[str, str] = {}
 
         for sample_id in sorted(sample_ids):
-            matching_rows = annotations_df[annotations_df[id_column] == sample_id]
+            normalized_sample_id = normalize_text_id(sample_id)
+            matching_rows = working_df[
+                working_df["_evaluation_sample_id"] == normalized_sample_id
+            ]
             if matching_rows.empty:
                 missing_labels.append(
                     f"{sample_id} (no rows found for column '{id_column}')"
@@ -229,13 +276,10 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
                 "Slide-retrieval evaluation label resolution failed.",
             ]
             if missing_labels:
-                message_parts.append(
-                    "Missing labels: " + "; ".join(missing_labels)
-                )
+                message_parts.append("Missing labels: " + "; ".join(missing_labels))
             if inconsistent_groups:
                 message_parts.append(
-                    "Inconsistent aggregated labels: "
-                    + "; ".join(inconsistent_groups)
+                    "Inconsistent aggregated labels: " + "; ".join(inconsistent_groups)
                 )
             raise ValueError(" ".join(message_parts))
 
@@ -251,3 +295,64 @@ class SlideRetrievalEvaluationAdapter(TaskEvaluationAdapterBase):
         raise ValueError(
             f"Unsupported aggregation level for evaluation: {aggregation_level!r}"
         )
+
+    def _manifest_matches_combo(
+        self, *, manifest: dict[str, Any], combo_cfg: ComboConfig
+    ) -> bool:
+        """Return whether manifest-level identifiers match the searched combo."""
+        expected_values = {
+            "tiling_id": build_tiling_id(combo_cfg),
+            "feature_extraction": build_feature_name(combo_cfg),
+            "slide_representation": str(combo_cfg.get("retrieval_representation")),
+            "search_method": str(combo_cfg.get("search_strategy")),
+        }
+        if not all(
+            manifest.get(key) is None or str(manifest[key]) == str(expected_value)
+            for key, expected_value in expected_values.items()
+        ):
+            return False
+        manifest_combo_cfg = manifest.get("combo_cfg")
+        if isinstance(manifest_combo_cfg, dict) and manifest_combo_cfg:
+            return manifest_combo_cfg == combo_cfg.to_dict()
+
+        return self._legacy_manifest_params_match_combo(
+            manifest=manifest,
+            combo_cfg=combo_cfg,
+        )
+
+    def _legacy_manifest_params_match_combo(
+        self, *, manifest: dict[str, Any], combo_cfg: ComboConfig
+    ) -> bool:
+        """Match legacy method parameters without requiring unavailable full combo data.
+
+        The legacy manifest only records resolved strategy parameters. Every
+        parameter explicitly requested by the active combination must therefore
+        agree with that record; extra resolved defaults are permitted.
+
+        Example:
+            A legacy manifest with ``{"radius": 4, "default": 1}`` matches a
+            combo that explicitly requests ``{"radius": 4}``.
+        """
+        expected_params_by_manifest_key = {
+            "slide_representation_params": combo_cfg.get_hyperparams(
+                "retrieval_representation"
+            ),
+            "search_params": combo_cfg.get_hyperparams("search_strategy"),
+        }
+        return not any(
+            isinstance(manifest.get(manifest_key), dict)
+            and any(
+                manifest[manifest_key].get(name) != value
+                for name, value in expected_params.items()
+            )
+            for manifest_key, expected_params in expected_params_by_manifest_key.items()
+        )
+
+    def _resolve_run_combo_cfg(
+        self, *, manifest: dict[str, Any], fallback_combo_cfg: ComboConfig
+    ) -> ComboConfig:
+        """Use persisted combo metadata when available, otherwise fall back."""
+        manifest_combo_cfg = manifest.get("combo_cfg")
+        if isinstance(manifest_combo_cfg, dict) and manifest_combo_cfg:
+            return ComboConfig(**manifest_combo_cfg)
+        return fallback_combo_cfg

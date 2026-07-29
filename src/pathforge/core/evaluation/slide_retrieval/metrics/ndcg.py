@@ -35,7 +35,9 @@ def compute_ndcg_at_k(
     """Compute binary NDCG at the requested `k`."""
 
     if run_context is None:
-        raise ValueError("ndcg_at_k requires run_context to reconstruct the reference pool.")
+        raise ValueError(
+            "ndcg_at_k requires run_context to reconstruct the reference pool."
+        )
 
     k = int(request.params["k"])
     if k <= 0:
@@ -48,34 +50,29 @@ def compute_ndcg_at_k(
     counts_per_label: dict[str, int] = defaultdict(int)
 
     for query in evaluation_data.queries:
-        counts_per_label[query.query_label] += 1
-
-        top_hits = get_top_k_hits(query, k=k)
-        observed_relevance = [
-            1 if hit.label == query.query_label else 0
-            for hit in top_hits
-        ]
-        dcg = compute_dcg(observed_relevance)
-
         relevant_available_count = count_relevant_reference_items_for_query(
             query=query,
             all_items_df=all_items_df,
             reference_pool_df=reference_pool_df,
         )
+        if relevant_available_count <= 0:
+            continue
+
+        counts_per_label[query.query_label] += 1
+        top_hits = get_top_k_hits(query, k=k)
+        observed_relevance = [
+            1 if hit.label == query.query_label else 0 for hit in top_hits
+        ]
+        dcg = compute_dcg(observed_relevance)
+
         ideal_relevant_count = min(k, relevant_available_count)
         ideal_relevance = [1] * ideal_relevant_count
         idcg = compute_dcg(ideal_relevance)
 
-        ndcg_per_label[query.query_label].append(
-            (dcg / idcg) if idcg > 0.0 else 0.0
-        )
+        ndcg_per_label[query.query_label].append((dcg / idcg) if idcg > 0.0 else 0.0)
 
     per_label = {
-        label: (
-            float(np.mean(ndcg_values))
-            if ndcg_values
-            else 0.0
-        )
+        label: (float(np.mean(ndcg_values)) if ndcg_values else 0.0)
         for label, ndcg_values in sorted(ndcg_per_label.items())
     }
     return {
@@ -84,5 +81,6 @@ def compute_ndcg_at_k(
             per_label_values=per_label,
             counts_per_label=counts_per_label,
             evaluable_queries=sum(counts_per_label.values()),
+            total_queries=len(evaluation_data.queries),
         ),
     }

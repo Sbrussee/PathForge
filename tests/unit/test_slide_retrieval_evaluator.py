@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from pathforge.config.config import Config
@@ -154,8 +155,7 @@ def test_slide_retrieval_evaluator_reports_all_missing_labels(
 ) -> None:
     annotation_path = tmp_path / "annotations.csv"
     annotation_path.write_text(
-        "dataset,slide,patient,category\n"
-        "query_ds,S1,P1,tumor\n",
+        "dataset,slide,patient,category\nquery_ds,S1,P1,tumor\n",
         encoding="utf-8",
     )
     cfg = _make_cfg(tmp_path=tmp_path, annotation_path=annotation_path)
@@ -239,3 +239,63 @@ def test_slide_retrieval_evaluator_reports_inconsistent_aggregated_labels(
         evaluation_adapter.load_run_data(run_context)
 
     assert "P1" in str(error.value)
+
+
+def test_slide_retrieval_evaluator_normalizes_annotation_ids(tmp_path: Path) -> None:
+    annotation_path = tmp_path / "annotations.csv"
+    annotation_path.write_text(
+        "dataset,slide,patient,category\n"
+        "query_ds, S1 ,P1,tumor\n"
+        "reference_ds,S2,P2,normal\n",
+        encoding="utf-8",
+    )
+    cfg = _make_cfg(tmp_path=tmp_path, annotation_path=annotation_path)
+    evaluation_adapter = SlideRetrievalEvaluationAdapter(Experiment(cfg))
+
+    assert evaluation_adapter._build_label_lookup(
+        annotations_df=pd.read_csv(annotation_path),
+        sample_ids={"S1", "S2"},
+        aggregation_level="slide",
+        label_column="category",
+    ) == {"S1": "tumor", "S2": "normal"}
+
+
+def test_slide_retrieval_evaluator_filters_legacy_runs_by_explicit_params(
+    tmp_path: Path,
+) -> None:
+    annotation_path = tmp_path / "annotations.csv"
+    annotation_path.write_text("dataset,slide,patient,category\n", encoding="utf-8")
+    adapter = SlideRetrievalEvaluationAdapter(
+        Experiment(_make_cfg(tmp_path=tmp_path, annotation_path=annotation_path))
+    )
+    combo_cfg = ComboConfig(
+        tile_px=256,
+        tile_px_params={},
+        tile_mpp=0.5,
+        tile_mpp_params={},
+        feature_extraction="resnet18",
+        feature_extraction_params={},
+        retrieval_representation="sdm-features",
+        retrieval_representation_params={"clusters": 4},
+        search_strategy="yottixel",
+        search_strategy_params={"neighbours": 8},
+    )
+    matching_manifest = {
+        "tiling_id": "256px_0.5mpp",
+        "feature_extraction": "resnet18",
+        "slide_representation": "sdm-features",
+        "search_method": "yottixel",
+        "slide_representation_params": {"clusters": 4, "resolved_default": 1},
+        "search_params": {"neighbours": 8},
+    }
+    mismatching_manifest = {
+        **matching_manifest,
+        "search_params": {"neighbours": 16},
+    }
+
+    assert adapter._manifest_matches_combo(
+        manifest=matching_manifest, combo_cfg=combo_cfg
+    )
+    assert not adapter._manifest_matches_combo(
+        manifest=mismatching_manifest, combo_cfg=combo_cfg
+    )

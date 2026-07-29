@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -8,13 +10,16 @@ import pytest
 import pathforge.core.tasks.slide_retrieval as slide_retrieval_task_module
 from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
 from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.core.datasets.bag_dataset import BagSample, SlideRetrievalDatasetItem
 from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
 
 
 class _FakeSlideRetrievalBagDataset:
-    def __init__(self, *, tiling_id: str, aggregation_level: str, num_bags: int = 0) -> None:
+    def __init__(
+        self, *, tiling_id: str, aggregation_level: str, num_bags: int = 0
+    ) -> None:
         self.tiling_id = tiling_id
         self.aggregation_level = aggregation_level
         self.num_bags = num_bags
@@ -152,6 +157,71 @@ def test_run_search_items_preserves_order_with_threads(tmp_path: Path) -> None:
     )
 
     assert results == ["result-slow", "result-fast", "result-middle"]
+
+
+def test_compute_retrieval_representations_preserves_loader_order_with_threads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = _make_task(tmp_path)
+    samples = [
+        BagSample(
+            sample_id="slow", slide_ids=["slow"], artifact_paths=[], category="a"
+        ),
+        BagSample(
+            sample_id="fast", slide_ids=["fast"], artifact_paths=[], category="b"
+        ),
+    ]
+    retrieval_loader = [
+        [
+            SlideRetrievalDatasetItem(index=index, sample=sample, inputs={})
+            for index, sample in enumerate(samples)
+        ]
+    ]
+    bag_dataset = SimpleNamespace(
+        artifacts_dir=tmp_path,
+        aggregation_level="slide",
+        tiling_id="256px_0.5mpp",
+        name="fake_ds",
+    )
+
+    @contextmanager
+    def fake_atomic_write(_artifact_path):
+        yield object()
+
+    monkeypatch.setattr(
+        slide_retrieval_task_module, "atomic_slide_artifact_write", fake_atomic_write
+    )
+    monkeypatch.setattr(
+        slide_retrieval_task_module,
+        "save_slide_retrieval_representation",
+        lambda **_: None,
+    )
+
+    class _Strategy:
+        def run(self, *, sample, **_) -> RetrievalRepresentation:
+            if sample.sample_id == "slow":
+                time.sleep(0.02)
+            return RetrievalRepresentation(sample_id=sample.sample_id, data=[1.0])
+
+        def hyperparam_values(self) -> dict[str, object]:
+            return {}
+
+    representations, errors = task.compute_retrieval_representations(
+        bag_dataset=bag_dataset,
+        retrieval_loader=retrieval_loader,
+        batch_thread_workers=2,
+        combo_cfg=SimpleNamespace(),
+        representation_strategy=_Strategy(),
+        representation_id="rep",
+        aggregation_level="slide",
+        exclusion_level="none",
+    )
+
+    assert errors == {}
+    assert [representation.sample_id for representation in representations] == [
+        "slow",
+        "fast",
+    ]
 
 
 def test_validate_combination_compatibility_accepts_supported_registered_pair(
