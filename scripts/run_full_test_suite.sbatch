@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Submit with one of:
-#   mkdir -p .cache
+#   mkdir -p test_logs cache/tmp/pathbench_smoke
 #   sbatch --partition=gpu       --time=10:00:00 scripts/run_full_test_suite.sbatch
 #   sbatch --partition=gpu-short --time=00:30:00 scripts/run_full_test_suite.sbatch
 #   sbatch --partition=gpu-medium --time=2-00:00:00 scripts/run_full_test_suite.sbatch
@@ -16,10 +16,10 @@
 #
 # The script intentionally does not hard-code --partition or --time so the
 # caller can choose the queue that matches the intended test depth. All test
-# artifacts and caches remain below this repository's ``.cache/`` directory.
+# artifacts and caches remain below the dynamically resolved project root.
 #SBATCH --job-name=pathforge-tests
-#SBATCH --output=.cache/slurm-pathforge-tests-%j.out
-#SBATCH --error=.cache/slurm-pathforge-tests-%j.err
+#SBATCH --output=test_logs/slurm-pathforge-tests-%j.out
+#SBATCH --error=test_logs/slurm-pathforge-tests-%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -33,9 +33,9 @@ if [[ -z "${PROJECT_ROOT}" ]]; then
   PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 PROJECT_ROOT="$(cd -- "${PROJECT_ROOT}" && pwd)"
-RUN_ROOT="${PROJECT_ROOT}/.cache/full-test-suite"
-LOG_DIR="${RUN_ROOT}/runs/${SLURM_JOB_ID:-manual}"
-SMOKE_CACHE_DEFAULT="${RUN_ROOT}/download-cache"
+LOG_DIR="${PROJECT_ROOT}/test_logs/${SLURM_JOB_ID:-manual}"
+SMOKE_CACHE_DEFAULT="${PROJECT_ROOT}/cache/tmp/pathbench_smoke"
+CACHE_ROOT="${PROJECT_ROOT}/cache"
 SMOKE_REPORT_DIR="${LOG_DIR}/smoke_report"
 COMBINED_SMOKE_REPORT_DIR="${LOG_DIR}/combined_smoke_report"
 
@@ -43,13 +43,13 @@ COMBINED_SMOKE_REPORT_DIR="${LOG_DIR}/combined_smoke_report"
 #   PATHFORGE_ENABLE_CUDA=1 enables the cu128 extra during uv sync.
 PATHFORGE_ENABLE_CUDA="${PATHFORGE_ENABLE_CUDA:-0}"
 export PATHFORGE_SMOKE_CACHE="${SMOKE_CACHE_DEFAULT}"
-export UV_CACHE_DIR="${PROJECT_ROOT}/.cache/uv"
-export XDG_CACHE_HOME="${LOG_DIR}/xdg-cache"
-export HF_HOME="${LOG_DIR}/huggingface"
-export PIP_CACHE_DIR="${LOG_DIR}/pip-cache"
-export TORCH_HOME="${LOG_DIR}/torch"
-export TMPDIR="${LOG_DIR}/tmp"
-export PYTHONPYCACHEPREFIX="${LOG_DIR}/pycache"
+export UV_CACHE_DIR="${CACHE_ROOT}/uv"
+export XDG_CACHE_HOME="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/xdg-cache"
+export HF_HOME="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/huggingface"
+export PIP_CACHE_DIR="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/pip-cache"
+export TORCH_HOME="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/torch"
+export TMPDIR="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/tmp"
+export PYTHONPYCACHEPREFIX="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/pycache"
 
 mkdir -p "${LOG_DIR}" "${PATHFORGE_SMOKE_CACHE}" "${UV_CACHE_DIR}" \
   "${XDG_CACHE_HOME}" "${HF_HOME}" "${PIP_CACHE_DIR}" "${TORCH_HOME}" \

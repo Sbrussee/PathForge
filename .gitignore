@@ -51,6 +51,8 @@ wandb/
 experiments/
 user_configs/
 .cache/
+/cache/
+/test_logs/
 
 # macOS
 .DS_Store
