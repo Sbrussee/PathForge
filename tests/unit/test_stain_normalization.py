@@ -121,3 +121,25 @@ class TestRestoreImageLikeTile:
 
         assert np.array_equal(out, tile)
         assert out.dtype == np.uint8
+
+
+class TestLazySlideImageModelProtocol:
+    """Feature wrappers with ``encode_image`` must not be treated as callables."""
+
+    def test_encode_image_wrapper_is_recognized_without_image_model_inheritance(self) -> None:
+        from pathforge.core.slide_processing.lazyslide_patch import (
+            _uses_image_model_protocol,
+        )
+
+        class TimmModelLike:
+            def encode_image(self, _image: object) -> object:
+                return _image
+
+        assert _uses_image_model_protocol(TimmModelLike()) is True
+
+    def test_plain_callable_is_not_an_image_model_wrapper(self) -> None:
+        from pathforge.core.slide_processing.lazyslide_patch import (
+            _uses_image_model_protocol,
+        )
+
+        assert _uses_image_model_protocol(lambda image: image) is False
