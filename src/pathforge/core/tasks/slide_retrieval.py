@@ -524,14 +524,20 @@ class SlideRetrievalTask(TaskBase):
                                 case_id=group.case_id,
                                 metadata=dict(group.metadata),
                             )
-                            cache[key] = self._load_or_create_slide_representation(
-                                dataset=dataset,
-                                sample=slide_sample,
-                                representation_strategy=representation_strategy,
-                                representation_id=representation_id,
-                                combo_cfg=combo_cfg,
-                                representation_cache_params=representation_cache_params,
-                            )
+                            try:
+                                cache[key] = self._load_or_create_slide_representation(
+                                    dataset=dataset,
+                                    sample=slide_sample,
+                                    representation_strategy=representation_strategy,
+                                    representation_id=representation_id,
+                                    combo_cfg=combo_cfg,
+                                    representation_cache_params=representation_cache_params,
+                                )
+                            except Exception as exc:
+                                raise RuntimeError(
+                                    "Slide retrieval representation creation failed "
+                                    f"for sample {slide_sample.sample_id!r}: {exc}"
+                                ) from exc
                         slides.append(cache[key])
                     if aggregation_level == "slide":
                         slide_representation = slides[0]

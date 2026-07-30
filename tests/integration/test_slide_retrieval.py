@@ -478,6 +478,57 @@ def test_missing_representations_are_materialized(
     assert set(compute_calls) == {"r-1", "q-1"}
 
 
+def test_missing_representation_wraps_creation_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A slide-local materialisation failure includes the affected sample ID."""
+    import pathforge.core.tasks.slide_retrieval as mod
+
+    class _CrashingStrategy(_FakeRepresentationStrategy):
+        def run(self, *, sample, **kwargs) -> RetrievalRepresentation:
+            raise RuntimeError("Simulated strategy crash")
+
+    monkeypatch.setattr(
+        mod, "build_representation_strategy", lambda _n, **kw: _CrashingStrategy()
+    )
+    monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
+    monkeypatch.setattr(
+        mod,
+        "get_representation_strategy_supported_feature_levels",
+        lambda _n: frozenset({"patch"}),
+    )
+    monkeypatch.setattr(
+        mod,
+        "get_representation_strategy_output_kind",
+        lambda _n: "patch_vector",
+    )
+    monkeypatch.setattr(
+        mod,
+        "get_search_strategy_supported_representation_kinds",
+        lambda _n: frozenset({"patch_vector"}),
+    )
+    monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _no_cache)
+    monkeypatch.setattr(
+        SlideRetrievalTask,
+        "_load_or_create_slide_representation",
+        lambda self, *, sample, representation_strategy, **kwargs: representation_strategy.run(
+            sample=sample
+        ),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="representation creation failed for sample 'r-1': Simulated strategy crash",
+    ):
+        _make_task(tmp_path).execute(
+            combo_cfg=_make_combo(),
+            datasets_by_use={
+                "reference": [_make_dataset(tmp_path, name="ref", sample_ids=["r-1"])],
+                "query": [_make_dataset(tmp_path, name="qry", sample_ids=["q-1"])],
+            },
+        )
+
+
 # ---------------------------------------------------------------------------
 # Incompatible combo → skipped
 # ---------------------------------------------------------------------------
