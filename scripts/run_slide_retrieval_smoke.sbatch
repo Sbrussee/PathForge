@@ -3,6 +3,7 @@
 #   sbatch --partition=PATHgpu --time=02:00:00 scripts/run_slide_retrieval_smoke.sbatch
 #
 # Optional overrides:
+#   PATHFORGE_PROJECT_ROOT=/path/to/PathForge
 #   PATHFORGE_SMOKE_CACHE=/shared/pathforge-smoke-cache
 #   PATHFORGE_SMOKE_RUN_DIR=/path/to/output-dir
 #
@@ -20,7 +21,13 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# Slurm executes a spool-file copy, so BASH_SOURCE points into /var/spool.
+# SLURM_SUBMIT_DIR preserves the PathForge directory from which sbatch ran.
+PROJECT_ROOT="${PATHFORGE_PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-}}"
+if [[ -z "${PROJECT_ROOT}" ]]; then
+  PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+PROJECT_ROOT="$(cd -- "${PROJECT_ROOT}" && pwd)"
 RUN_DIR="${PATHFORGE_SMOKE_RUN_DIR:-${PROJECT_ROOT}/pathforge_slide_retrieval_smoke_${SLURM_JOB_ID:-manual}}"
 CACHE_DIR="${PATHFORGE_SMOKE_CACHE:-${RUN_DIR}/cache}"
 REPORT_DIR="${RUN_DIR}/report"
