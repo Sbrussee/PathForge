@@ -5,8 +5,7 @@
 #
 # Every cache, temporary workspace, report, and Slurm log is stored under
 # ``.cache/`` in this repository. Do not override these locations with $HOME.
-# Set ``PATHFORGE_TEST_SCOPE=smoke`` to run only the three GPU smoke tests, or
-# ``PATHFORGE_TEST_SCOPE=all`` to run the complete PathForge test suite.
+# Set ``PATHFORGE_TEST_SCOPE=smoke`` to run only the three GPU smoke tests.
 #SBATCH --job-name=pathforge-slide-retrieval-smoke
 #SBATCH --output=.cache/slurm-pathforge-slide-retrieval-smoke-%j.out
 #SBATCH --error=.cache/slurm-pathforge-slide-retrieval-smoke-%j.err
@@ -71,9 +70,8 @@ RETRIEVAL_TESTS=(
 case "${TEST_SCOPE}" in
   retrieval) TESTS=("${RETRIEVAL_TESTS[@]}") ;;
   smoke) TESTS=("${SMOKE_TESTS[@]}") ;;
-  all) TESTS=(tests) ;;
   *)
-    echo "PATHFORGE_TEST_SCOPE must be 'retrieval', 'smoke', or 'all', got: ${TEST_SCOPE}" >&2
+    echo "PATHFORGE_TEST_SCOPE must be 'retrieval' or 'smoke', got: ${TEST_SCOPE}" >&2
     exit 2
     ;;
 esac
