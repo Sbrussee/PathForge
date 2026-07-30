@@ -61,6 +61,8 @@ class _FakeSample:
         self.patient_id = patient_id
         self.case_id = case_id
         self.category = category
+        self.artifact_paths = [Path(f"{sample_id}.h5")]
+        self.metadata: dict[str, object] = {}
 
 
 class _FakeSlideRetrievalBagDataset(SlideRetrievalBagDataset):
@@ -454,6 +456,13 @@ def test_missing_representations_are_materialized(
     monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
     monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
     monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _no_cache)
+    monkeypatch.setattr(
+        SlideRetrievalTask,
+        "_load_or_create_slide_representation",
+        lambda self, *, sample, representation_strategy, **kwargs: representation_strategy.run(
+            sample=sample
+        ),
+    )
     monkeypatch.setattr(mod, "atomic_slide_artifact_write", MagicMock())
     monkeypatch.setattr(mod, "save_slide_retrieval_representation", MagicMock())
 
