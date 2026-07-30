@@ -481,8 +481,34 @@ class SlideRetrievalTask(TaskBase):
                         "slide_retrieval requires SlideRetrievalBagDataset instances. "
                         f"Got {type(dataset).__name__}."
                     )
+
+                # The standalone representation CLI stores the final logical
+                # retrieval item under ``artifacts_dir/slide_retrieval``.
+                # Consult that shared cache before opening physical-slide
+                # artifacts, so precomputation is reused by benchmark runs.
+                cached_representations, missing_subset = (
+                    self._collect_existing_representations(
+                        bag_dataset=dataset,
+                        representation_id=representation_id,
+                        aggregation_level=aggregation_level,
+                        exclusion_level=exclusion_level,
+                    )
+                )
+                if missing_subset is None:
+                    output.extend(cached_representations)
+                    continue
+
+                cached_by_sample_id = {
+                    representation.sample_id: representation
+                    for representation in cached_representations
+                }
                 for index in range(dataset.num_bags):
                     group = dataset.get_sample(index)
+                    cached_representation = cached_by_sample_id.get(group.sample_id)
+                    if cached_representation is not None:
+                        output.append(cached_representation)
+                        continue
+
                     slides: list[RetrievalRepresentation] = []
                     for slide_id, artifact_path in zip(
                         group.slide_ids, group.artifact_paths

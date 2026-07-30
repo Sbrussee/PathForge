@@ -146,10 +146,13 @@ def _materialize_representations_for_combo(
         default_workers=max(1, num_workers),
     )
     retrieval_batch_size = max(1, materialization_workers)
+    representation_cache_params = task._representation_cache_params(
+        representation_strategy
+    )
     representation_id = build_retrieval_representation_id(
         feature_extraction=feature_name,
         retrieval_representation=representation_name,
-        params=representation_strategy.hyperparam_values(),
+        params=representation_cache_params,
     )
 
     failed_creation_errors: dict[str, str] = {}
