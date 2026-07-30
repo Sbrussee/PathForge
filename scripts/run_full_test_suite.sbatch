@@ -81,13 +81,23 @@ echo "Node: ${SLURMD_NODENAME:-unknown}"
 echo "Partition: ${CURRENT_PARTITION}"
 echo "CUDA extra enabled: ${PATHFORGE_ENABLE_CUDA}"
 
+FAILED_SUITES=()
+
 run_pytest() {
   local name="$1"
   shift
-  uv run python -m pytest -q "$@" \
+  if uv run python -m pytest -q "$@" \
     --basetemp "${LOG_DIR}/pytest-${name}" \
     -o "cache_dir=${LOG_DIR}/pytest-cache-${name}" \
-    2>&1 | tee "${LOG_DIR}/${name}.log"
+    2>&1 | tee "${LOG_DIR}/${name}.log"; then
+    echo "[$(date --iso-8601=seconds)] ${name} tests passed"
+    return 0
+  fi
+
+  local status=$?
+  FAILED_SUITES+=("${name} (exit ${status})")
+  echo "[$(date --iso-8601=seconds)] ${name} tests failed; continuing with remaining suites" >&2
+  return 0
 }
 
 UV_SYNC_CMD=(
@@ -122,5 +132,11 @@ echo "[$(date --iso-8601=seconds)] Running combined repository test pass"
 export PATHFORGE_SMOKE_REPORT_DIR="${COMBINED_SMOKE_REPORT_DIR}"
 run_pytest combined tests/unit tests/interface tests/integration tests/smoke
 echo "Combined smoke report directory: ${COMBINED_SMOKE_REPORT_DIR}"
+
+if (( ${#FAILED_SUITES[@]} > 0 )); then
+  echo "[$(date --iso-8601=seconds)] Full suite completed with failures:" >&2
+  printf ' - %s\n' "${FAILED_SUITES[@]}" >&2
+  exit 1
+fi
 
 echo "[$(date --iso-8601=seconds)] Full PathForge test suite completed successfully"
