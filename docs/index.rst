@@ -38,6 +38,7 @@ adapter modules where practical.
    backends
    architecture
    HDF5_structure
+   slide-retrieval
    slide_retrieval_h5_structure
    slide-retrieval-results-and-metrics
    task_outputs

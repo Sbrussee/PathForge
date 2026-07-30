@@ -1060,7 +1060,6 @@ def _survival_probability_estimates_for_times(
             risk,
             event,
             time,
-            checks=False,
         )
         return survival_function_cox(
             baseline,
