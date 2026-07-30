@@ -31,3 +31,16 @@ class RetrievalRepresentation:
             None if self.exclusion_key is None else str(self.exclusion_key)
         )
         self.additional_data = dict(self.additional_data or {})
+
+    @property
+    def row_count(self) -> int:
+        """Return the number of vectors represented by ``data``.
+
+        Patch and multi-vector representations are two-dimensional matrices;
+        single-vector representations deliberately report one row so callers
+        can apply their explicit aggregation policy.
+        """
+        try:
+            return int(self.data.shape[0])
+        except (AttributeError, IndexError):
+            return 1

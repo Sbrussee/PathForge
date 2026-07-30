@@ -297,6 +297,7 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
         kmeans_first_stage = KMeans(
             n_clusters=n_clusters,
             random_state=self.random_state,
+            n_init=10,
         )
         first_stage_labels_raw = kmeans_first_stage.fit_predict(selection_bag)
         unique_bins, group_ids = np.unique(first_stage_labels_raw, return_inverse=True)
@@ -313,6 +314,7 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
             kmeans_loc = KMeans(
                 n_clusters=n_select,
                 random_state=self.random_state,
+                n_init=10,
             )
             dists = kmeans_loc.fit_transform(cluster_coords)
 
@@ -477,6 +479,7 @@ class YottixelFeatures(_BaseYottixelRepresentationStrategy):
         kmeans_first_stage = KMeans(
             n_clusters=n_clusters,
             random_state=self.random_state,
+            n_init=10,
         )
         first_stage_labels_raw = kmeans_first_stage.fit_predict(patch_features)
         unique_bins, group_ids = np.unique(first_stage_labels_raw, return_inverse=True)
@@ -491,13 +494,10 @@ class YottixelFeatures(_BaseYottixelRepresentationStrategy):
             cluster_coords = np.asarray(coords[member_idx], dtype=float)
             n_select = max(1, int(len(member_idx) * self.perc_selected / 100))
 
-            if n_select == 1:
-                selected.append(int(member_idx[0]))
-                continue
-
             kmeans_loc = KMeans(
                 n_clusters=n_select,
                 random_state=self.random_state,
+                n_init=10,
             )
             dists = kmeans_loc.fit_transform(cluster_coords)
 

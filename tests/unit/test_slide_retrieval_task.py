@@ -369,6 +369,9 @@ def test_execute_raises_when_representation_creation_failed(
         [RetrievalRepresentation(sample_id="qry", data=[2.0])],
         {"slide-a": "traceback text"},
     )
+    task._materialize_and_aggregate_representations = lambda **_: (  # type: ignore[method-assign]
+        (_ for _ in ()).throw(RuntimeError("slide-a: traceback text"))
+    )
 
     with pytest.raises(RuntimeError, match="slide-a"):
         task.execute(
