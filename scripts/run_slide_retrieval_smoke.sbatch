@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Submit with, for example:
-#   mkdir -p .cache
+#   mkdir -p test_logs cache/tmp/pathbench_smoke
 #   sbatch --partition=PATHgpu --time=04:00:00 scripts/run_slide_retrieval_smoke.sbatch
 #
-# Every cache, temporary workspace, report, and Slurm log is stored under
-# ``.cache/`` in this repository. Do not override these locations with $HOME.
+# Every cache, temporary workspace, report, and Slurm log is stored below this
+# repository's dynamically resolved project root. Do not override them with $HOME.
 # Set ``PATHFORGE_TEST_SCOPE=smoke`` to run only the three GPU smoke tests.
 #SBATCH --job-name=pathforge-slide-retrieval-smoke
-#SBATCH --output=.cache/slurm-pathforge-slide-retrieval-smoke-%j.out
-#SBATCH --error=.cache/slurm-pathforge-slide-retrieval-smoke-%j.err
+#SBATCH --output=test_logs/slurm-pathforge-slide-retrieval-smoke-%j.out
+#SBATCH --error=test_logs/slurm-pathforge-slide-retrieval-smoke-%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -24,9 +24,9 @@ if [[ -z "${PROJECT_ROOT}" ]]; then
   PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 PROJECT_ROOT="$(cd -- "${PROJECT_ROOT}" && pwd)"
-RUN_ROOT="${PROJECT_ROOT}/.cache/slide-retrieval-smoke"
-RUN_DIR="${RUN_ROOT}/runs/${SLURM_JOB_ID:-manual}"
-CACHE_DIR="${RUN_ROOT}/download-cache"
+RUN_DIR="${PROJECT_ROOT}/test_logs/${SLURM_JOB_ID:-manual}"
+CACHE_ROOT="${PROJECT_ROOT}/cache"
+CACHE_DIR="${CACHE_ROOT}/tmp/pathbench_smoke"
 REPORT_DIR="${RUN_DIR}/report"
 TMP_DIR="${RUN_DIR}/tmp"
 PYTEST_CACHE_DIR="${RUN_DIR}/pytest-cache"
@@ -34,13 +34,13 @@ PYTEST_CACHE_DIR="${RUN_DIR}/pytest-cache"
 mkdir -p "${CACHE_DIR}" "${REPORT_DIR}" "${TMP_DIR}" "${PYTEST_CACHE_DIR}"
 export PATHFORGE_SMOKE_CACHE="$(cd "${CACHE_DIR}" && pwd)"
 export PATHFORGE_SMOKE_REPORT_DIR="$(cd "${REPORT_DIR}" && pwd)"
-export UV_CACHE_DIR="${PROJECT_ROOT}/.cache/uv"
-export XDG_CACHE_HOME="${RUN_DIR}/xdg-cache"
-export HF_HOME="${RUN_DIR}/huggingface"
-export PIP_CACHE_DIR="${RUN_DIR}/pip-cache"
-export TORCH_HOME="${RUN_DIR}/torch"
+export UV_CACHE_DIR="${CACHE_ROOT}/uv"
+export XDG_CACHE_HOME="${CACHE_ROOT}/slide-retrieval-smoke/${SLURM_JOB_ID:-manual}/xdg-cache"
+export HF_HOME="${CACHE_ROOT}/slide-retrieval-smoke/${SLURM_JOB_ID:-manual}/huggingface"
+export PIP_CACHE_DIR="${CACHE_ROOT}/slide-retrieval-smoke/${SLURM_JOB_ID:-manual}/pip-cache"
+export TORCH_HOME="${CACHE_ROOT}/slide-retrieval-smoke/${SLURM_JOB_ID:-manual}/torch"
 export TMPDIR="${TMP_DIR}"
-export PYTHONPYCACHEPREFIX="${RUN_DIR}/pycache"
+export PYTHONPYCACHEPREFIX="${CACHE_ROOT}/slide-retrieval-smoke/${SLURM_JOB_ID:-manual}/pycache"
 mkdir -p "${UV_CACHE_DIR}" "${XDG_CACHE_HOME}" "${HF_HOME}" "${PIP_CACHE_DIR}" "${TORCH_HOME}" "${PYTHONPYCACHEPREFIX}"
 
 cd "${PROJECT_ROOT}"
