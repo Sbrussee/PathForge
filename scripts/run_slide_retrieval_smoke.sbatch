@@ -49,6 +49,7 @@ TEST_SCOPE="${PATHFORGE_TEST_SCOPE:-retrieval}"
 SMOKE_TESTS=(
   tests/smoke/test_slide_retrieval_benchmark_smoke.py
   tests/smoke/test_slide_retrieval_e2e_smoke.py
+  tests/smoke/test_slide_retrieval_sish_smoke.py
   tests/smoke/test_slide_retrieval_visualization_smoke.py
 )
 RETRIEVAL_TESTS=(
