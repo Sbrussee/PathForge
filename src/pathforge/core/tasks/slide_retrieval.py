@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
-from pathlib import Path
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any
 
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
-from pathforge.core.tasks.registry import register_task
-from pathforge.core.tasks.base import TaskBase
 from pathforge.core.datasets.bag_dataset import (
     BagDataset,
     BagSample,
@@ -21,6 +19,9 @@ from pathforge.core.experiments.combinations import ComboConfig
 from pathforge.core.experiments.combo_ids import build_feature_name, build_tiling_id
 from pathforge.core.io.slide_artifacts.atomic import atomic_slide_artifact_write
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.core.tasks.base import TaskBase
+from pathforge.core.tasks.registry import register_task
+from pathforge.slide_retrieval.aggregation import aggregate_slide_representations
 from pathforge.slide_retrieval.io import (
     build_slide_retrieval_inference_output_root,
     build_slide_retrieval_output_root,
@@ -157,7 +158,9 @@ class SlideRetrievalTask(TaskBase):
         # ------------------------------------------------------------------
         # Build and run the representation stage
         # ------------------------------------------------------------------
-        logger.info("[SlideRetrieval] Stage 1/3: preparing retrieval representation strategy")
+        logger.info(
+            "[SlideRetrieval] Stage 1/3: preparing retrieval representation strategy"
+        )
         representation_strategy = build_representation_strategy(
             representation_name,
             params=combo_cfg.get_hyperparams("retrieval_representation"),
@@ -171,145 +174,31 @@ class SlideRetrievalTask(TaskBase):
                 feature_name=feature_name,
                 tiling_id=tiling_id,
             )
-        loader_workers = self._resolve_representation_loader_workers(
-            representation_strategy=representation_strategy,
-            default_workers=num_workers,
+        representation_cache_params = self._representation_cache_params(
+            representation_strategy
         )
-        materialization_workers = self._resolve_representation_workers(
-            representation_strategy=representation_strategy,
-            default_workers=max(1, num_workers),
-        )
-        retrieval_batch_size = max(1, materialization_workers)
         representation_id = build_retrieval_representation_id(
             feature_extraction=feature_name,
             retrieval_representation=representation_name,
-            params=representation_strategy.hyperparam_values(),
+            params=representation_cache_params,
         )
         logger.info(
-            "[SlideRetrieval] Representation strategy ready | representation_id=%s, "
-            "loader_workers=%d, materialization_workers=%d",
+            "[SlideRetrieval] Representation strategy ready | representation_id=%s",
             representation_id,
-            loader_workers,
-            materialization_workers,
         )
 
-        # Collect representations per configured retrieval use (reference/query/shared).
-        representations_by_use: dict[str, list[RetrievalRepresentation]] = {}
-        failed_creation_errors: dict[str, str] = {}
-        total_cached_count = 0
-        total_missing_count = 0
-        total_created_count = 0
         logger.info(
-            "[SlideRetrieval] Stage 2/3: collecting cached representations and planning materialization"
+            "[SlideRetrieval] Stage 2/3: materializing physical-slide representations"
         )
-        for use, bag_datasets in datasets_by_use.items():
-            if use not in _VALID_RETRIEVAL_USES:
-                raise ValueError(
-                    f"Unsupported retrieval dataset use '{use}'. "
-                    f"Expected one of: {sorted(_VALID_RETRIEVAL_USES)}"
-                )
-
-            representations_by_use.setdefault(use, [])
-            logger.info(
-                "[SlideRetrieval] Use '%s': processing %d dataset(s)",
-                use,
-                len(bag_datasets),
-            )
-
-            # Resolve cache hits first, then materialize only the missing items.
-            for bag_dataset in bag_datasets:
-                if not isinstance(bag_dataset, SlideRetrievalBagDataset):
-                    raise TypeError(
-                        "slide_retrieval requires SlideRetrievalBagDataset instances. "
-                        f"Got {type(bag_dataset).__name__}."
-                    )
-
-                existing_representations, missing_subset = (
-                    self._collect_existing_representations(
-                        bag_dataset=bag_dataset,
-                        representation_id=representation_id,
-                        aggregation_level=aggregation_level,
-                        exclusion_level=exclusion_level,
-                    )
-                )
-                representations_by_use[use].extend(existing_representations)
-                cached_count = len(existing_representations)
-                missing_count = 0 if missing_subset is None else len(missing_subset)
-                total_cached_count += cached_count
-                total_missing_count += missing_count
-                logger.info(
-                    "[SlideRetrieval] Dataset '%s' (%s): cached=%d, to_create=%d",
-                    bag_dataset.name,
-                    use,
-                    cached_count,
-                    missing_count,
-                )
-
-                if missing_subset is None:
-                    continue
-
-                # Bind strategy-specific loading for dataset items before iterating missing samples.
-                logger.info(
-                    "[SlideRetrieval] Creating %d representation(s) for dataset '%s' (%s)",
-                    missing_count,
-                    bag_dataset.name,
-                    use,
-                )
-                bag_dataset.bind_sample_loader(representation_strategy.load_sample)
-                try:
-                    retrieval_loader = DataLoader(
-                        missing_subset,
-                        batch_size=retrieval_batch_size,
-                        shuffle=False,
-                        num_workers=loader_workers,
-                        collate_fn=_retrieval_batch_collate,
-                    )
-                    created_retrieval_representations, creation_errors_by_sample = (
-                        self.compute_retrieval_representations(
-                            bag_dataset=bag_dataset,
-                            retrieval_loader=retrieval_loader,
-                            batch_thread_workers=materialization_workers,
-                            combo_cfg=combo_cfg,
-                            representation_strategy=representation_strategy,
-                            representation_id=representation_id,
-                            aggregation_level=aggregation_level,
-                            exclusion_level=exclusion_level,
-                        )
-                    )
-                finally:
-                    # Always detach loader hooks so future dataset access is clean.
-                    bag_dataset.clear_sample_loader()
-                representations_by_use[use].extend(created_retrieval_representations)
-                created_count = len(created_retrieval_representations)
-                total_created_count += created_count
-                failed_creation_errors.update(creation_errors_by_sample)
-                logger.info(
-                    "[SlideRetrieval] Finished creating representations for dataset '%s' (%s): "
-                    "created=%d, failed=%d",
-                    bag_dataset.name,
-                    use,
-                    created_count,
-                    len(creation_errors_by_sample),
-                )
-        logger.info(
-            "[SlideRetrieval] Representation stage summary: cached=%d, planned_new=%d, "
-            "created=%d, failed=%d",
-            total_cached_count,
-            total_missing_count,
-            total_created_count,
-            len(failed_creation_errors),
+        representations_by_use = self._materialize_and_aggregate_representations(
+            datasets_by_use=datasets_by_use,
+            representation_strategy=representation_strategy,
+            representation_id=representation_id,
+            combo_cfg=combo_cfg,
+            aggregation_level=aggregation_level,
+            exclusion_level=exclusion_level,
+            representation_cache_params=representation_cache_params,
         )
-        # Bubble up all failed sample IDs in one error for easier triage.
-        if failed_creation_errors:
-            failed_items = ", ".join(sorted(failed_creation_errors))
-            error_details = "\n".join(
-                f"- {sample_id}: {error_text}"
-                for sample_id, error_text in sorted(failed_creation_errors.items())
-            )
-            raise RuntimeError(
-                "Slide retrieval representation creation failed for one or more "
-                f"samples: {failed_items}\nRoot errors:\n{error_details}"
-            )
 
         # Convert per-use buckets into final search roles.
         logger.info("[SlideRetrieval] Stage 3/3: running search strategy")
@@ -377,6 +266,8 @@ class SlideRetrievalTask(TaskBase):
             representation_id=representation_id,
             exclusion_level=exclusion_level,
             results=results,
+            query_representations=query_representations,
+            reference_representations=reference_representations,
         )
         run_dir = self._build_run_dir(
             output_mode=output_mode,
@@ -413,6 +304,17 @@ class SlideRetrievalTask(TaskBase):
         except (TypeError, ValueError):
             search_workers = 1
         return min(max(1, search_workers), max(1, int(num_queries)))
+
+    def _representation_cache_params(
+        self, representation_strategy: Any
+    ) -> dict[str, Any]:
+        """Return the cache identity for a slide-local representation."""
+        params = dict(representation_strategy.hyperparam_values())
+        params["_schema_version"] = 2
+        if str(getattr(representation_strategy, "name", "")).startswith("yottixel"):
+            params["_kmeans_n_init"] = 10
+            params["_random_state"] = getattr(self.cfg.experiment, "random_state", None)
+        return params
 
     def _resolve_representation_loader_workers(
         self,
@@ -505,8 +407,7 @@ class SlideRetrievalTask(TaskBase):
         ]
         if missing_indices:
             raise RuntimeError(
-                "Search completed without results for query indices: "
-                f"{missing_indices}"
+                f"Search completed without results for query indices: {missing_indices}"
             )
         return [result for result in results_by_index if result is not None]
 
@@ -541,10 +442,8 @@ class SlideRetrievalTask(TaskBase):
                 f"Expected {tiling_id!r}, got {sorted(dataset_tiling_ids)}."
             )
 
-        # Enforce a single aggregation level across all retrieval uses.
         aggregation_levels = {
-            str(bag_dataset.aggregation_level)
-            for bag_dataset in all_bag_datasets
+            str(bag_dataset.aggregation_level) for bag_dataset in all_bag_datasets
         }
         if aggregation_levels != {str(aggregation_level)}:
             raise ValueError(
@@ -552,6 +451,177 @@ class SlideRetrievalTask(TaskBase):
                 "aggregation_level. "
                 f"Expected {aggregation_level!r}, got {sorted(aggregation_levels)}."
             )
+
+    def _materialize_and_aggregate_representations(
+        self,
+        *,
+        datasets_by_use: dict[str, list[BagDataset]],
+        representation_strategy: Any,
+        representation_id: str,
+        combo_cfg: ComboConfig,
+        aggregation_level: str,
+        exclusion_level: ExclusionLevel,
+        representation_cache_params: dict[str, Any],
+    ) -> dict[str, list[RetrievalRepresentation]]:
+        """Build each physical slide once, then aggregate logical retrieval items.
+
+        The H5 cache belongs to the physical slide artifact.  Grouped case and
+        patient items are assembled only after those slide-local selections
+        have been loaded, so selectors can never see a concatenated raw bag.
+        """
+        cache: dict[tuple[str, str], RetrievalRepresentation] = {}
+        by_use: dict[str, list[RetrievalRepresentation]] = {}
+        for use, datasets in datasets_by_use.items():
+            if use not in _VALID_RETRIEVAL_USES:
+                raise ValueError(f"Unsupported retrieval dataset use {use!r}.")
+            output = by_use.setdefault(use, [])
+            for dataset in datasets:
+                if not isinstance(dataset, SlideRetrievalBagDataset):
+                    raise TypeError(
+                        "slide_retrieval requires SlideRetrievalBagDataset instances. "
+                        f"Got {type(dataset).__name__}."
+                    )
+
+                # The standalone representation CLI stores the final logical
+                # retrieval item under ``artifacts_dir/slide_retrieval``.
+                # Consult that shared cache before opening physical-slide
+                # artifacts, so precomputation is reused by benchmark runs.
+                cached_representations, missing_subset = (
+                    self._collect_existing_representations(
+                        bag_dataset=dataset,
+                        representation_id=representation_id,
+                        aggregation_level=aggregation_level,
+                        exclusion_level=exclusion_level,
+                    )
+                )
+                if missing_subset is None:
+                    output.extend(cached_representations)
+                    continue
+
+                cached_by_sample_id = {
+                    representation.sample_id: representation
+                    for representation in cached_representations
+                }
+                for index in range(dataset.num_bags):
+                    group = dataset.get_sample(index)
+                    cached_representation = cached_by_sample_id.get(group.sample_id)
+                    if cached_representation is not None:
+                        output.append(cached_representation)
+                        continue
+
+                    slides: list[RetrievalRepresentation] = []
+                    for slide_id, artifact_path in zip(
+                        group.slide_ids, group.artifact_paths
+                    ):
+                        key = (str(Path(artifact_path).resolve()), str(slide_id))
+                        if key not in cache:
+                            slide_sample = BagSample(
+                                sample_id=str(slide_id),
+                                slide_ids=[str(slide_id)],
+                                artifact_paths=[Path(artifact_path)],
+                                category=group.category,
+                                patient_id=group.patient_id,
+                                case_id=group.case_id,
+                                metadata=dict(group.metadata),
+                            )
+                            try:
+                                cache[key] = self._load_or_create_slide_representation(
+                                    dataset=dataset,
+                                    sample=slide_sample,
+                                    representation_strategy=representation_strategy,
+                                    representation_id=representation_id,
+                                    combo_cfg=combo_cfg,
+                                    representation_cache_params=representation_cache_params,
+                                )
+                            except Exception as exc:
+                                raise RuntimeError(
+                                    "Slide retrieval representation creation failed "
+                                    f"for sample {slide_sample.sample_id!r}: {exc}"
+                                ) from exc
+                        slides.append(cache[key])
+                    if aggregation_level == "slide":
+                        slide_representation = slides[0]
+                        # Never mutate the cached object: a slide can belong
+                        # to more than one use and runtime identities differ.
+                        representation = RetrievalRepresentation(
+                            sample_id=group.sample_id,
+                            data=slide_representation.data,
+                            representation_type=slide_representation.representation_type,
+                            additional_data=dict(slide_representation.additional_data),
+                        )
+                        representation.metadata.category = group.category
+                        representation.metadata.patient_id = group.patient_id
+                        representation.metadata.case_id = group.case_id
+                    else:
+                        representation = aggregate_slide_representations(
+                            sample_id=group.sample_id,
+                            member_slide_ids=list(group.slide_ids),
+                            slide_representations=slides,
+                            category=group.category,
+                            patient_id=group.patient_id,
+                            case_id=group.case_id,
+                        )
+                    representation.exclusion_key = self._build_exclusion_key(
+                        sample=group,
+                        aggregation_level=aggregation_level,
+                        exclusion_level=exclusion_level,
+                    )
+                    representation.additional_data = {
+                        **representation.additional_data,
+                        "dataset_name": dataset.name,
+                        "source_slide_ids": list(group.slide_ids),
+                    }
+                    output.append(representation)
+        return by_use
+
+    def _load_or_create_slide_representation(
+        self,
+        *,
+        dataset: SlideRetrievalBagDataset,
+        sample: BagSample,
+        representation_strategy: Any,
+        representation_id: str,
+        combo_cfg: ComboConfig,
+        representation_cache_params: dict[str, Any],
+    ) -> RetrievalRepresentation:
+        """Load or create one slide-local representation in its source artifact."""
+        artifact_path = sample.artifact_paths[0]
+        with FileHandleH5(artifact_path, mode="r") as artifact:
+            cached = load_slide_retrieval_representation(
+                retrieval_artifact=artifact,
+                tile_id=dataset.tiling_id,
+                representation_id=representation_id,
+                entry_id=None,
+            )
+        if cached is not None:
+            return cached
+
+        # The adapter deliberately exposes a bag consisting of this one slide.
+        # Custom strategy loaders receive the same single-slide sample.
+        class _SingleSlideDataset:
+            tiling_id = dataset.tiling_id
+            extractor_name = dataset.extractor_name
+
+            def load_bag(self, _: int) -> Any:
+                return dataset._load_slide_bag(artifact_path)
+
+        inputs = representation_strategy.load_sample(
+            index=0, sample=sample, base_dataset=_SingleSlideDataset()
+        )
+        representation = representation_strategy.run(
+            sample=sample, bag_dataset=dataset, combo_cfg=combo_cfg, **inputs
+        )
+        representation.sample_id = sample.sample_id
+        with atomic_slide_artifact_write(artifact_path) as artifact:
+            save_slide_retrieval_representation(
+                retrieval_artifact=artifact,
+                tile_id=dataset.tiling_id,
+                representation_id=representation_id,
+                entry_id=None,
+                representation=representation,
+                params=representation_cache_params,
+            )
+        return representation
 
     def _collect_existing_representations(
         self,
@@ -716,25 +786,29 @@ class SlideRetrievalTask(TaskBase):
         # Materialize each retrieval batch concurrently with one thread per batch item.
         with ThreadPoolExecutor(max_workers=max(1, batch_thread_workers)) as executor:
             for retrieval_batch in retrieval_loader:
-                future_to_sample_id = {
-                    executor.submit(_materialize_one, dataset_item): str(
-                        dataset_item.sample.sample_id
+                results_by_index: list[RetrievalRepresentation | None] = [None] * len(
+                    retrieval_batch
+                )
+                future_to_item = {
+                    executor.submit(_materialize_one, dataset_item): (
+                        index,
+                        str(dataset_item.sample.sample_id),
                     )
-                    for dataset_item in retrieval_batch
+                    for index, dataset_item in enumerate(retrieval_batch)
                 }
                 for future in tqdm(
-                    as_completed(future_to_sample_id),
-                    total=len(future_to_sample_id),
+                    as_completed(future_to_item),
+                    total=len(future_to_item),
                     desc=f"[SlideRetrieval] Representations {bag_dataset.name}",
                     unit="sample",
                     mininterval=_PROGRESS_MIN_INTERVAL_SECONDS,
                     ncols=_PROGRESS_NCOLS,
                 ):
+                    index, sample_id = future_to_item[future]
                     try:
-                        created_retrieval_representations.append(future.result())
+                        results_by_index[index] = future.result()
                     except Exception as exc:
                         # Continue processing remaining items while collecting failures.
-                        sample_id = future_to_sample_id[future]
                         tb_text = "".join(
                             traceback.format_exception(
                                 type(exc),
@@ -744,6 +818,9 @@ class SlideRetrievalTask(TaskBase):
                         ).strip()
                         creation_errors_by_sample[sample_id] = tb_text
                         continue
+                created_retrieval_representations.extend(
+                    result for result in results_by_index if result is not None
+                )
 
         return created_retrieval_representations, creation_errors_by_sample
 
@@ -770,7 +847,9 @@ class SlideRetrievalTask(TaskBase):
             return None if sample.case_id is None else str(sample.case_id)
         if exclusion_level == "patient":
             return None if sample.patient_id is None else str(sample.patient_id)
-        raise ValueError(f"Unsupported slide retrieval exclusion level: {exclusion_level!r}")
+        raise ValueError(
+            f"Unsupported slide retrieval exclusion level: {exclusion_level!r}"
+        )
 
     def _split_representations_by_use(
         self,
@@ -785,11 +864,15 @@ class SlideRetrievalTask(TaskBase):
 
         # Shared items are intentionally included in both sets.
         reference_representations.extend(representations_by_use.get("reference", []))
-        reference_representations.extend(representations_by_use.get("query_reference", []))
+        reference_representations.extend(
+            representations_by_use.get("query_reference", [])
+        )
 
         query_representations.extend(representations_by_use.get("query", []))
         if include_query_reference_as_queries:
-            query_representations.extend(representations_by_use.get("query_reference", []))
+            query_representations.extend(
+                representations_by_use.get("query_reference", [])
+            )
 
         return reference_representations, query_representations
 
@@ -840,6 +923,8 @@ class SlideRetrievalTask(TaskBase):
         representation_id: str,
         exclusion_level: ExclusionLevel,
         results: list[SearchResult],
+        query_representations: list[RetrievalRepresentation],
+        reference_representations: list[RetrievalRepresentation],
     ) -> SlideRetrievalManifest:
         # Capture the run configuration and key output counters for reproducibility.
         return SlideRetrievalManifest(
@@ -857,6 +942,15 @@ class SlideRetrievalTask(TaskBase):
             num_queries=len(results),
             num_reference_items=len(search_strategy.search_database),
             top_k_saved=max((len(result.hits) for result in results), default=0),
+            combo_cfg=combo_cfg.to_dict(),
+            query_sample_ids=[
+                str(representation.sample_id).strip()
+                for representation in query_representations
+            ],
+            reference_sample_ids=[
+                str(representation.sample_id).strip()
+                for representation in reference_representations
+            ],
         )
 
     def _validate_combination_compatibility(
@@ -875,8 +969,7 @@ class SlideRetrievalTask(TaskBase):
             for bag_dataset in bag_datasets
         ]
         feature_levels = {
-            bag_dataset.get_feature_level()
-            for bag_dataset in all_bag_datasets
+            bag_dataset.get_feature_level() for bag_dataset in all_bag_datasets
         }
 
         # Stop early when dataset feature structure cannot be interpreted reliably.
@@ -903,7 +996,10 @@ class SlideRetrievalTask(TaskBase):
             )
 
         if len(feature_levels) != 1:
-            return False, f"Inconsistent feature levels across datasets: {sorted(feature_levels)}"
+            return (
+                False,
+                f"Inconsistent feature levels across datasets: {sorted(feature_levels)}",
+            )
 
         # The single shared level is used for all downstream compatibility checks.
         feature_level = next(iter(feature_levels))

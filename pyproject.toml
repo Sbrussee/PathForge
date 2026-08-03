@@ -16,6 +16,8 @@ dependencies = [
     "pandas",
     "openpyxl",
     "scikit-learn",
+    "scikit-image",
+    "opencv-python-headless",
     "PyYAML",
     "pydantic>=2.5,<3.0",
     "h5py",
@@ -39,6 +41,8 @@ dependencies = [
     "timm",
     "geopandas",
     "anndata>=0.10.9",
+    # xarray-schema (transitively required by lazyslide) still imports pkg_resources.
+    "setuptools>=68,<81",
 ]
 
 [project.optional-dependencies]
@@ -94,7 +98,7 @@ pathforge-slide-retrieval-representations = "pathforge.cli.retrieval_representat
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-q"
+addopts = "-q --import-mode=importlib"
 testpaths = ["tests"]
 markers = [
     "smoke: quick high-level sanity checks",

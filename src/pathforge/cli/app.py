@@ -6,7 +6,7 @@ import typer
 
 from . import benchmark_run, evaluate_run, features_run, features_slide
 from . import execution, infer_run, optimize_run, report_tiles
-from . import retrieval_mean_rgb, retrieval_representations, retrieval_sish_vqvae, visualize_run
+from . import retrieval_histogram_rgb, retrieval_mean_rgb, retrieval_representations, retrieval_sish_vqvae, visualize_run
 
 app = typer.Typer(
     help="PathForge workflows.",
@@ -28,6 +28,7 @@ features_app.command("slide")(features_slide.run_command)
 
 retrieval_app.command("representations")(retrieval_representations.run_command)
 retrieval_app.command("mean-rgb")(retrieval_mean_rgb.run_command)
+retrieval_app.command("histogram-rgb")(retrieval_histogram_rgb.run_command)
 retrieval_app.command("sish-vqvae")(retrieval_sish_vqvae.run_command)
 
 benchmark_app.command("run")(benchmark_run.run_command)

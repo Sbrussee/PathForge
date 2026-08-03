@@ -711,13 +711,11 @@ def test_compute_map_at_k_returns_expected_average_precision_scores() -> None:
 
     assert payload["k"] == 3
     assert payload["per_label"]["tumor"] == pytest.approx((1.0 + (2.0 / 3.0)) / 2.0)
-    assert payload["per_label"]["normal"] == pytest.approx(((1.0 / 2.0) + (2.0 / 3.0)) / 2.0)
+    assert payload["per_label"]["normal"] == pytest.approx(
+        ((1.0 / 2.0) + (2.0 / 3.0)) / 2.0
+    )
     assert payload["macro"] == pytest.approx(
-        (
-            ((1.0 + (2.0 / 3.0)) / 2.0)
-            + (((1.0 / 2.0) + (2.0 / 3.0)) / 2.0)
-        )
-        / 2.0
+        (((1.0 + (2.0 / 3.0)) / 2.0) + (((1.0 / 2.0) + (2.0 / 3.0)) / 2.0)) / 2.0
     )
     assert payload["counts_per_label"] == {"normal": 1, "tumor": 1}
 
@@ -751,3 +749,111 @@ def test_compute_map_at_k_counts_short_rankings_as_zero_ap() -> None:
 
     assert payload["per_label"] == {"tumor": 0.0}
     assert payload["micro"] == pytest.approx(0.0)
+
+
+def test_compute_map_at_k_uses_available_relevant_denominator(tmp_path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "annotations.csv").write_text(
+        "dataset,slide,case,patient,category\n"
+        "query_ds,S1,C1,P1,tumor\nref_ds,R1,C2,P2,tumor\n"
+        "ref_ds,R2,C3,P3,tumor\nref_ds,R3,C4,P4,normal\n",
+        encoding="utf-8",
+    )
+    run_dir = project_root / "eval_slide_retrieval" / "combo" / "run_001"
+    run_dir.mkdir(parents=True)
+    evaluation_data = SlideRetrievalEvaluationData(
+        queries=[
+            SlideRetrievalEvaluationQuery(
+                query_id="S1",
+                query_label="tumor",
+                hits=[
+                    SlideRetrievalEvaluationHit(
+                        sample_id="R1", label="tumor", score=0.9, rank=1
+                    ),
+                    SlideRetrievalEvaluationHit(
+                        sample_id="R3", label="normal", score=0.8, rank=2
+                    ),
+                ],
+            )
+        ]
+    )
+    run_context = SimpleNamespace(
+        run_dir=run_dir,
+        aggregation_level="slide",
+        label_column="category",
+        manifest={
+            "exclusion_level": "patient",
+            "reference_sample_ids": ["R1", "R2", "R3"],
+        },
+    )
+
+    payload = compute_map_at_k(
+        evaluation_data,
+        request=MetricRequest(
+            raw_name="map_at_2", canonical_name="map_at_k", params={"k": 2}
+        ),
+        run_context=run_context,
+    )
+
+    assert payload["per_label"] == {"tumor": pytest.approx(0.5)}
+    assert payload["macro"] == pytest.approx(0.5)
+
+
+def test_compute_ndcg_at_k_excludes_queries_without_relevant_reference(
+    tmp_path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "annotations.csv").write_text(
+        "dataset,slide,case,patient,category\n"
+        "query_ds,S1,C1,P1,tumor\nquery_ds,S2,C2,P2,rare\n"
+        "ref_ds,R1,C3,P3,tumor\n",
+        encoding="utf-8",
+    )
+    run_dir = project_root / "eval_slide_retrieval" / "combo" / "run_001"
+    run_dir.mkdir(parents=True)
+    evaluation_data = SlideRetrievalEvaluationData(
+        queries=[
+            SlideRetrievalEvaluationQuery(
+                query_id="S1",
+                query_label="tumor",
+                hits=[
+                    SlideRetrievalEvaluationHit(
+                        sample_id="R1", label="tumor", score=0.9, rank=1
+                    )
+                ],
+            ),
+            SlideRetrievalEvaluationQuery(
+                query_id="S2",
+                query_label="rare",
+                hits=[
+                    SlideRetrievalEvaluationHit(
+                        sample_id="R1", label="tumor", score=0.8, rank=1
+                    )
+                ],
+            ),
+        ]
+    )
+    run_context = SimpleNamespace(
+        run_dir=run_dir,
+        aggregation_level="slide",
+        label_column="category",
+        manifest={"exclusion_level": "patient", "reference_sample_ids": ["R1"]},
+    )
+
+    payload = compute_ndcg_at_k(
+        evaluation_data,
+        request=MetricRequest(
+            raw_name="ndcg_at_1", canonical_name="ndcg_at_k", params={"k": 1}
+        ),
+        run_context=run_context,
+    )
+
+    assert payload["per_label"] == {"tumor": pytest.approx(1.0)}
+    assert payload["counts"] == {
+        "num_queries": 2,
+        "num_evaluable_queries": 1,
+        "num_non_evaluable_queries": 1,
+        "num_labels": 1,
+    }

@@ -19,27 +19,26 @@ from __future__ import annotations
 #     Medical Image Analysis 83 (2023): 102645.
 #     https://doi.org/10.1016/j.media.2022.102645
 # ------------------------------------------------------------------------------
-
 import logging
 from typing import Any
 
 import numpy as np
-from sklearn.cluster import KMeans
 import torch
+from sklearn.cluster import KMeans
 
 from pathforge.core.datasets.bag_dataset import BagDataset, BagSample
 from pathforge.core.io.slide_artifacts import features as features_io
 from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.slide_retrieval.hyperparams import HyperParam
-from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
-    _build_slide_processor,
-    _resolve_sample_slide_paths,
-    _slide_retrieval_artifact_path,
-    load_or_create_slide_patch_mean_rgb,
-)
 from pathforge.slide_retrieval.representation_strategies.base import (
     BaseRetrievalRepresentationStrategy,
+)
+from pathforge.slide_retrieval.representation_strategies.histogram_rgb import (
+    resolve_sample_patch_histogram_rgb,
+)
+from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
+    resolve_sample_patch_mean_rgb,
 )
 from pathforge.slide_retrieval.representation_strategies.registry import (
     register_representation_strategy,
@@ -147,7 +146,9 @@ class _BaseYottixelRepresentationStrategy(BaseRetrievalRepresentationStrategy):
             )
 
         if len(bag_array) == 0:
-            logger.warning("Empty patch list provided to %s selection.", selection_label)
+            logger.warning(
+                "Empty patch list provided to %s selection.", selection_label
+            )
 
         return bag_array, np.asarray(coords, dtype=np.int32)
 
@@ -204,26 +205,36 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
     Yottixel RGB mosaic selection.
 
     This is a minimal port of the original two-stage Yottixel selector. In this
-    repo, the first-stage color descriptors are resolved from persisted
-    row-aligned per-patch mean RGB values stored in the slide H5 artifacts.
+    repo, the first-stage colour descriptors are resolved from persisted,
+    row-aligned RGB descriptors. The selected patch indices are then applied
+    to the configured foundation-model feature bag used by Yottixel search.
 
     Args:
-        bag: `torch.Tensor` accepted for interface compatibility and ignored by
-            this strategy after mean RGB descriptors are resolved.
+        bag: `torch.Tensor` or `np.ndarray` of patch-level foundation-model
+            features shaped `(N, D)`.
         sample: `BagSample` describing the retrieval item and source artifacts.
         combo_cfg: Combo config exposing `tile_px` and `tile_mpp`.
 
         Returns:
             RetrievalRepresentation: Multi-vector representation with
-        `data.shape == (K, 3)` for the selected patches.
+        `data.shape == (K, D)` for selected foundation-model patch rows.
 
     """
 
     name = "yottixel-rgb"
+    colour_descriptor = HyperParam(
+        str,
+        default="mean_rgb",
+        choices=("mean_rgb", "histogram_rgb"),
+        help=(
+            "RGB descriptor used only for first-stage colour clustering. "
+            "Selected patches always retain their foundation-model features."
+        ),
+    )
 
     def run(
         self,
-        bag: torch.Tensor,
+        bag: torch.Tensor | np.ndarray,
         sample: BagSample | None = None,
         **kwargs,
     ) -> RetrievalRepresentation:
@@ -231,13 +242,23 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
         Run the minimally adapted Yottixel RGB selection.
 
         Args:
-            bag: Patch-level tensor with shape `(N, D_hist)`.
+            bag: Patch-level foundation-model tensor with shape `(N, D)`.
             sample: Bag sample carrying artifact paths for coordinate loading.
-            **kwargs: Must include `combo_cfg`.
+            **kwargs: Must include `combo_cfg`, `coords` shaped `(N, 2)`,
+                `tiling_id`, and `colour_descriptors` shaped `(N, 3)` for
+                `mean_rgb` or `(N, 768)` for `histogram_rgb`.
 
         Returns:
-            RetrievalRepresentation: Selected patch rows plus Yottixel auxiliary
-            arrays in `additional_data`.
+            RetrievalRepresentation: Selected foundation-model rows shaped
+            `(K, D)` plus Yottixel auxiliary arrays in `additional_data`.
+
+        Example:
+            >>> strategy = YottixelRGB({"colour_descriptor": "mean_rgb"})
+            >>> representation = strategy.run(
+            ...     bag=np.ones((2, 4)), sample=sample,
+            ...     coords=np.array([[0, 0], [1, 1]]),
+            ...     colour_descriptors=np.ones((2, 3)), tiling_id="256px_0.5mpp",
+            ... )
         """
         if sample is None:
             raise ValueError("sample is required for Yottixel_rgb.")
@@ -245,16 +266,25 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
         combo_cfg = kwargs.get("combo_cfg")
         self.random_state = self._resolve_random_state(combo_cfg)
         tiling_id = str(kwargs.get("tiling_id"))
-        resolved_mean_rgb = np.asarray(kwargs.get("mean_rgb"), dtype=np.float32)
-        bag_array, coords = self._prepare_selection_inputs(
-            bag=resolved_mean_rgb,
+        feature_bag = self.as_numpy_feature_matrix(bag)
+        colour_descriptors = np.asarray(
+            kwargs.get("colour_descriptors"), dtype=np.float32
+        )
+        selection_bag, coords = self._prepare_selection_inputs(
+            bag=colour_descriptors,
             sample=sample,
             coords=np.asarray(kwargs.get("coords"), dtype=np.int32),
-            selection_label="yottixel mean RGB",
+            selection_label=f"yottixel {self.colour_descriptor}",
         )
-        if len(bag_array) == 0:
+        if feature_bag.shape[0] != selection_bag.shape[0]:
+            raise ValueError(
+                "Foundation-model bag rows and RGB descriptor rows must match for "
+                f"Yottixel RGB selection. Got {feature_bag.shape[0]} and "
+                f"{selection_bag.shape[0]}."
+            )
+        if len(selection_bag) == 0:
             return self._build_representation_from_indices(
-                bag_array=bag_array,
+                bag_array=feature_bag,
                 sample=sample,
                 selected=[],
                 group_ids=np.array([], dtype=np.int32),
@@ -262,14 +292,14 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
                 bag_id=tiling_id,
             )
 
-        # Stage 1: cluster patches using mean RGB descriptors.
-        mean_rgb = bag_array
-        n_clusters = min(int(self.n_clusters), len(mean_rgb))
+        # Stage 1: cluster patches using the selected RGB descriptor.
+        n_clusters = min(int(self.n_clusters), len(selection_bag))
         kmeans_first_stage = KMeans(
             n_clusters=n_clusters,
             random_state=self.random_state,
+            n_init=10,
         )
-        first_stage_labels_raw = kmeans_first_stage.fit_predict(mean_rgb)
+        first_stage_labels_raw = kmeans_first_stage.fit_predict(selection_bag)
         unique_bins, group_ids = np.unique(first_stage_labels_raw, return_inverse=True)
 
         # Stage 2: within each RGB cluster, spatially pick representative patches.
@@ -284,6 +314,7 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
             kmeans_loc = KMeans(
                 n_clusters=n_select,
                 random_state=self.random_state,
+                n_init=10,
             )
             dists = kmeans_loc.fit_transform(cluster_coords)
 
@@ -297,7 +328,7 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
                         break
 
         return self._build_representation_from_indices(
-            bag_array=bag_array,
+            bag_array=feature_bag,
             sample=sample,
             selected=selected,
             group_ids=group_ids,
@@ -312,48 +343,63 @@ class YottixelRGB(_BaseYottixelRepresentationStrategy):
         sample: BagSample,
         base_dataset: BagDataset,
     ) -> dict[str, Any]:
-        """Load mean-RGB descriptors and coordinates for one Yottixel RGB item."""
+        """Load row-aligned FM bags, RGB descriptors, and coordinates.
+
+        Args:
+            index: Position of `sample` in `base_dataset`; only used to satisfy
+                the retrieval dataset loader contract.
+            sample: Retrieval sample whose artifacts provide the patch rows.
+            base_dataset: Dataset providing the canonical `tiling_id` and
+                `extractor_name` used to read foundation-model features.
+
+        Returns a payload with `bag` shaped `(N, D)`, `colour_descriptors`
+        shaped `(N, 3)` or `(N, 768)`, and `coords` shaped `(N, 2)`. These
+        arrays share exactly the stored patch-row order.
+
+        Example:
+            >>> payload = strategy.load_sample(
+            ...     index=0, sample=sample, base_dataset=base_dataset
+            ... )
+            >>> payload["bag"].shape[0] == payload["colour_descriptors"].shape[0]
+            True
+        """
         _ = index
         tiling_id = str(base_dataset.tiling_id)
-        slide_paths_by_id = _resolve_sample_slide_paths(
+        feature_parts: list[np.ndarray] = []
+        coord_parts: list[np.ndarray] = []
+        for artifact_path in sample.artifact_paths:
+            with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                feature_parts.append(
+                    np.asarray(
+                        features_io.read_features(
+                            slide_artifact,
+                            bag_id=tiling_id,
+                            extractor_name=base_dataset.extractor_name,
+                        ),
+                        dtype=np.float32,
+                    )
+                )
+                coords = tiles_io.read_coords(slide_artifact, bag_id=tiling_id)
+            coord_parts.append(np.asarray(coords[:, :2], dtype=np.int32))
+
+        resolver = (
+            resolve_sample_patch_mean_rgb
+            if self.colour_descriptor == "mean_rgb"
+            else resolve_sample_patch_histogram_rgb
+        )
+        colour_descriptors = resolver(
             sample=sample,
+            bag_id=tiling_id,
             config=self.extra.get("config"),
         )
-        slide_processor = _build_slide_processor(config=self.extra.get("config"))
-        coord_parts: list[np.ndarray] = []
-        mean_rgb_parts: list[np.ndarray] = []
-
-        try:
-            for slide_id, artifact_path in zip(sample.slide_ids, sample.artifact_paths):
-                with FileHandleH5(artifact_path, mode="r") as slide_artifact:
-                    coords = tiles_io.read_coords(
-                        slide_artifact,
-                        bag_id=tiling_id,
-                    )
-                    mean_rgb = load_or_create_slide_patch_mean_rgb(
-                        slide_artifact=slide_artifact,
-                        retrieval_artifact_path=_slide_retrieval_artifact_path(
-                            slide_artifact_path=artifact_path,
-                            slide_id=str(slide_id),
-                        ),
-                        slide_path=slide_paths_by_id.get(str(slide_id)),
-                        bag_id=tiling_id,
-                        slide_processor=slide_processor,
-                        slide_id=str(slide_id),
-                    )
-                coord_parts.append(np.asarray(coords[:, :2], dtype=np.int32))
-                mean_rgb_parts.append(np.asarray(mean_rgb, dtype=np.float32))
-        finally:
-            close_fn = getattr(slide_processor, "close", None)
-            if callable(close_fn):
-                close_fn()
 
         return {
-            "mean_rgb": (
-                np.concatenate(mean_rgb_parts, axis=0)
-                if mean_rgb_parts
-                else np.empty((0, 3), dtype=np.float32)
+            "bag": (
+                np.concatenate(feature_parts, axis=0)
+                if feature_parts
+                else np.empty((0, 0), dtype=np.float32)
             ),
+            "colour_descriptors": np.asarray(colour_descriptors, dtype=np.float32),
             "coords": (
                 np.concatenate(coord_parts, axis=0)
                 if coord_parts
@@ -433,6 +479,7 @@ class YottixelFeatures(_BaseYottixelRepresentationStrategy):
         kmeans_first_stage = KMeans(
             n_clusters=n_clusters,
             random_state=self.random_state,
+            n_init=10,
         )
         first_stage_labels_raw = kmeans_first_stage.fit_predict(patch_features)
         unique_bins, group_ids = np.unique(first_stage_labels_raw, return_inverse=True)
@@ -447,13 +494,10 @@ class YottixelFeatures(_BaseYottixelRepresentationStrategy):
             cluster_coords = np.asarray(coords[member_idx], dtype=float)
             n_select = max(1, int(len(member_idx) * self.perc_selected / 100))
 
-            if n_select == 1:
-                selected.append(int(member_idx[0]))
-                continue
-
             kmeans_loc = KMeans(
                 n_clusters=n_select,
                 random_state=self.random_state,
+                n_init=10,
             )
             dists = kmeans_loc.fit_transform(cluster_coords)
 

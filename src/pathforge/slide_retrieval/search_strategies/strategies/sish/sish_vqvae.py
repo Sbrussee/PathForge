@@ -1,12 +1,13 @@
-# The code is mostly borrow from the class 
+# The code is mostly borrow from the class
 # Berkeley's CS294-158 Deep Unsupervised Learning (https://github.com/rll/deepul)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
-import logging 
+import logging
 
 logger = logging.getLogger(__name__)
+
 
 class ResidualBlock(nn.Module):
     """Residual convolution block used by the SISH VQ-VAE encoder/decoder."""
@@ -19,7 +20,7 @@ class ResidualBlock(nn.Module):
             nn.Conv2d(dim, dim, 3, 1, 1),
             nn.BatchNorm2d(dim),
             nn.ReLU(),
-            nn.Conv2d(dim, dim, 1)
+            nn.Conv2d(dim, dim, 1),
         )
 
     def forward(self, x):
@@ -32,7 +33,7 @@ class Quantize(nn.Module):
     def __init__(self, size, code_dim):
         super().__init__()
         self.embedding = nn.Embedding(size, code_dim)
-        self.embedding.weight.data.uniform_(-1./size,1./size)
+        self.embedding.weight.data.uniform_(-1.0 / size, 1.0 / size)
 
         self.code_dim = code_dim
         self.size = size
@@ -42,9 +43,11 @@ class Quantize(nn.Module):
         weight = self.embedding.weight
 
         flat_inputs = z.permute(0, 2, 3, 1).contiguous().view(-1, self.code_dim)
-        distances = (flat_inputs ** 2).sum(dim=1, keepdim=True) \
-                    - 2 * torch.mm(flat_inputs, weight.t()) \
-                    + (weight.t() ** 2).sum(dim=0, keepdim=True)
+        distances = (
+            (flat_inputs**2).sum(dim=1, keepdim=True)
+            - 2 * torch.mm(flat_inputs, weight.t())
+            + (weight.t() ** 2).sum(dim=0, keepdim=True)
+        )
         encoding_indices = torch.max(-distances, dim=1)[1]
         encoding_indices = encoding_indices.view(b, h, w)
         quantized = self.embedding(encoding_indices).permute(0, 3, 1, 2).contiguous()
@@ -134,7 +137,7 @@ class VectorQuantizedVAE_Encode(nn.Module):
             ResidualBlock(256),
         )
 
-        self.codebook = Quantize(code_size, code_dim)    
+        self.codebook = Quantize(code_size, code_dim)
 
     def forward(self, x):
         with torch.no_grad():

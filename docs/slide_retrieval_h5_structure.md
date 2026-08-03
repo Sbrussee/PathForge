@@ -103,6 +103,9 @@ Validation behavior:
 Intended semantics:
 - Retrieval-side per-patch descriptor cache (for example `mean_rgb`).
 - `N` should match the number of patches for the same `tile_id`.
+- SISH VQ-VAE descriptors are row-aligned to the *source* `tile_id`, but each
+  row is produced from a canonical 1024px at 0.5mpp crop centred on that source
+  tile. The descriptor dataset records this crop contract as HDF5 attributes.
 
 ---
 

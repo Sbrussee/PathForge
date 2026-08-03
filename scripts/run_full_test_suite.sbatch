@@ -1,5 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Submit with one of:
+#   mkdir -p test_logs cache/tmp/pathbench_smoke
 #   sbatch --partition=gpu       --time=10:00:00 scripts/run_full_test_suite.sbatch
 #   sbatch --partition=gpu-short --time=00:30:00 scripts/run_full_test_suite.sbatch
 #   sbatch --partition=gpu-medium --time=2-00:00:00 scripts/run_full_test_suite.sbatch
@@ -14,10 +15,11 @@
 #   PATHgpu    : pathology GPU partition, cluster-specific limit
 #
 # The script intentionally does not hard-code --partition or --time so the
-# caller can choose the queue that matches the intended test depth.
-#SBATCH --job-name=pathbench-tests
-#SBATCH --output=slurm-pathbench-tests-%j.out
-#SBATCH --error=slurm-pathbench-tests-%j.err
+# caller can choose the queue that matches the intended test depth. All test
+# artifacts and caches remain below the dynamically resolved project root.
+#SBATCH --job-name=pathforge-tests
+#SBATCH --output=test_logs/slurm-pathforge-tests-%j.out
+#SBATCH --error=test_logs/slurm-pathforge-tests-%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -26,20 +28,32 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="/exports/path-cutane-lymfomen-hpc/siemen/PathForge"
+PROJECT_ROOT="${PATHFORGE_PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-}}"
+if [[ -z "${PROJECT_ROOT}" ]]; then
+  PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+PROJECT_ROOT="$(cd -- "${PROJECT_ROOT}" && pwd)"
 LOG_DIR="${PROJECT_ROOT}/test_logs/${SLURM_JOB_ID:-manual}"
-SMOKE_CACHE_DEFAULT="/exports/path-cutane-lymfomen-hpc/siemen/cache/tmp/pathbench_smoke"
+SMOKE_CACHE_DEFAULT="${PROJECT_ROOT}/cache/tmp/pathbench_smoke"
+CACHE_ROOT="${PROJECT_ROOT}/cache"
 SMOKE_REPORT_DIR="${LOG_DIR}/smoke_report"
 COMBINED_SMOKE_REPORT_DIR="${LOG_DIR}/combined_smoke_report"
 
-# Optional overrides:
-#   SBATCH_PARTITION is informational only; set partition when submitting.
+# Optional override:
 #   PATHFORGE_ENABLE_CUDA=1 enables the cu128 extra during uv sync.
-#   PATHFORGE_SMOKE_CACHE overrides the shared smoke cache location.
 PATHFORGE_ENABLE_CUDA="${PATHFORGE_ENABLE_CUDA:-0}"
-export PATHFORGE_SMOKE_CACHE="${PATHFORGE_SMOKE_CACHE:-${SMOKE_CACHE_DEFAULT}}"
+export PATHFORGE_SMOKE_CACHE="${SMOKE_CACHE_DEFAULT}"
+export UV_CACHE_DIR="${CACHE_ROOT}/uv"
+export XDG_CACHE_HOME="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/xdg-cache"
+export HF_HOME="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/huggingface"
+export PIP_CACHE_DIR="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/pip-cache"
+export TORCH_HOME="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/torch"
+export TMPDIR="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/tmp"
+export PYTHONPYCACHEPREFIX="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/pycache"
 
-mkdir -p "${LOG_DIR}" "${PATHFORGE_SMOKE_CACHE}"
+mkdir -p "${LOG_DIR}" "${PATHFORGE_SMOKE_CACHE}" "${UV_CACHE_DIR}" \
+  "${XDG_CACHE_HOME}" "${HF_HOME}" "${PIP_CACHE_DIR}" "${TORCH_HOME}" \
+  "${TMPDIR}" "${PYTHONPYCACHEPREFIX}"
 cd "${PROJECT_ROOT}"
 
 ALLOWED_PARTITIONS=("gpu" "gpu-short" "gpu-medium" "gpu-long" "PATHgpu")
@@ -59,13 +73,32 @@ if [[ "${partition_allowed}" -ne 1 ]]; then
   exit 2
 fi
 
-echo "[$(date --iso-8601=seconds)] Starting PathBench full test suite"
+echo "[$(date --iso-8601=seconds)] Starting PathForge full test suite"
 echo "Project root: ${PROJECT_ROOT}"
 echo "Log directory: ${LOG_DIR}"
 echo "Smoke cache: ${PATHFORGE_SMOKE_CACHE}"
 echo "Node: ${SLURMD_NODENAME:-unknown}"
 echo "Partition: ${CURRENT_PARTITION}"
 echo "CUDA extra enabled: ${PATHFORGE_ENABLE_CUDA}"
+
+FAILED_SUITES=()
+
+run_pytest() {
+  local name="$1"
+  shift
+  if uv run python -m pytest -q "$@" \
+    --basetemp "${LOG_DIR}/pytest-${name}" \
+    -o "cache_dir=${LOG_DIR}/pytest-cache-${name}" \
+    2>&1 | tee "${LOG_DIR}/${name}.log"; then
+    echo "[$(date --iso-8601=seconds)] ${name} tests passed"
+    return 0
+  fi
+
+  local status=$?
+  FAILED_SUITES+=("${name} (exit ${status})")
+  echo "[$(date --iso-8601=seconds)] ${name} tests failed; continuing with remaining suites" >&2
+  return 0
+}
 
 UV_SYNC_CMD=(
   uv sync
@@ -82,22 +115,28 @@ echo "[$(date --iso-8601=seconds)] Syncing environment"
 "${UV_SYNC_CMD[@]}" 2>&1 | tee "${LOG_DIR}/uv-sync.log"
 
 echo "[$(date --iso-8601=seconds)] Running unit tests"
-uv run python -m pytest -q tests/unit 2>&1 | tee "${LOG_DIR}/unit.log"
+run_pytest unit tests/unit
 
 echo "[$(date --iso-8601=seconds)] Running interface tests"
-uv run python -m pytest -q tests/interface 2>&1 | tee "${LOG_DIR}/interface.log"
+run_pytest interface tests/interface
 
 echo "[$(date --iso-8601=seconds)] Running integration tests"
-uv run python -m pytest -q tests/integration 2>&1 | tee "${LOG_DIR}/integration.log"
+run_pytest integration tests/integration
 
 echo "[$(date --iso-8601=seconds)] Running full smoke suite"
 export PATHFORGE_SMOKE_REPORT_DIR="${SMOKE_REPORT_DIR}"
-uv run python -m pytest -m smoke -q tests/smoke 2>&1 | tee "${LOG_DIR}/smoke.log"
+run_pytest smoke -m smoke tests/smoke
 echo "Smoke report directory: ${SMOKE_REPORT_DIR}"
 
 echo "[$(date --iso-8601=seconds)] Running combined repository test pass"
 export PATHFORGE_SMOKE_REPORT_DIR="${COMBINED_SMOKE_REPORT_DIR}"
-uv run python -m pytest -q tests/unit tests/interface tests/integration tests/smoke 2>&1 | tee "${LOG_DIR}/combined.log"
+run_pytest combined tests/unit tests/interface tests/integration tests/smoke
 echo "Combined smoke report directory: ${COMBINED_SMOKE_REPORT_DIR}"
 
-echo "[$(date --iso-8601=seconds)] Full PathBench test suite completed successfully"
+if (( ${#FAILED_SUITES[@]} > 0 )); then
+  echo "[$(date --iso-8601=seconds)] Full suite completed with failures:" >&2
+  printf ' - %s\n' "${FAILED_SUITES[@]}" >&2
+  exit 1
+fi
+
+echo "[$(date --iso-8601=seconds)] Full PathForge test suite completed successfully"

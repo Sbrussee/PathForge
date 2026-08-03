@@ -543,10 +543,16 @@ class LazySlideProcessor(SlideProcessorBase):
         if getattr(wsi, "_obj", None) is None:
             raise RuntimeError("[LazySlide] WSI not loaded. Call load_wsi(wsi) first.")
 
-        if "wsi_thumbnail" not in wsi.obj:
-            raise RuntimeError("[LazySlide] 'wsi_thumbnail' not found on loaded WSI object.")
-
-        thumb_obj = wsi.obj["wsi_thumbnail"]
+        if "wsi_thumbnail" in wsi.obj:
+            thumb_obj = wsi.obj["wsi_thumbnail"]
+        else:
+            get_thumbnail = getattr(wsi.obj, "get_thumbnail", None)
+            if not callable(get_thumbnail):
+                raise RuntimeError(
+                    "[LazySlide] 'wsi_thumbnail' not found and the loaded WSI "
+                    "object does not provide get_thumbnail()."
+                )
+            thumb_obj = get_thumbnail()
         thumb = self._thumbnail_to_rgb_uint8_numpy(thumb_obj)  # HxWx3 uint8
 
         h_thumb, w_thumb = thumb.shape[:2]

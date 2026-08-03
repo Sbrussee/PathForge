@@ -75,6 +75,10 @@ def test_import_search_strategy_modules_registers_sish() -> None:
     assert get_search_strategy("sish") is SISHSearch
 
 
+def test_sish_uses_the_upstream_default_hamming_threshold() -> None:
+    assert SISHSearch().hamming_thr == 128
+
+
 def test_sish_search_ranks_hits_and_excludes_same_patient(
     tmp_path: Path,
 ) -> None:

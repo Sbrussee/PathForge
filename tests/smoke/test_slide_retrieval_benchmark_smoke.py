@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from pathforge.core.datasets.bag_dataset import BagSample
 from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
 from pathforge.core.experiments.combinations import ComboConfig
 from pathforge.slide_retrieval.representation_strategies.types import RetrievalRepresentation
@@ -13,11 +14,35 @@ from pathforge.slide_retrieval.search_strategies.types import SearchHit, SearchR
 
 
 class _FakeBagDataset:
-    def __init__(self, *, tiling_id: str, aggregation_level: str, sample_id: str) -> None:
+    """Minimal current SlideRetrievalBagDataset-shaped cache-hit fixture."""
+
+    def __init__(
+        self,
+        *,
+        tiling_id: str,
+        aggregation_level: str,
+        sample_id: str,
+        artifacts_dir: Path,
+    ) -> None:
         self.tiling_id = tiling_id
         self.aggregation_level = aggregation_level
-        self.sample_id = sample_id
+        self.artifacts_dir = artifacts_dir
         self.name = f"ds_{sample_id}"
+        self._sample = BagSample(
+            sample_id=sample_id,
+            slide_ids=[sample_id],
+            artifact_paths=[artifacts_dir / f"{sample_id}.h5"],
+            category="unknown",
+        )
+
+    @property
+    def num_bags(self) -> int:
+        return 1
+
+    def get_sample(self, index: int) -> BagSample:
+        if index != 0:
+            raise IndexError(index)
+        return self._sample
 
     def get_feature_level(self) -> str:
         return "patch"
@@ -69,7 +94,7 @@ def _make_task(tmp_path: Path) -> SlideRetrievalTask:
 
 
 @pytest.mark.smoke
-def test_smoke_slide_retrieval_benchmark_writes_manifest_and_ranked_csv(
+def test_smoke_slide_retrieval_benchmark_reuses_cached_representation_and_writes_outputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -94,7 +119,7 @@ def test_smoke_slide_retrieval_benchmark_writes_manifest_and_ranked_csv(
         lambda self, **kwargs: (
             [
                 RetrievalRepresentation(
-                    sample_id=kwargs["bag_dataset"].sample_id,
+                    sample_id=kwargs["bag_dataset"].get_sample(0).sample_id,
                     data=[[1.0, 2.0]],
                 )
             ],
@@ -120,6 +145,7 @@ def test_smoke_slide_retrieval_benchmark_writes_manifest_and_ranked_csv(
                 tiling_id="256px_0.5mpp",
                 aggregation_level="slide",
                 sample_id="ref-1",
+                artifacts_dir=tmp_path / "reference_artifacts",
             )
         ],
         "query": [
@@ -127,6 +153,7 @@ def test_smoke_slide_retrieval_benchmark_writes_manifest_and_ranked_csv(
                 tiling_id="256px_0.5mpp",
                 aggregation_level="slide",
                 sample_id="query-1",
+                artifacts_dir=tmp_path / "query_artifacts",
             )
         ],
     }

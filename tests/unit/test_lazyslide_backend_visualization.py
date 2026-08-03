@@ -34,6 +34,15 @@ class _FakeWSIObj(dict):
         self.properties = properties_obj
 
 
+class _FakeWSIObjWithThumbnailMethod(_FakeWSIObj):
+    def __init__(self, thumbnail: np.ndarray, properties_obj: object):
+        super().__init__(thumbnail=None, properties_obj=properties_obj)
+        self._thumbnail = thumbnail
+
+    def get_thumbnail(self) -> np.ndarray:
+        return self._thumbnail
+
+
 def _make_wsi(tmp_path: Path, fake_obj: object) -> WSI:
     wsi = WSI(
         slide="S1",
@@ -99,6 +108,23 @@ def test_lazyslide_get_thumbnail_accepts_grayscale_thumbnail(tmp_path: Path) -> 
 
     assert downscale_x == pytest.approx(1600 / 160)  # 10.0
     assert downscale_y == pytest.approx(800 / 80)    # 10.0
+
+
+def test_lazyslide_get_thumbnail_falls_back_to_wsidata_method(tmp_path: Path) -> None:
+    processor = LazySlideProcessor()
+    thumb = np.zeros((100, 200, 3), dtype=np.uint8)
+    fake_obj = _FakeWSIObjWithThumbnailMethod(
+        thumbnail=thumb,
+        properties_obj=_FakeProperties(shape=[1000, 4000]),
+    )
+
+    thumbnail_out, downscale_x, downscale_y = processor.get_thumbnail(
+        _make_wsi(tmp_path, fake_obj), level=-1
+    )
+
+    assert np.array_equal(thumbnail_out, thumb)
+    assert downscale_x == pytest.approx(20.0)
+    assert downscale_y == pytest.approx(10.0)
 
 
 def test_lazyslide_get_level0_shape_raises_when_properties_shape_missing(tmp_path: Path) -> None:

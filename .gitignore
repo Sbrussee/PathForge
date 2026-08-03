@@ -41,10 +41,18 @@ wandb/
 *.ckpt
 *.pt
 
+# Downloaded slide-retrieval model assets (README remains tracked).
+/model_weights/slide_retrieval/*
+!/model_weights/
+!/model_weights/slide_retrieval/
+!/model_weights/slide_retrieval/README.md
+
 # PathForge runtime outputs
 experiments/
 user_configs/
 .cache/
+/cache/
+/test_logs/
 
 # macOS
 .DS_Store

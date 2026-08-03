@@ -8,26 +8,28 @@ def build_label_aggregate_payload(
     per_label_values: dict[str, float],
     counts_per_label: dict[str, int],
     evaluable_queries: int,
+    total_queries: int | None = None,
 ) -> dict[str, object]:
     """Build the shared retrieval-metric payload shape."""
 
     ordered_per_label = {
-        label: float(value)
-        for label, value in sorted(per_label_values.items())
+        label: float(value) for label, value in sorted(per_label_values.items())
     }
     macro = (
-        float(np.mean(list(ordered_per_label.values())))
-        if ordered_per_label
-        else 0.0
+        float(np.mean(list(ordered_per_label.values()))) if ordered_per_label else 0.0
     )
-    total_queries = int(sum(counts_per_label.values()))
+    total_queries = (
+        int(sum(counts_per_label.values()))
+        if total_queries is None
+        else int(total_queries)
+    )
     weighted_numerator = sum(
         float(ordered_per_label[label]) * float(count)
         for label, count in counts_per_label.items()
     )
     micro = (
-        weighted_numerator / float(total_queries)
-        if total_queries > 0
+        weighted_numerator / float(sum(counts_per_label.values()))
+        if counts_per_label
         else 0.0
     )
 
@@ -38,6 +40,7 @@ def build_label_aggregate_payload(
         "counts": {
             "num_queries": total_queries,
             "num_evaluable_queries": int(evaluable_queries),
+            "num_non_evaluable_queries": int(total_queries - evaluable_queries),
             "num_labels": len(ordered_per_label),
         },
         "counts_per_label": dict(sorted(counts_per_label.items())),
