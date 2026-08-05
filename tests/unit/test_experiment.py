@@ -7,13 +7,14 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from torch import Tensor
 
 from pathforge.config.config import BenchmarkParamEntry, Config
 from pathforge.core.datasets.factory import build_wsi_datasets
 from pathforge.core.experiments.base import Experiment
 from pathforge.core.experiments.combinations import ComboConfig, build_combinations
+from pathforge.core.feature_extractors.base import FeatureExtractorBase
 from pathforge.utils.registries import FEATURE_EXTRACTORS
-
 
 # -----------------------------------------------------------------------------
 # Registry setup (feature extractor names must be registered for Config validation)
@@ -29,8 +30,17 @@ def _ensure_feature_extractor_registered(name: str) -> None:
         return
 
     @FEATURE_EXTRACTORS.register(name)
-    def _dummy_extractor():  # pragma: no cover
-        return "ok"
+    class _DummyExtractor(FeatureExtractorBase):
+        """Minimal registered native extractor used by experiment tests."""
+
+        def build_model(self) -> object:
+            return object()
+
+        def get_transform(self) -> None:
+            return None
+
+        def encode_images(self, images: Tensor) -> Tensor:  # pragma: no cover
+            return images
 
 
 _ensure_feature_extractor_registered(EXTRACTOR_1)

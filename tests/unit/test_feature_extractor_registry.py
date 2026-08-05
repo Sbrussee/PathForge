@@ -14,7 +14,7 @@ from pathforge.core.feature_extractors import (
 from pathforge.core.feature_extractors import registry as feature_registry
 from pathforge.core.feature_extractors.base import FeatureExtractorBase
 from pathforge.utils.registries import FEATURE_EXTRACTORS as SHARED_FEATURE_EXTRACTORS
-from pathforge.utils.registry import Registry
+from pathforge.utils.registry import FeatureExtractorRegistry, Registry
 
 
 class ExampleFeatureExtractor(FeatureExtractorBase):
@@ -62,22 +62,20 @@ def test_register_get_and_build_native_feature_extractor(
     assert extractor.embedding_size == 8
 
 
-def test_native_feature_extractor_helpers_exclude_external_entries(
+def test_feature_extractor_registry_rejects_external_entries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Third-party entries remain registered but are not exposed as native extractors."""
-    registry = Registry()
+    """The shared registry cannot be populated with third-party factories."""
+    registry = FeatureExtractorRegistry()
     monkeypatch.setattr(feature_registry, "FEATURE_EXTRACTORS", registry)
     feature_registry.register_feature_extractor("native")(ExampleFeatureExtractor)
 
-    @registry.register("timm_entry")
-    def timm_factory() -> object:
-        return object()
-
     assert feature_registry.is_native_feature_extractor_available("native") is True
-    assert feature_registry.is_native_feature_extractor_available("timm_entry") is False
     assert feature_registry.is_native_feature_extractor_available("missing") is False
     assert feature_registry.list_native_feature_extractors() == ["native"]
+
+    with pytest.raises(TypeError, match="FeatureExtractorBase"):
+        registry.register("timm_entry")(lambda: object())
 
 
 def test_register_feature_extractor_rejects_non_native_classes(
@@ -93,16 +91,13 @@ def test_register_feature_extractor_rejects_non_native_classes(
         feature_registry.register_feature_extractor("invalid_factory")(lambda: object())
 
 
-def test_build_feature_extractor_rejects_non_native_registry_entry(
+def test_build_feature_extractor_rejects_legacy_non_native_registry_entry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Building rejects registered third-party factories without invoking them."""
+    """Building still rejects non-native entries in a legacy untyped registry."""
     registry = Registry()
     monkeypatch.setattr(feature_registry, "FEATURE_EXTRACTORS", registry)
-
-    @registry.register("timm_entry")
-    def timm_factory() -> object:
-        return object()
+    registry.register("timm_entry")(lambda: object())
 
     with pytest.raises(TypeError, match="not a native PathForge feature extractor"):
         feature_registry.build_feature_extractor("timm_entry")

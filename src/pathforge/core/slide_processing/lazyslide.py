@@ -1,29 +1,27 @@
 # src/pathforge/core/slide_processing/lazyslide.py
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
 import logging
+from typing import Any, Dict, Optional, Tuple
 
+import anndata as ad  # noqa: F401  # returned by lazyslide (kept for clarity)
+import geopandas as gpd
 import lazyslide as zs
-from wsidata import open_wsi
-
 import numpy as np
 import pandas as pd
-import geopandas as gpd
-import anndata as ad  # noqa: F401  # returned by lazyslide (kept for clarity)
 import timm
 import torch
 from shapely.geometry import Polygon
 from spatialdata.models import ShapesModel
+from wsidata import open_wsi
 
-from pathforge.core.slide_processing.base import SlideProcessorBase
-from pathforge.utils.registries import SLIDE_PROCESSORS
 from pathforge.core.datasets.wsi_dataset import WSI
-from pathforge.utils.constants import LZS_ABS_MPP_TOL, LZS_REL_MPP_TOL
-
+from pathforge.core.slide_processing.base import SlideProcessorBase
 from pathforge.core.slide_processing.lazyslide_patch import (
     apply_lazyslide_feature_extraction_patch,
 )
+from pathforge.utils.constants import LZS_ABS_MPP_TOL, LZS_REL_MPP_TOL
+from pathforge.utils.registries import SLIDE_PROCESSORS
 
 apply_lazyslide_feature_extraction_patch()
 
@@ -46,6 +44,24 @@ class LazySlideProcessor(SlideProcessorBase):
 
     def __init__(self) -> None:
         super().__init__()
+
+    def native_feature_extractor_names(self) -> set[str]:
+        """Return LazySlide and timm encoders executable by this processor.
+
+        Returns:
+            Model names accepted by ``zs.tl.feature_extraction`` through the
+            LazySlide or timm model catalogs.
+
+        Example:
+            >>> "resnet18" in LazySlideProcessor().native_feature_extractor_names()
+            True
+        """
+        from pathforge.utils.registries import (
+            lazyslide_model_names,
+            timm_model_names,
+        )
+
+        return lazyslide_model_names() | timm_model_names()
 
     # ---------------------------------------------------------------------
     # Conversions: backend -> policy

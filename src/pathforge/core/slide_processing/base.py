@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 
@@ -8,6 +9,20 @@ from pathforge.core.datasets.wsi_dataset import WSI
 
 class SlideProcessorBase(ABC):
     """Base class for slide processing backends."""
+
+    def native_feature_extractor_names(self) -> set[str]:
+        """Return feature-extractor names implemented by this processor.
+
+        Returns:
+            Names that this processor can pass directly to its feature
+            extraction implementation. The default empty set represents a
+            processor without built-in encoders.
+
+        Example:
+            >>> processor.native_feature_extractor_names()
+            set()
+        """
+        return set()
 
     @abstractmethod
     def load_wsi(self, wsi: WSI) -> None:

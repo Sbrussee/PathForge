@@ -65,15 +65,17 @@ Common extractors
    * - ``phikon``
      - Phikon pathology ViT (requires HF token).
 
-Any model available through ``timm.list_models()`` or registered via the
-Lazyslide model registry can be used as a feature extractor name.
+LazySlide can execute models available through ``timm.list_models()`` and its
+own model registry. Valid names depend on the selected slide-processing
+backend; PathForge-native extractors are listed alongside the names supplied
+by that backend.
 
 Check available extractors at runtime:
 
 .. code-block:: python
 
-   from pathforge.utils.registries import all_feature_extractor_names
-   print(all_feature_extractor_names())
+   from pathforge.utils.registries import available_feature_extractor_names
+   print(available_feature_extractor_names("lazyslide"))
 
 MIL Backends
 -------------

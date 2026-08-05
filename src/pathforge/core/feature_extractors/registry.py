@@ -1,9 +1,4 @@
-"""Registry helpers for PathForge-native feature extractors.
-
-The shared registry deliberately also retains entries owned by external
-backends, such as timm and LazySlide. The helpers here provide a typed API for
-PathForge-native extractors without changing those existing registrations.
-"""
+"""Registry helpers for PathForge-native feature extractors only."""
 
 from __future__ import annotations
 
@@ -65,10 +60,10 @@ def register_feature_extractor(
 
 
 def get_feature_extractor(name: str) -> object:
-    """Retrieve any entry from the shared feature-extractor registry.
+    """Retrieve one registered PathForge-native feature-extractor class.
 
     Args:
-        name: Registry key for a native or external-backend extractor.
+        name: Registry key for a native PathForge extractor.
 
     Returns:
         The object registered for ``name``.

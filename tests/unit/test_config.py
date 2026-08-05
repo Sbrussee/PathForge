@@ -1,20 +1,31 @@
 # tests/unit/test_config.py
 
 from pathlib import Path
-import pytest
 from textwrap import dedent
+
+import pytest
 from pydantic import ValidationError
+from torch import Tensor
 
 from pathforge.config.config import Config
+from pathforge.core.feature_extractors.base import FeatureExtractorBase
 from pathforge.utils.registries import FEATURE_EXTRACTORS
 from tests.conftest import DUMMY_FE
-
 
 if not FEATURE_EXTRACTORS.is_available("resnet18"):
 
     @FEATURE_EXTRACTORS.register("resnet18")
-    def _test_resnet18():  # pragma: no cover
-        return "resnet18"
+    class _TestResNet18(FeatureExtractorBase):
+        """Minimal native extractor registration for configuration parsing."""
+
+        def build_model(self) -> object:
+            return object()
+
+        def get_transform(self) -> None:
+            return None
+
+        def encode_images(self, images: Tensor) -> Tensor:  # pragma: no cover
+            return images
 
 
 def test_from_yaml_loads_minimal_valid_config(tmp_path):
