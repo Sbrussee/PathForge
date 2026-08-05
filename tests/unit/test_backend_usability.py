@@ -16,6 +16,7 @@ from pathforge.utils.registries import (
     available_feature_extractor_names,
     list_feature_extractors,
     list_mil_models,
+    resolve_feature_extractor_source,
 )
 from pathforge.utils.registry import Registry
 from tests.conftest import DUMMY_FE, DUMMY_MIL
@@ -41,8 +42,12 @@ def test_config_accepts_lazyslide_backend_for_lazyslide_extractors(
 
     monkeypatch.setattr(
         config_module,
-        "available_feature_extractor_names",
-        lambda backend_name: {"lazy_backbone"} if backend_name == "lazyslide" else set(),
+        "resolve_feature_extractor_source",
+        lambda backend_name, name: (
+            "processor-native"
+            if (backend_name, name) == ("lazyslide", "lazy_backbone")
+            else pytest.fail(f"unexpected extractor resolution: {backend_name}/{name}")
+        ),
     )
 
     cfg = Config.model_validate(cfg_dict)
@@ -61,8 +66,10 @@ def test_config_does_not_resolve_processor_without_feature_extractors(
     cfg_dict["benchmark_parameters"]["feature_extraction"] = []
     monkeypatch.setattr(
         config_module,
-        "available_feature_extractor_names",
-        lambda backend_name: pytest.fail(f"unexpected processor lookup: {backend_name}"),
+        "resolve_feature_extractor_source",
+        lambda backend_name, name: pytest.fail(
+            f"unexpected extractor resolution: {backend_name}/{name}"
+        ),
     )
 
     cfg = Config.model_validate(cfg_dict)
@@ -78,6 +85,9 @@ def test_available_feature_extractors_combine_selected_processor_and_pathforge_r
     class ProcessorWithEncoders:
         def native_feature_extractor_names(self) -> set[str]:
             return {"processor_encoder", "shared_encoder"}
+
+        def supports_pathforge_feature_extractors(self) -> bool:
+            return True
 
     processor_registry = Registry()
     processor_registry.register("test-processor")(ProcessorWithEncoders)
@@ -119,6 +129,58 @@ def test_available_feature_extractors_reject_processor_module_without_registrati
 
     with pytest.raises(ValueError, match="backend 'unregistered-processor' is not registered"):
         available_feature_extractor_names("unregistered-processor")
+
+
+def test_resolve_feature_extractor_source_prefers_processor_native_on_collision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A processor-native name wins even when PathForge registers the same name."""
+
+    class ProcessorWithCollision:
+        def native_feature_extractor_names(self) -> set[str]:
+            return {"shared_encoder"}
+
+        def supports_pathforge_feature_extractors(self) -> bool:
+            return True
+
+    processor_registry = Registry()
+    processor_registry.register("test-processor")(ProcessorWithCollision)
+    monkeypatch.setattr(registries_module, "SLIDE_PROCESSORS", processor_registry)
+    monkeypatch.setattr(
+        registries_module,
+        "is_registered_pathforge_feature_extractor",
+        lambda name: name == "shared_encoder",
+    )
+
+    assert (
+        resolve_feature_extractor_source("test-processor", "shared_encoder")
+        == "processor-native"
+    )
+
+
+def test_resolve_feature_extractor_source_rejects_native_registry_for_unadapted_processor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Registrations require an explicit processor adapter before validation accepts them."""
+
+    class ProcessorWithoutAdapter:
+        def native_feature_extractor_names(self) -> set[str]:
+            return set()
+
+        def supports_pathforge_feature_extractors(self) -> bool:
+            return False
+
+    processor_registry = Registry()
+    processor_registry.register("test-processor")(ProcessorWithoutAdapter)
+    monkeypatch.setattr(registries_module, "SLIDE_PROCESSORS", processor_registry)
+    monkeypatch.setattr(
+        registries_module,
+        "is_registered_pathforge_feature_extractor",
+        lambda name: name == "pathforge_encoder",
+    )
+
+    with pytest.raises(ValueError, match="pathforge_encoder.*test-processor"):
+        resolve_feature_extractor_source("test-processor", "pathforge_encoder")
 
 
 def test_lazyslide_processor_lists_lazyslide_and_timm_encoders(

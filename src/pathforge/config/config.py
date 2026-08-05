@@ -23,8 +23,8 @@ from pathforge.utils.optional.torchmil import (
 )
 from pathforge.utils.registries import (
     MODELS,
-    available_feature_extractor_names,
     populate_dynamic_registries,
+    resolve_feature_extractor_source,
 )
 
 TaskType = Literal[tuple(TASK_TYPES)]
@@ -888,14 +888,8 @@ class Config(BaseModel):
         backend = self.slide_processing.backend
         fe_list = self.benchmark_parameters.get_values("feature_extraction")
         if fe_list:
-            available_extractors = available_feature_extractor_names(backend)
             for fe in fe_list:
-                if fe not in available_extractors:
-                    raise ValueError(
-                        f"Feature extractor '{fe}' is not available for slide processing "
-                        f"backend '{backend}'. Available feature extractors: "
-                        f"{sorted(available_extractors)}"
-                    )
+                resolve_feature_extractor_source(backend, str(fe))
 
         if (
             self.experiment.mode != "feature_extraction"

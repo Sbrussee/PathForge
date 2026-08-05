@@ -24,6 +24,19 @@ class SlideProcessorBase(ABC):
         """
         return set()
 
+    def supports_pathforge_feature_extractors(self) -> bool:
+        """Return whether this processor can execute PathForge-native extractors.
+
+        Returns:
+            ``True`` when the processor provides an adapter for
+            ``FeatureExtractorBase`` implementations; otherwise ``False``.
+
+        Example:
+            >>> processor.supports_pathforge_feature_extractors()
+            False
+        """
+        return False
+
     @abstractmethod
     def load_wsi(self, wsi: WSI) -> None:
         """

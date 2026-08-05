@@ -7,6 +7,7 @@ from typing import Any
 
 from pathforge.adapters.losses import register_builtin_loss_factories
 from pathforge.core.base import CoreRegistries
+from pathforge.core.feature_extractors.base import FeatureExtractorBase
 from pathforge.utils.optional.mil_lab import is_mil_lab_available
 from pathforge.utils.optional.torchmil import (
     is_torchmetrics_available,
@@ -171,6 +172,14 @@ def registered_feature_extractor_names() -> set[str]:
     return set(FEATURE_EXTRACTORS.list_plugins())
 
 
+def is_registered_pathforge_feature_extractor(name: str) -> bool:
+    """Return whether ``name`` identifies a registered native extractor class."""
+    if not FEATURE_EXTRACTORS.is_available(name):
+        return False
+    entry = FEATURE_EXTRACTORS.get(name)
+    return isinstance(entry, type) and issubclass(entry, FeatureExtractorBase)
+
+
 def discovered_feature_extractor_names() -> dict[str, set[str]]:
     """Return extractor names grouped by the backend that provides them."""
     return {
@@ -235,7 +244,46 @@ def available_feature_extractor_names(backend_name: str) -> set[str]:
     populate_pathforge_feature_extractors()
     processor = _build_slide_processor(backend_name)
     native_names = processor.native_feature_extractor_names()
-    return set(native_names) | registered_feature_extractor_names()
+    if processor.supports_pathforge_feature_extractors():
+        return set(native_names) | registered_feature_extractor_names()
+    return set(native_names)
+
+
+def resolve_feature_extractor_source(backend_name: str, name: str) -> str:
+    """Resolve an extractor name using the selected processor's precedence rule.
+
+    Processor-native names win over registrations with the same name. A native
+    PathForge extractor can be selected only when the processor explicitly
+    supports wrapping it.
+
+    Args:
+        backend_name: Selected ``slide_processing.backend`` registry key.
+        name: Unqualified configured feature-extractor name.
+
+    Returns:
+        ``"processor-native"`` or ``"pathforge-native"``.
+
+    Raises:
+        ValueError: If ``name`` cannot be executed by the selected processor.
+
+    Example:
+        >>> resolve_feature_extractor_source("lazyslide", "resnet18")
+        "processor-native"
+    """
+    populate_pathforge_feature_extractors()
+    processor = _build_slide_processor(backend_name)
+    if name in processor.native_feature_extractor_names():
+        return "processor-native"
+    if (
+        processor.supports_pathforge_feature_extractors()
+        and is_registered_pathforge_feature_extractor(name)
+    ):
+        return "pathforge-native"
+    raise ValueError(
+        f"Feature extractor '{name}' is not available for slide processing "
+        f"backend '{backend_name}'. Available feature extractors: "
+        f"{sorted(available_feature_extractor_names(backend_name))}"
+    )
 
 
 # ---------------------------------------------------------------------------

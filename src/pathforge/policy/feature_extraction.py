@@ -651,8 +651,8 @@ class FeatureExtractionPolicy(PolicyBase):
                 "batch_size": runtime.batch_size,
                 "num_workers": runtime.num_workers,
                 "amp": runtime.amp,
-                **model_params,
             },
+            "model_params": model_params,
         }
 
     def _ensure_coords_array(self, coords_array: Any) -> np.ndarray:

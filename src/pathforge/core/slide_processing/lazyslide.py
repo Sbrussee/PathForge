@@ -9,14 +9,17 @@ import geopandas as gpd
 import lazyslide as zs
 import numpy as np
 import pandas as pd
-import timm
 import torch
 from shapely.geometry import Polygon
 from spatialdata.models import ShapesModel
 from wsidata import open_wsi
 
 from pathforge.core.datasets.wsi_dataset import WSI
+from pathforge.core.feature_extractors import build_feature_extractor
 from pathforge.core.slide_processing.base import SlideProcessorBase
+from pathforge.core.slide_processing.lazyslide_feature_extractors import (
+    LazySlideFeatureExtractorAdapter,
+)
 from pathforge.core.slide_processing.lazyslide_patch import (
     apply_lazyslide_feature_extraction_patch,
 )
@@ -62,6 +65,45 @@ class LazySlideProcessor(SlideProcessorBase):
         )
 
         return lazyslide_model_names() | timm_model_names()
+
+    def supports_pathforge_feature_extractors(self) -> bool:
+        """Return that LazySlide can run PathForge extractors through its adapter."""
+        return True
+
+    def _resolve_feature_extractor(
+        self,
+        model_name: str,
+        model_params: dict[str, Any],
+    ) -> str | LazySlideFeatureExtractorAdapter:
+        """Resolve one configured name to a LazySlide model input.
+
+        Args:
+            model_name: Unqualified configured feature-extractor name.
+            model_params: Keyword arguments for a PathForge extractor constructor.
+
+        Returns:
+            The processor-native name or an adapter for a constructed PathForge
+            extractor.
+
+        Example:
+            >>> processor._resolve_feature_extractor("resnet18", {})
+            "resnet18"
+        """
+        from pathforge.utils.registries import resolve_feature_extractor_source
+        from pathforge.utils.registries import registered_feature_extractor_names
+
+        source = resolve_feature_extractor_source(self.BACKEND_NAME, model_name)
+        if source == "processor-native":
+            if model_name in registered_feature_extractor_names():
+                logger.info(
+                    "[LazySlide] Processor-native feature extractor '%s' takes precedence "
+                    "over the registered PathForge extractor with the same name.",
+                    model_name,
+                )
+            return model_name
+
+        extractor = build_feature_extractor(model_name, **model_params)
+        return LazySlideFeatureExtractorAdapter(model_name, extractor)
 
     # ---------------------------------------------------------------------
     # Conversions: backend -> policy
@@ -703,6 +745,7 @@ class LazySlideProcessor(SlideProcessorBase):
             raise ValueError("[LazySlide] Feature extraction requires config['model'] (no default).")
         model_name = str(config["model"])
         params = dict(config.get("params", {}))
+        model_params = dict(config.get("model_params", {}))
 
         coords = np.asarray(coords, dtype=np.int32)
         if coords.ndim != 2 or coords.shape[1] != 5:
@@ -730,10 +773,9 @@ class LazySlideProcessor(SlideProcessorBase):
         if config.get("color_norm") is not None:
             params["color_norm"] = config["color_norm"]
 
-        # ---- Validate model availability ----
-        available = zs.models.list_models() + timm.list_models()
-        if model_name not in available:
-            raise ValueError(f"[LazySlide] Model '{model_name}' not found in LazySlide/timm.")
+        model = self._resolve_feature_extractor(model_name, model_params)
+        if isinstance(model, str):
+            params.update(model_params)
 
         logger.info(
             "[LazySlide] Feature extraction: model=%s, device=%s, params=%s",
@@ -743,7 +785,7 @@ class LazySlideProcessor(SlideProcessorBase):
         )
 
         # ---- Run feature extraction ----
-        zs.tl.feature_extraction(wsi=wsi.obj, model=model_name, **params)
+        zs.tl.feature_extraction(wsi=wsi.obj, model=model, **params)
 
         key = f"{model_name}_tiles"
         if key not in wsi.obj:
