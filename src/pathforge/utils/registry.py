@@ -3,8 +3,6 @@ from collections.abc import Callable
 from typing import Dict, Sequence, TypeVar
 
 from pathforge.core.base import RegistryBase
-from pathforge.core.feature_extractors.base import FeatureExtractorBase
-
 T = TypeVar('T')
 
 class Registry(RegistryBase):
@@ -31,48 +29,3 @@ class Registry(RegistryBase):
 
     def is_available(self, key: str) -> bool:
         return key in self._f
-
-
-class FeatureExtractorRegistry(Registry):
-    """Registry that accepts only PathForge-native feature-extractor classes.
-
-    Example:
-        >>> @FeatureExtractorRegistry().register("my_extractor")
-        ... class MyExtractor(FeatureExtractorBase):
-        ...     ...
-    """
-
-    def register(
-        self, name: str
-    ) -> Callable[[type[FeatureExtractorBase]], type[FeatureExtractorBase]]:
-        """Return a decorator that registers one native feature-extractor class.
-
-        Args:
-            name: Unique feature-extractor identifier.
-
-        Returns:
-            A decorator accepting a ``FeatureExtractorBase`` subclass.
-
-        Raises:
-            TypeError: If the decorated object is not a native extractor class.
-
-        Example:
-            >>> registry = FeatureExtractorRegistry()
-            >>> registry.register("my_extractor")(MyExtractor)
-        """
-        register = super().register(name)
-
-        def validate_and_register(
-            extractor_class: type[FeatureExtractorBase],
-        ) -> type[FeatureExtractorBase]:
-            if not (
-                isinstance(extractor_class, type)
-                and issubclass(extractor_class, FeatureExtractorBase)
-            ):
-                raise TypeError(
-                    "Feature extractors must be FeatureExtractorBase subclasses; "
-                    f"received {extractor_class!r}."
-                )
-            return register(extractor_class)
-
-        return validate_and_register

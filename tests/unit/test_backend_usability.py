@@ -11,12 +11,15 @@ from pathforge.adapters.mil_lab.backend import register_mil_lab_backend
 from pathforge.adapters.torchmil.backend import register_torchmil_backend
 from pathforge.config.config import Config
 from pathforge.core.slide_processing.base import SlideProcessorBase
+from pathforge.core.slide_processing.factory import build_slide_processor
+from pathforge.core.feature_extractors.factory import (
+    available_feature_extractor_names,
+    resolve_feature_extractor_source,
+)
 from pathforge.utils.registries import (
     FEATURE_EXTRACTORS,
-    available_feature_extractor_names,
     list_feature_extractors,
     list_mil_models,
-    resolve_feature_extractor_source,
 )
 from pathforge.utils.registry import Registry
 from tests.conftest import DUMMY_FE, DUMMY_MIL
@@ -30,6 +33,32 @@ def test_lazyslide_backend_registers_slide_processor() -> None:
     processor_cls = registries_module.SLIDE_PROCESSORS.get("lazyslide")
 
     assert issubclass(processor_cls, SlideProcessorBase)
+
+
+def test_build_slide_processor_loads_registered_backend() -> None:
+    """The shared factory constructs the processor registered by its backend module."""
+    pytest.importorskip("lazyslide")
+
+    processor = build_slide_processor("lazyslide")
+
+    assert isinstance(processor, SlideProcessorBase)
+
+
+def test_build_slide_processor_rejects_missing_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shared factory reports an unavailable backend before construction."""
+    monkeypatch.setattr(registries_module, "SLIDE_PROCESSORS", Registry())
+    import pathforge.core.slide_processing.factory as factory_module
+
+    monkeypatch.setattr(
+        factory_module,
+        "import_module",
+        lambda module_name: (_ for _ in ()).throw(ModuleNotFoundError(module_name)),
+    )
+
+    with pytest.raises(ValueError, match="backend 'missing' is not available"):
+        build_slide_processor("missing")
 
 
 def test_config_accepts_lazyslide_backend_for_lazyslide_extractors(

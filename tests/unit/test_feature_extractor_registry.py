@@ -11,10 +11,11 @@ from pathforge.core.feature_extractors import (
     list_native_feature_extractors,
     register_feature_extractor,
 )
-from pathforge.core.feature_extractors import registry as feature_registry
+from pathforge.core.feature_extractors import factory as feature_factory
 from pathforge.core.feature_extractors.base import FeatureExtractorBase
+from pathforge.core.feature_extractors.registry import FeatureExtractorRegistry
 from pathforge.utils.registries import FEATURE_EXTRACTORS as SHARED_FEATURE_EXTRACTORS
-from pathforge.utils.registry import FeatureExtractorRegistry, Registry
+from pathforge.utils.registry import Registry
 
 
 class ExampleFeatureExtractor(FeatureExtractorBase):
@@ -36,15 +37,15 @@ class ExampleFeatureExtractor(FeatureExtractorBase):
 
 def test_feature_extractor_registry_reexports_shared_registry_instance() -> None:
     """The feature-extractor API uses the existing global registry object."""
-    assert feature_registry.FEATURE_EXTRACTORS is SHARED_FEATURE_EXTRACTORS
-    assert build_feature_extractor is feature_registry.build_feature_extractor
-    assert get_feature_extractor is feature_registry.get_feature_extractor
+    assert feature_factory._registry() is SHARED_FEATURE_EXTRACTORS
+    assert build_feature_extractor is feature_factory.build_feature_extractor
+    assert get_feature_extractor is feature_factory.get_feature_extractor
     assert (
         is_native_feature_extractor_available
-        is feature_registry.is_native_feature_extractor_available
+        is feature_factory.is_native_feature_extractor_available
     )
-    assert list_native_feature_extractors is feature_registry.list_native_feature_extractors
-    assert register_feature_extractor is feature_registry.register_feature_extractor
+    assert list_native_feature_extractors is feature_factory.list_native_feature_extractors
+    assert register_feature_extractor is feature_factory.register_feature_extractor
 
 
 def test_register_get_and_build_native_feature_extractor(
@@ -52,12 +53,12 @@ def test_register_get_and_build_native_feature_extractor(
 ) -> None:
     """Native extractors can be registered, retrieved, and constructed with kwargs."""
     registry = Registry()
-    monkeypatch.setattr(feature_registry, "FEATURE_EXTRACTORS", registry)
+    monkeypatch.setattr(feature_factory, "_registry", lambda: registry)
 
-    feature_registry.register_feature_extractor("example")(ExampleFeatureExtractor)
+    feature_factory.register_feature_extractor("example")(ExampleFeatureExtractor)
 
-    assert feature_registry.get_feature_extractor("example") is ExampleFeatureExtractor
-    extractor = feature_registry.build_feature_extractor("example", embedding_size=8)
+    assert feature_factory.get_feature_extractor("example") is ExampleFeatureExtractor
+    extractor = feature_factory.build_feature_extractor("example", embedding_size=8)
     assert isinstance(extractor, ExampleFeatureExtractor)
     assert extractor.embedding_size == 8
 
@@ -67,12 +68,12 @@ def test_feature_extractor_registry_rejects_external_entries(
 ) -> None:
     """The shared registry cannot be populated with third-party factories."""
     registry = FeatureExtractorRegistry()
-    monkeypatch.setattr(feature_registry, "FEATURE_EXTRACTORS", registry)
-    feature_registry.register_feature_extractor("native")(ExampleFeatureExtractor)
+    monkeypatch.setattr(feature_factory, "_registry", lambda: registry)
+    feature_factory.register_feature_extractor("native")(ExampleFeatureExtractor)
 
-    assert feature_registry.is_native_feature_extractor_available("native") is True
-    assert feature_registry.is_native_feature_extractor_available("missing") is False
-    assert feature_registry.list_native_feature_extractors() == ["native"]
+    assert feature_factory.is_native_feature_extractor_available("native") is True
+    assert feature_factory.is_native_feature_extractor_available("missing") is False
+    assert feature_factory.list_native_feature_extractors() == ["native"]
 
     with pytest.raises(TypeError, match="FeatureExtractorBase"):
         registry.register("timm_entry")(lambda: object())
@@ -82,13 +83,13 @@ def test_register_feature_extractor_rejects_non_native_classes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Registration rejects functions and classes outside the native base contract."""
-    monkeypatch.setattr(feature_registry, "FEATURE_EXTRACTORS", Registry())
+    monkeypatch.setattr(feature_factory, "_registry", lambda: Registry())
 
     with pytest.raises(TypeError, match="FeatureExtractorBase"):
-        feature_registry.register_feature_extractor("invalid")(object)
+        feature_factory.register_feature_extractor("invalid")(object)
 
     with pytest.raises(TypeError, match="FeatureExtractorBase"):
-        feature_registry.register_feature_extractor("invalid_factory")(lambda: object())
+        feature_factory.register_feature_extractor("invalid_factory")(lambda: object())
 
 
 def test_build_feature_extractor_rejects_legacy_non_native_registry_entry(
@@ -96,8 +97,8 @@ def test_build_feature_extractor_rejects_legacy_non_native_registry_entry(
 ) -> None:
     """Building still rejects non-native entries in a legacy untyped registry."""
     registry = Registry()
-    monkeypatch.setattr(feature_registry, "FEATURE_EXTRACTORS", registry)
+    monkeypatch.setattr(feature_factory, "_registry", lambda: registry)
     registry.register("timm_entry")(lambda: object())
 
     with pytest.raises(TypeError, match="not a native PathForge feature extractor"):
-        feature_registry.build_feature_extractor("timm_entry")
+        feature_factory.build_feature_extractor("timm_entry")

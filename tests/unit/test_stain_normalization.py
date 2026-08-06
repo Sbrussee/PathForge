@@ -73,7 +73,7 @@ class TestRestoreImageLikeTile:
 
     @staticmethod
     def _restore():
-        from pathforge.core.slide_processing.lazyslide_patch import (
+        from pathforge.core.slide_processing.lazyslide.feature_extraction_patch import (
             _restore_image_like_tile,
         )
 
@@ -127,7 +127,7 @@ class TestLazySlideImageModelProtocol:
     """Feature wrappers with ``encode_image`` must not be treated as callables."""
 
     def test_encode_image_wrapper_is_recognized_without_image_model_inheritance(self) -> None:
-        from pathforge.core.slide_processing.lazyslide_patch import (
+        from pathforge.core.slide_processing.lazyslide.feature_extraction_patch import (
             _uses_image_model_protocol,
         )
 
@@ -138,7 +138,7 @@ class TestLazySlideImageModelProtocol:
         assert _uses_image_model_protocol(TimmModelLike()) is True
 
     def test_plain_callable_is_not_an_image_model_wrapper(self) -> None:
-        from pathforge.core.slide_processing.lazyslide_patch import (
+        from pathforge.core.slide_processing.lazyslide.feature_extraction_patch import (
             _uses_image_model_protocol,
         )
 

@@ -74,7 +74,7 @@ Check available extractors at runtime:
 
 .. code-block:: python
 
-   from pathforge.utils.registries import available_feature_extractor_names
+   from pathforge.core.feature_extractors.factory import available_feature_extractor_names
    print(available_feature_extractor_names("lazyslide"))
 
 MIL Backends

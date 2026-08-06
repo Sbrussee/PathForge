@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 from importlib import import_module
-from typing import Any
-
 from pathforge.adapters.losses import register_builtin_loss_factories
 from pathforge.core.base import CoreRegistries
-from pathforge.core.feature_extractors.base import FeatureExtractorBase
+from pathforge.core.feature_extractors.registry import FeatureExtractorRegistry
 from pathforge.utils.optional.mil_lab import is_mil_lab_available
 from pathforge.utils.optional.torchmil import (
     is_torchmetrics_available,
     is_torchmil_available,
     is_torchsurv_available,
 )
-from pathforge.utils.registry import FeatureExtractorRegistry, Registry
+from pathforge.utils.registry import Registry
 
 # Define Registries
 REGISTRIES = CoreRegistries(
@@ -76,217 +73,6 @@ class BackendCatalogEntry:
 
 
 # ---------------------------------------------------------------------------
-# Optional dependency discovery (safe, lazy)
-# ---------------------------------------------------------------------------
-
-
-@lru_cache(maxsize=1)
-def _timm_module():
-    try:
-        import timm  # noqa: WPS433
-
-        return timm
-    except Exception:
-        return None
-
-
-@lru_cache(maxsize=1)
-def _lazyslide_module():
-    try:
-        import lazyslide as zs  # noqa: WPS433
-
-        return zs
-    except Exception:
-        return None
-
-
-def _normalize_model_names(items: Any) -> set[str]:
-    """
-    Convert list_models() output to a set[str], even if entries are not plain strings.
-    """
-    names: set[str] = set()
-    if items is None:
-        return names
-
-    for item in items:
-        if isinstance(item, str):
-            names.add(item)
-            continue
-
-        if hasattr(item, "key"):
-            try:
-                names.add(str(item.key))
-                continue
-            except Exception:
-                pass
-
-        if isinstance(item, dict) and "key" in item:
-            try:
-                names.add(str(item["key"]))
-                continue
-            except Exception:
-                pass
-
-        try:
-            names.add(str(item))
-        except Exception:
-            continue
-
-    return names
-
-
-@lru_cache(maxsize=1)
-def timm_model_names() -> set[str]:
-    """Return the TIMM model names visible in the current Python environment."""
-    timm = _timm_module()
-    if timm is None:
-        return set()
-    try:
-        return _normalize_model_names(timm.list_models())
-    except Exception:
-        return set()
-
-
-@lru_cache(maxsize=1)
-def lazyslide_model_names() -> set[str]:
-    """Return the LazySlide model names visible in the current Python environment."""
-    zs = _lazyslide_module()
-    if zs is None:
-        return set()
-    try:
-        return _normalize_model_names(zs.models.list_models())
-    except Exception:
-        return set()
-
-
-def registered_feature_extractor_names() -> set[str]:
-    """Return names currently registered in PathForge ``FEATURE_EXTRACTORS``.
-
-    Returns:
-        Registered PathForge-native extractor names in an unordered set.
-
-    Example:
-        >>> "my_extractor" in registered_feature_extractor_names()
-        True
-    """
-    return set(FEATURE_EXTRACTORS.list_plugins())
-
-
-def is_registered_pathforge_feature_extractor(name: str) -> bool:
-    """Return whether ``name`` identifies a registered native extractor class."""
-    if not FEATURE_EXTRACTORS.is_available(name):
-        return False
-    entry = FEATURE_EXTRACTORS.get(name)
-    return isinstance(entry, type) and issubclass(entry, FeatureExtractorBase)
-
-
-def discovered_feature_extractor_names() -> dict[str, set[str]]:
-    """Return extractor names grouped by the backend that provides them."""
-    return {
-        "pathforge": registered_feature_extractor_names(),
-        "timm": timm_model_names(),
-        "lazyslide": lazyslide_model_names(),
-    }
-
-
-def all_feature_extractor_names() -> set[str]:
-    """Return the union of PathForge-native and dynamically discovered extractors."""
-    grouped = discovered_feature_extractor_names()
-    return grouped["pathforge"] | grouped["timm"] | grouped["lazyslide"]
-
-
-def _build_slide_processor(backend_name: str) -> Any:
-    """Load and construct the processor registered for ``backend_name``.
-
-    Args:
-        backend_name: Registry key from ``slide_processing.backend``.
-
-    Returns:
-        Configured-backend processor instance.
-
-    Raises:
-        ValueError: If the backend cannot be imported or has no processor registration.
-
-    Example:
-        >>> processor = _build_slide_processor("lazyslide")
-    """
-    if not SLIDE_PROCESSORS.is_available(backend_name):
-        try:
-            import_module(f"pathforge.core.slide_processing.{backend_name}")
-        except ModuleNotFoundError as exc:
-            raise ValueError(
-                f"Slide processing backend '{backend_name}' is not available."
-            ) from exc
-
-    if not SLIDE_PROCESSORS.is_available(backend_name):
-        raise ValueError(f"Slide processing backend '{backend_name}' is not registered.")
-
-    return SLIDE_PROCESSORS.get(backend_name)()
-
-
-def available_feature_extractor_names(backend_name: str) -> set[str]:
-    """Return feature-extractor names valid for one slide-processing backend.
-
-    Args:
-        backend_name: Selected ``slide_processing.backend`` registry key.
-
-    Returns:
-        Union of the processor-native encoder names and registered PathForge
-        feature-extractor names. The union is transient and never mutates the
-        global PathForge registry.
-
-    Raises:
-        ValueError: If ``backend_name`` cannot be resolved to a processor.
-
-    Example:
-        >>> names = available_feature_extractor_names("lazyslide")
-    """
-    populate_pathforge_feature_extractors()
-    processor = _build_slide_processor(backend_name)
-    native_names = processor.native_feature_extractor_names()
-    if processor.supports_pathforge_feature_extractors():
-        return set(native_names) | registered_feature_extractor_names()
-    return set(native_names)
-
-
-def resolve_feature_extractor_source(backend_name: str, name: str) -> str:
-    """Resolve an extractor name using the selected processor's precedence rule.
-
-    Processor-native names win over registrations with the same name. A native
-    PathForge extractor can be selected only when the processor explicitly
-    supports wrapping it.
-
-    Args:
-        backend_name: Selected ``slide_processing.backend`` registry key.
-        name: Unqualified configured feature-extractor name.
-
-    Returns:
-        ``"processor-native"`` or ``"pathforge-native"``.
-
-    Raises:
-        ValueError: If ``name`` cannot be executed by the selected processor.
-
-    Example:
-        >>> resolve_feature_extractor_source("lazyslide", "resnet18")
-        "processor-native"
-    """
-    populate_pathforge_feature_extractors()
-    processor = _build_slide_processor(backend_name)
-    if name in processor.native_feature_extractor_names():
-        return "processor-native"
-    if (
-        processor.supports_pathforge_feature_extractors()
-        and is_registered_pathforge_feature_extractor(name)
-    ):
-        return "pathforge-native"
-    raise ValueError(
-        f"Feature extractor '{name}' is not available for slide processing "
-        f"backend '{backend_name}'. Available feature extractors: "
-        f"{sorted(available_feature_extractor_names(backend_name))}"
-    )
-
-
-# ---------------------------------------------------------------------------
 # Dynamic registry population (explicit, not at import time)
 # ---------------------------------------------------------------------------
 
@@ -294,7 +80,10 @@ _populated = False
 
 _feature_extractors_populated = False
 
-_NATIVE_FEATURE_EXTRACTOR_MODULES: tuple[str, ...] = ()
+_NATIVE_FEATURE_EXTRACTOR_MODULES: tuple[str, ...] = (
+    "pathforge.core.feature_extractors.mascaret",
+    "pathforge.core.feature_extractors.phaet",
+)
 
 _NATIVE_MODEL_MODULES: tuple[str, ...] = (
     "pathforge.core.models.perceiver_mil",
@@ -433,6 +222,14 @@ def list_feature_extractors() -> list[BackendCatalogEntry]:
             lazyslide_only = [item.name for item in entries if item.backend == "lazyslide"]
 
     """
+
+    from pathforge.core.feature_extractors.factory import (
+        registered_feature_extractor_names,
+    )
+    from pathforge.core.slide_processing.lazyslide.catalog import (
+        lazyslide_model_names,
+        timm_model_names,
+    )
 
     config_field = "benchmark_parameters.feature_extraction"
     entries = [

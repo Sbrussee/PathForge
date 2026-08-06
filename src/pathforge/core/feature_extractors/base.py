@@ -18,6 +18,11 @@ class FeatureExtractorBase(ABC):
     - which preprocessing transform is applied to each patch;
     - how a batch of patches is converted into feature embeddings.
 
+    PathForge's backend-independent patch-input contract is an RGB NumPy
+    array with shape ``[height, width, 3]``, ``uint8`` dtype, and values in
+    ``[0, 255]``. Backend adapters convert their native tile representation to
+    this contract before calling :meth:`get_transform`.
+
     Subclasses should set any attributes needed by ``build_model`` before
     calling ``super().__init__()``.
 
@@ -51,9 +56,10 @@ class FeatureExtractorBase(ABC):
     def get_transform(self) -> Any:
         """Return preprocessing applied to individual image patches.
 
-        The transform should convert one input patch into the representation
-        expected by the model, usually a ``torch.Tensor`` with shape
-        ``[C, H, W]``.
+        The transform receives a canonical RGB NumPy patch with shape
+        ``[H, W, 3]``, ``uint8`` dtype, and values in ``[0, 255]``. It should
+        convert that patch into the representation expected by the model,
+        usually a ``torch.Tensor`` with shape ``[C, H, W]``.
 
         Returns:
             A callable transform, or ``None`` when no preprocessing is needed.

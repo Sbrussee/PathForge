@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +15,6 @@ from pathforge.slide_retrieval.representation_strategies.storage import (
     build_retrieval_representation_artifact_path,
 )
 from pathforge.utils.constants import SLIDE_FILE_FORMATS
-from pathforge.utils.registries import SLIDE_PROCESSORS
 
 
 MEAN_RGB_DESCRIPTOR_NAME = "mean_rgb"
@@ -394,15 +392,9 @@ def _find_slide_path(*, slides_dir: Path, slide_id: str) -> Path | None:
 def _build_slide_processor(*, config: Any) -> SlideProcessorBase:
     slide_processing_cfg = _get_config_value(config, "slide_processing")
     backend_name = str(_get_config_value(slide_processing_cfg, "backend"))
+    from pathforge.core.slide_processing.factory import build_slide_processor
 
-    if not SLIDE_PROCESSORS.is_available(backend_name):
-        import_module(f"pathforge.core.slide_processing.{backend_name}")
-
-    processor_cls = SLIDE_PROCESSORS.get(backend_name)
-    if processor_cls is None:
-        raise ValueError(f"Slide processing backend '{backend_name}' not found in registry.")
-
-    return processor_cls()
+    return build_slide_processor(backend_name)
 
 
 def _get_config_value(

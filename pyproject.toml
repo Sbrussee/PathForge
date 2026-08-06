@@ -26,7 +26,8 @@ dependencies = [
     "pytorch-lightning",
     "optuna",
     "shapely",
-    "transformers==4.46.1",
+    "transformers>=5.14,<6",
+    "safetensors>=0.8.0",
     "pillow>=12.0.0",
     "reportlab>=4.4.10",
     "einops>=0.8.2",
@@ -68,7 +69,7 @@ distributed = [
     "psycopg[binary]",
 ]
 hf = [
-    "huggingface_hub>=0.25,<1.0",
+    "huggingface_hub>=1.5,<2",
 ]
 docs = [
     "sphinx>=7.0",

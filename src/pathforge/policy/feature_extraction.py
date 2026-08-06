@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from importlib import import_module
-
 from pathlib import Path
 import logging
 import numpy as np
@@ -20,7 +18,7 @@ from pathforge.core.experiments.combo_ids import (
 )
 from pathforge.core.datasets.wsi_dataset import WSI, WSIDataset
 from pathforge.core.slide_processing.base import SlideProcessorBase
-from pathforge.utils.registries import SLIDE_PROCESSORS
+from pathforge.core.slide_processing.factory import build_slide_processor
 
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.io.slide_artifacts.atomic import (
@@ -620,15 +618,7 @@ class FeatureExtractionPolicy(PolicyBase):
         }
 
     def _build_processor(self) -> SlideProcessorBase:
-        # Ensure backend module is imported so decorators register it
-        if not SLIDE_PROCESSORS.is_available(self.backend_name):
-            import_module(f"pathforge.core.slide_processing.{self.backend_name}")
-
-        ProcessorClass = SLIDE_PROCESSORS.get(self.backend_name)
-        if not ProcessorClass:
-            raise ValueError(f"Slide processing backend '{self.backend_name}' not found in registry.")
-
-        slide_processor: SlideProcessorBase = ProcessorClass()
+        slide_processor = build_slide_processor(self.backend_name)
         logger.info("[Policy] Using backend '%s' -> %s", self.backend_name, slide_processor)
         return slide_processor
 

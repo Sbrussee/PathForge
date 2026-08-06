@@ -24,8 +24,8 @@ from pathforge.utils.optional.torchmil import (
 from pathforge.utils.registries import (
     MODELS,
     populate_dynamic_registries,
-    resolve_feature_extractor_source,
 )
+from pathforge.core.feature_extractors.factory import resolve_feature_extractor_source
 
 TaskType = Literal[tuple(TASK_TYPES)]
 ModeType = Literal[tuple(MODE_TYPES)]
@@ -880,7 +880,6 @@ class Config(BaseModel):
     benchmark_parameters: BenchmarkParameters = Field(default_factory=BenchmarkParameters)
 
     weights_dir: str = "./pretrained_weights"
-    hf_key: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_backend_constraints(self) -> "Config":

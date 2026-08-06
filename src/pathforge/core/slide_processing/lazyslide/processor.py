@@ -17,10 +17,10 @@ from wsidata import open_wsi
 from pathforge.core.datasets.wsi_dataset import WSI
 from pathforge.core.feature_extractors import build_feature_extractor
 from pathforge.core.slide_processing.base import SlideProcessorBase
-from pathforge.core.slide_processing.lazyslide_feature_extractors import (
+from pathforge.core.slide_processing.lazyslide.feature_extractors import (
     LazySlideFeatureExtractorAdapter,
 )
-from pathforge.core.slide_processing.lazyslide_patch import (
+from pathforge.core.slide_processing.lazyslide.feature_extraction_patch import (
     apply_lazyslide_feature_extraction_patch,
 )
 from pathforge.utils.constants import LZS_ABS_MPP_TOL, LZS_REL_MPP_TOL
@@ -59,7 +59,7 @@ class LazySlideProcessor(SlideProcessorBase):
             >>> "resnet18" in LazySlideProcessor().native_feature_extractor_names()
             True
         """
-        from pathforge.utils.registries import (
+        from pathforge.core.slide_processing.lazyslide.catalog import (
             lazyslide_model_names,
             timm_model_names,
         )
@@ -89,8 +89,10 @@ class LazySlideProcessor(SlideProcessorBase):
             >>> processor._resolve_feature_extractor("resnet18", {})
             "resnet18"
         """
-        from pathforge.utils.registries import resolve_feature_extractor_source
-        from pathforge.utils.registries import registered_feature_extractor_names
+        from pathforge.core.feature_extractors.factory import (
+            registered_feature_extractor_names,
+            resolve_feature_extractor_source,
+        )
 
         source = resolve_feature_extractor_source(self.BACKEND_NAME, model_name)
         if source == "processor-native":
