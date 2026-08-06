@@ -10,6 +10,8 @@ import torch
 from torch import Tensor
 
 from pathforge.core.feature_extractors.base import FeatureExtractorBase
+from pathforge.core.feature_extractors.selection import FeatureExtractorSelection
+from pathforge.core.slide_processing.base import FeatureExtractionRequest
 from pathforge.core.slide_processing.lazyslide.feature_extractors import (
     LazySlideFeatureExtractorAdapter,
 )
@@ -40,6 +42,18 @@ def test_lazyslide_adapter_exposes_image_model_protocol() -> None:
     assert adapter.to("cpu") is adapter
 
 
+def test_feature_request_rejects_model_constructor_kwargs() -> None:
+    """Feature execution requests only carry backend execution settings."""
+    with pytest.raises(ValueError, match="Unsupported feature-extraction execution options"):
+        FeatureExtractionRequest(
+            selection=FeatureExtractorSelection(
+                name="example",
+                source="pathforge-native",
+            ),
+            execution_params={"pretrained": False},
+        )
+
+
 def test_lazyslide_adapter_normalizes_backend_tiles_before_native_transform() -> None:
     """LazySlide supplies PathForge transforms with canonical RGB NumPy patches."""
     extractor = _ExampleExtractor()
@@ -62,30 +76,29 @@ def test_lazyslide_processor_uses_adapter_for_pathforge_extractors(
 ) -> None:
     """PathForge resolutions construct an extractor and return a LazySlide adapter."""
     pytest.importorskip("lazyslide")
-    import pathforge.core.feature_extractors.factory as feature_factory
-    import pathforge.core.slide_processing.lazyslide as lazyslide_module
+    import pathforge.core.slide_processing.lazyslide.processor as processor_module
 
     extractor = _ExampleExtractor()
+    build_calls: list[str] = []
     monkeypatch.setattr(
-        feature_factory,
-        "resolve_feature_extractor_source",
-        lambda backend_name, name: "pathforge-native",
-    )
-    build_calls: list[tuple[str, dict[str, object]]] = []
-    monkeypatch.setattr(
-        lazyslide_module,
+        processor_module,
         "build_feature_extractor",
-        lambda name, **kwargs: build_calls.append((name, kwargs)) or extractor,
+        lambda name: build_calls.append(name) or extractor,
     )
 
-    model = lazyslide_module.LazySlideProcessor()._resolve_feature_extractor(
-        "example",
-        {"weights": "test"},
+    model = processor_module.LazySlideProcessor()._materialize_feature_extractor(
+        FeatureExtractionRequest(
+            selection=FeatureExtractorSelection(
+                name="example",
+                source="pathforge-native",
+            ),
+            execution_params={},
+        )
     )
 
     assert isinstance(model, LazySlideFeatureExtractorAdapter)
     assert model.name == "example"
-    assert build_calls == [("example", {"weights": "test"})]
+    assert build_calls == ["example"]
 
 
 def test_lazyslide_processor_prefers_processor_native_collision(
@@ -95,28 +108,28 @@ def test_lazyslide_processor_prefers_processor_native_collision(
     """Processor-native names win collisions and announce the ignored registration."""
     pytest.importorskip("lazyslide")
     import pathforge.core.feature_extractors.factory as feature_factory
-    import pathforge.core.slide_processing.lazyslide as lazyslide_module
+    import pathforge.core.slide_processing.lazyslide.processor as processor_module
 
-    monkeypatch.setattr(
-        feature_factory,
-        "resolve_feature_extractor_source",
-        lambda backend_name, name: "processor-native",
-    )
     monkeypatch.setattr(
         feature_factory,
         "registered_feature_extractor_names",
         lambda: {"shared"},
     )
     monkeypatch.setattr(
-        lazyslide_module,
+        processor_module,
         "build_feature_extractor",
-        lambda name, **kwargs: pytest.fail("native names must not be constructed"),
+        lambda name: pytest.fail("native names must not be constructed"),
     )
 
-    with caplog.at_level(logging.INFO, logger=lazyslide_module.__name__):
-        model = lazyslide_module.LazySlideProcessor()._resolve_feature_extractor(
-            "shared",
-            {},
+    with caplog.at_level(logging.INFO, logger=processor_module.__name__):
+        model = processor_module.LazySlideProcessor()._materialize_feature_extractor(
+            FeatureExtractionRequest(
+                selection=FeatureExtractorSelection(
+                    name="shared",
+                    source="processor-native",
+                ),
+                execution_params={},
+            )
         )
 
     assert model == "shared"

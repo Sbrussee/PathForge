@@ -13,6 +13,7 @@ import yaml
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from pathforge.adapters.tcga_tools import resolve_external_dataset_sources
+from pathforge.core.feature_extractors.factory import resolve_feature_extractor_source
 from pathforge.core.models.mil_base import MILModelBase
 from pathforge.utils.constants import AGGREGATION_LEVELS, MODE_TYPES, TASK_TYPES
 from pathforge.utils.optional.mil_lab import is_mil_lab_available
@@ -25,7 +26,6 @@ from pathforge.utils.registries import (
     MODELS,
     populate_dynamic_registries,
 )
-from pathforge.core.feature_extractors.factory import resolve_feature_extractor_source
 
 TaskType = Literal[tuple(TASK_TYPES)]
 ModeType = Literal[tuple(MODE_TYPES)]

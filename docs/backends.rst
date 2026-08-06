@@ -70,6 +70,11 @@ own model registry. Valid names depend on the selected slide-processing
 backend; PathForge-native extractors are listed alongside the names supplied
 by that backend.
 
+When an unqualified name appears in both catalogs, the selected processor's
+native extractor takes precedence. PathForge validates that choice without
+constructing a model; construction and any backend-specific adaptation happen
+only during feature extraction.
+
 Check available extractors at runtime:
 
 .. code-block:: python

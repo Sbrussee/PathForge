@@ -18,7 +18,9 @@ from pathforge.core.experiments.combo_ids import (
 )
 from pathforge.core.datasets.wsi_dataset import WSI, WSIDataset
 from pathforge.core.slide_processing.base import SlideProcessorBase
+from pathforge.core.slide_processing.base import FeatureExtractionRequest
 from pathforge.core.slide_processing.factory import build_slide_processor
+from pathforge.core.feature_extractors.selection import resolve_feature_extractor_selection
 
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.io.slide_artifacts.atomic import (
@@ -179,7 +181,7 @@ class FeatureExtractionPolicy(PolicyBase):
 
         segmentation_config = run_configs["seg_config"]
         tiling_config = run_configs["tile_config"]
-        feature_config = run_configs["feat_config"]
+        feature_request = run_configs["feat_request"]
 
         tile_px: int = int(tiling_config["tile_px"])
         tile_mpp: float = float(tiling_config["tile_mpp"])
@@ -226,7 +228,7 @@ class FeatureExtractionPolicy(PolicyBase):
                 slide_processor=slide_processor,
                 segmentation_config=segmentation_config,
                 tiling_config=tiling_config,
-                feature_config=feature_config,
+                feature_request=feature_request,
                 report_enabled=report_enabled,
                 thumbnail_enabled=thumbnail_enabled,
                 pending_writes=pending_writes,
@@ -287,7 +289,7 @@ class FeatureExtractionPolicy(PolicyBase):
         slide_processor: SlideProcessorBase,
         segmentation_config: dict[str, Any],
         tiling_config: dict[str, Any],
-        feature_config: dict[str, Any],
+        feature_request: FeatureExtractionRequest,
         report_enabled: bool,
         thumbnail_enabled: bool,
         pending_writes: _PendingArtifactWrites,
@@ -354,7 +356,7 @@ class FeatureExtractionPolicy(PolicyBase):
             wsi,
             coords_array,
             tiling_spec,
-            config={**feature_config, **tiling_config},
+            feature_request,
         )
 
         pending_writes.feature_matrix = self._ensure_feature_matrix(
@@ -614,7 +616,7 @@ class FeatureExtractionPolicy(PolicyBase):
         return {
             "seg_config": self._build_seg_config(),
             "tile_config": self._build_tile_config(combo_cfg),
-            "feat_config": self._build_feat_config(combo_cfg),
+            "feat_request": self._build_feature_request(combo_cfg),
         }
 
     def _build_processor(self) -> SlideProcessorBase:
@@ -633,7 +635,6 @@ class FeatureExtractionPolicy(PolicyBase):
 
     def _build_feat_config(self, combo_cfg: ComboConfig) -> dict[str, Any]:
         runtime = self.config.slide_processing.feature_extraction
-        model_params = combo_cfg.get_hyperparams("feature_extraction")
         return {
             "model": combo_cfg.feature_extraction,
             "color_norm": combo_cfg.get("color_norm"),
@@ -642,8 +643,26 @@ class FeatureExtractionPolicy(PolicyBase):
                 "num_workers": runtime.num_workers,
                 "amp": runtime.amp,
             },
-            "model_params": model_params,
         }
+
+    def _build_feature_request(self, combo_cfg: ComboConfig) -> FeatureExtractionRequest:
+        """Create one validated, typed request for extractor execution.
+
+        The shared selection logic is build-free: it validates availability but
+        defers model construction and backend adaptation to the processor.
+        """
+        feature_config = self._build_feat_config(combo_cfg)
+        selection = resolve_feature_extractor_selection(
+            self.backend_name,
+            str(feature_config["model"]),
+        )
+        execution_params = dict(feature_config["params"])
+        if feature_config["color_norm"] is not None:
+            execution_params["color_norm"] = feature_config["color_norm"]
+        return FeatureExtractionRequest(
+            selection=selection,
+            execution_params=execution_params,
+        )
 
     def _ensure_coords_array(self, coords_array: Any) -> np.ndarray:
         coords_array = np.asarray(coords_array, dtype=np.int32)

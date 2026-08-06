@@ -16,7 +16,10 @@ from wsidata import open_wsi
 
 from pathforge.core.datasets.wsi_dataset import WSI
 from pathforge.core.feature_extractors import build_feature_extractor
-from pathforge.core.slide_processing.base import SlideProcessorBase
+from pathforge.core.slide_processing.base import (
+    FeatureExtractionRequest,
+    SlideProcessorBase,
+)
 from pathforge.core.slide_processing.lazyslide.feature_extractors import (
     LazySlideFeatureExtractorAdapter,
 )
@@ -70,42 +73,32 @@ class LazySlideProcessor(SlideProcessorBase):
         """Return that LazySlide can run PathForge extractors through its adapter."""
         return True
 
-    def _resolve_feature_extractor(
+    def _materialize_feature_extractor(
         self,
-        model_name: str,
-        model_params: dict[str, Any],
+        request: FeatureExtractionRequest,
     ) -> str | LazySlideFeatureExtractorAdapter:
-        """Resolve one configured name to a LazySlide model input.
+        """Make one preselected extractor executable by LazySlide.
 
-        Args:
-            model_name: Unqualified configured feature-extractor name.
-            model_params: Keyword arguments for a PathForge extractor constructor.
-
-        Returns:
-            The processor-native name or an adapter for a constructed PathForge
-            extractor.
-
-        Example:
-            >>> processor._resolve_feature_extractor("resnet18", {})
-            "resnet18"
+        Processor-native selections pass through as names. PathForge-native
+        selections are constructed only at runtime and adapted to LazySlide's
+        image-model protocol.
         """
         from pathforge.core.feature_extractors.factory import (
             registered_feature_extractor_names,
-            resolve_feature_extractor_source,
         )
 
-        source = resolve_feature_extractor_source(self.BACKEND_NAME, model_name)
-        if source == "processor-native":
-            if model_name in registered_feature_extractor_names():
+        selection = request.selection
+        if not selection.requires_pathforge_adapter:
+            if selection.name in registered_feature_extractor_names():
                 logger.info(
                     "[LazySlide] Processor-native feature extractor '%s' takes precedence "
                     "over the registered PathForge extractor with the same name.",
-                    model_name,
+                    selection.name,
                 )
-            return model_name
+            return selection.name
 
-        extractor = build_feature_extractor(model_name, **model_params)
-        return LazySlideFeatureExtractorAdapter(model_name, extractor)
+        extractor = build_feature_extractor(selection.name)
+        return LazySlideFeatureExtractorAdapter(selection.name, extractor)
 
     # ---------------------------------------------------------------------
     # Conversions: backend -> policy
@@ -740,14 +733,10 @@ class LazySlideProcessor(SlideProcessorBase):
         wsi: WSI,
         coords: np.ndarray,
         tiling_spec: dict,
-        config: Dict[str, Any],
+        request: FeatureExtractionRequest,
     ) -> np.ndarray:
-        # Require an explicit model name (never default silently).
-        if "model" not in config or not config["model"]:
-            raise ValueError("[LazySlide] Feature extraction requires config['model'] (no default).")
-        model_name = str(config["model"])
-        params = dict(config.get("params", {}))
-        model_params = dict(config.get("model_params", {}))
+        model_name = request.selection.name
+        params = dict(request.execution_params)
 
         coords = np.asarray(coords, dtype=np.int32)
         if coords.ndim != 2 or coords.shape[1] != 5:
@@ -772,13 +761,7 @@ class LazySlideProcessor(SlideProcessorBase):
         # ---- Device default ----
         if "device" not in params and torch.cuda.is_available():
             params["device"] = "cuda"
-        if config.get("color_norm") is not None:
-            params["color_norm"] = config["color_norm"]
-
-        model = self._resolve_feature_extractor(model_name, model_params)
-        if isinstance(model, str):
-            params.update(model_params)
-
+        model = self._materialize_feature_extractor(request)
         logger.info(
             "[LazySlide] Feature extraction: model=%s, device=%s, params=%s",
             model_name,

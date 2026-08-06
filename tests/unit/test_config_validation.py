@@ -68,7 +68,7 @@ assert MODELS.is_available(TORCHMIL_BACKEND_NAME)
 
 
 # Now import config models (after registration)
-from pathforge.config.config import (  # noqa: E402
+from pathforge.config.config import (
     BenchmarkParameters,
     Config,
     FeatureExtractionRuntimeConfig,
@@ -127,12 +127,21 @@ def test_invalid_epochs_in_benchmark_parameters() -> None:
         BenchmarkParameters(epochs=[0])
 
 
-def test_backend_constraint_failure(monkeypatch: pytest.MonkeyPatch):
+def test_backend_constraint_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """A processor-native name cannot be selected for another processor."""
     monkeypatch.setattr(
         config_module,
-        "available_feature_extractor_names",
-        lambda backend_name: {GENERIC_NAME} if backend_name == "openslide" else set(),
+        "resolve_feature_extractor_source",
+        lambda backend_name, name: (
+            "processor-native"
+            if backend_name == "lazyslide" and name == LAZY_NAME
+            else (_ for _ in ()).throw(
+                ValueError(
+                    f"Feature extractor '{name}' is not available for slide processing "
+                    f"backend '{backend_name}'."
+                )
+            )
+        ),
     )
     cfg_data = {
         "experiment": {
@@ -153,12 +162,16 @@ def test_backend_constraint_failure(monkeypatch: pytest.MonkeyPatch):
     assert "not available for slide processing backend 'openslide'" in str(excinfo.value)
 
 
-def test_backend_constraint_success(monkeypatch: pytest.MonkeyPatch):
+def test_backend_constraint_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """A processor-native name validates when the selected processor provides it."""
     monkeypatch.setattr(
         config_module,
-        "available_feature_extractor_names",
-        lambda backend_name: {LAZY_NAME} if backend_name == "lazyslide" else set(),
+        "resolve_feature_extractor_source",
+        lambda backend_name, name: (
+            "processor-native"
+            if backend_name == "lazyslide" and name == LAZY_NAME
+            else (_ for _ in ()).throw(ValueError("unexpected extractor resolution"))
+        ),
     )
     cfg_data = {
         "experiment": {

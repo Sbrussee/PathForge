@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
-
 from pathforge.core.feature_extractors.base import FeatureExtractorBase
 
 
@@ -54,7 +52,6 @@ def get_feature_extractor(name: str) -> type[FeatureExtractorBase]:
 
     Args:
         name: Configured feature-extractor name.
-
     Returns:
         Registered ``FeatureExtractorBase`` subclass.
 
@@ -69,20 +66,18 @@ def get_feature_extractor(name: str) -> type[FeatureExtractorBase]:
     return extractor_class
 
 
-def build_feature_extractor(name: str, **kwargs: Any) -> FeatureExtractorBase:
-    """Construct a registered native extractor with constructor keyword arguments.
+def build_feature_extractor(name: str) -> FeatureExtractorBase:
+    """Construct a registered native extractor by its configured name.
 
     Args:
         name: Configured feature-extractor name.
-        **kwargs: Extractor constructor keyword arguments.
-
     Returns:
         Constructed extractor with its model in evaluation mode.
 
     Example:
-        >>> extractor = build_feature_extractor("my_extractor", weights="default")
+        >>> extractor = build_feature_extractor("my_extractor")
     """
-    return get_feature_extractor(name)(**kwargs)
+    return get_feature_extractor(name)()
 
 
 def is_native_feature_extractor_available(name: str) -> bool:
@@ -101,8 +96,8 @@ def list_native_feature_extractors() -> list[str]:
 
 
 def registered_feature_extractor_names() -> set[str]:
-    """Return all registered native extractor names as a set."""
-    return set(_registry().list_plugins())
+    """Return registered PathForge-native extractor names as a set."""
+    return set(list_native_feature_extractors())
 
 
 def available_feature_extractor_names(backend_name: str) -> set[str]:
@@ -124,20 +119,8 @@ def available_feature_extractor_names(backend_name: str) -> set[str]:
 
 def resolve_feature_extractor_source(backend_name: str, name: str) -> str:
     """Resolve one configured extractor name using processor-native precedence."""
-    from pathforge.core.slide_processing.factory import build_slide_processor
-    from pathforge.utils.registries import populate_pathforge_feature_extractors
-
-    populate_pathforge_feature_extractors()
-    processor = build_slide_processor(backend_name)
-    if name in processor.native_feature_extractor_names():
-        return "processor-native"
-    if (
-        processor.supports_pathforge_feature_extractors()
-        and is_native_feature_extractor_available(name)
-    ):
-        return "pathforge-native"
-    raise ValueError(
-        f"Feature extractor '{name}' is not available for slide processing "
-        f"backend '{backend_name}'. Available feature extractors: "
-        f"{sorted(available_feature_extractor_names(backend_name))}"
+    from pathforge.core.feature_extractors.selection import (
+        resolve_feature_extractor_selection,
     )
+
+    return resolve_feature_extractor_selection(backend_name, name).source
