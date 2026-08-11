@@ -107,7 +107,10 @@ def test_extract_patches_passes_slide_mpp_from_fallback(monkeypatch: pytest.Monk
     monkeypatch.setattr(proc, "_policy_tissues_to_backend", fake_policy_tissues_to_backend)
     monkeypatch.setattr(proc, "_backend_tiles_to_policy_coords", fake_backend_tiles_to_policy_coords)
     monkeypatch.setattr(proc, "_backend_tile_spec_to_policy_tiling_spec", fake_backend_tile_spec_to_policy_tiling_spec)
-    monkeypatch.setattr("pathforge.core.slide_processing.lazyslide.zs.pp.tile_tissues", fake_tile_tissues)
+    monkeypatch.setattr(
+        "pathforge.core.slide_processing.lazyslide.processor.zs.pp.tile_tissues",
+        fake_tile_tissues,
+    )
 
     coords, tiling_spec = proc.extract_patches(
         wsi,

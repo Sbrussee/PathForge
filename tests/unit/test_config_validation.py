@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
+from torch import Tensor
 
 # IMPORTANT: import registries FIRST and register dummy plugins before importing Config
-from pathforge.utils.registries import FEATURE_EXTRACTORS, LAZYSLIDE_MODEL_NAMES, MODELS
+import pathforge.config.config as config_module
+from pathforge.core.feature_extractors.base import FeatureExtractorBase
 from pathforge.core.models.mil_base import MILModelBase
-
+from pathforge.utils.registries import FEATURE_EXTRACTORS, MODELS
 
 # --- Names used in tests ---
 LAZY_NAME = "lazy_specific_model"
@@ -17,23 +19,21 @@ MIL_NAME = "MockMIL"
 TORCHMIL_BACKEND_NAME = "torchmil"
 
 
-# --- Ensure lazyslide-only name is tracked (for backend constraint check) ---
-LAZYSLIDE_MODEL_NAMES.add(LAZY_NAME)
-
-
 # --- Register dummy feature extractors (idempotent) ---
 if not FEATURE_EXTRACTORS.is_available(GENERIC_NAME):
 
     @FEATURE_EXTRACTORS.register(GENERIC_NAME)
-    def _generic_model():  # pragma: no cover
-        return "generic"
+    class _GenericFeatureExtractor(FeatureExtractorBase):
+        """Minimal native extractor registration for configuration tests."""
 
+        def build_model(self) -> object:
+            return object()
 
-if not FEATURE_EXTRACTORS.is_available(LAZY_NAME):
+        def get_transform(self) -> None:
+            return None
 
-    @FEATURE_EXTRACTORS.register(LAZY_NAME)
-    def _lazy_model():  # pragma: no cover
-        return "lazy"
+        def encode_images(self, images: Tensor) -> Tensor:  # pragma: no cover
+            return images
 
 
 # --- Register dummy MIL model (idempotent) ---
@@ -63,19 +63,17 @@ if not MODELS.is_available(TORCHMIL_BACKEND_NAME):
 
 # Sanity: ensure registration actually happened (this will make failures obvious)
 assert FEATURE_EXTRACTORS.is_available(GENERIC_NAME)
-assert FEATURE_EXTRACTORS.is_available(LAZY_NAME)
 assert MODELS.is_available(MIL_NAME)
 assert MODELS.is_available(TORCHMIL_BACKEND_NAME)
 
 
 # Now import config models (after registration)
-from pathforge.config.config import (  # noqa: E402
+from pathforge.config.config import (
     BenchmarkParameters,
     Config,
     FeatureExtractionRuntimeConfig,
     SearchSpaceParameter,
 )
-
 
 # --- Tests ---
 
@@ -129,7 +127,22 @@ def test_invalid_epochs_in_benchmark_parameters() -> None:
         BenchmarkParameters(epochs=[0])
 
 
-def test_backend_constraint_failure():
+def test_backend_constraint_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A processor-native name cannot be selected for another processor."""
+    monkeypatch.setattr(
+        config_module,
+        "resolve_feature_extractor_source",
+        lambda backend_name, name: (
+            "processor-native"
+            if backend_name == "lazyslide" and name == LAZY_NAME
+            else (_ for _ in ()).throw(
+                ValueError(
+                    f"Feature extractor '{name}' is not available for slide processing "
+                    f"backend '{backend_name}'."
+                )
+            )
+        ),
+    )
     cfg_data = {
         "experiment": {
             "project_name": "test",
@@ -146,10 +159,20 @@ def test_backend_constraint_failure():
     }
     with pytest.raises(ValidationError) as excinfo:
         Config.model_validate(cfg_data)
-    assert "requires 'lazyslide' backend" in str(excinfo.value)
+    assert "not available for slide processing backend 'openslide'" in str(excinfo.value)
 
 
-def test_backend_constraint_success():
+def test_backend_constraint_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A processor-native name validates when the selected processor provides it."""
+    monkeypatch.setattr(
+        config_module,
+        "resolve_feature_extractor_source",
+        lambda backend_name, name: (
+            "processor-native"
+            if backend_name == "lazyslide" and name == LAZY_NAME
+            else (_ for _ in ()).throw(ValueError("unexpected extractor resolution"))
+        ),
+    )
     cfg_data = {
         "experiment": {
             "project_name": "test",

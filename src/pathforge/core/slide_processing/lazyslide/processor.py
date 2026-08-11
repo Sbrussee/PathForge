@@ -1,29 +1,33 @@
 # src/pathforge/core/slide_processing/lazyslide.py
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
 import logging
+from typing import Any, Dict, Optional, Tuple
 
+import anndata as ad  # noqa: F401  # returned by lazyslide (kept for clarity)
+import geopandas as gpd
 import lazyslide as zs
-from wsidata import open_wsi
-
 import numpy as np
 import pandas as pd
-import geopandas as gpd
-import anndata as ad  # noqa: F401  # returned by lazyslide (kept for clarity)
-import timm
 import torch
 from shapely.geometry import Polygon
 from spatialdata.models import ShapesModel
+from wsidata import open_wsi
 
-from pathforge.core.slide_processing.base import SlideProcessorBase
-from pathforge.utils.registries import SLIDE_PROCESSORS
 from pathforge.core.datasets.wsi_dataset import WSI
-from pathforge.utils.constants import LZS_ABS_MPP_TOL, LZS_REL_MPP_TOL
-
-from pathforge.core.slide_processing.lazyslide_patch import (
+from pathforge.core.feature_extractors import build_feature_extractor
+from pathforge.core.slide_processing.base import (
+    FeatureExtractionRequest,
+    SlideProcessorBase,
+)
+from pathforge.core.slide_processing.lazyslide.feature_extractors import (
+    LazySlideFeatureExtractorAdapter,
+)
+from pathforge.core.slide_processing.lazyslide.feature_extraction_patch import (
     apply_lazyslide_feature_extraction_patch,
 )
+from pathforge.utils.constants import LZS_ABS_MPP_TOL, LZS_REL_MPP_TOL
+from pathforge.utils.registries import SLIDE_PROCESSORS
 
 apply_lazyslide_feature_extraction_patch()
 
@@ -46,6 +50,55 @@ class LazySlideProcessor(SlideProcessorBase):
 
     def __init__(self) -> None:
         super().__init__()
+
+    def native_feature_extractor_names(self) -> set[str]:
+        """Return LazySlide and timm encoders executable by this processor.
+
+        Returns:
+            Model names accepted by ``zs.tl.feature_extraction`` through the
+            LazySlide or timm model catalogs.
+
+        Example:
+            >>> "resnet18" in LazySlideProcessor().native_feature_extractor_names()
+            True
+        """
+        from pathforge.core.slide_processing.lazyslide.catalog import (
+            lazyslide_model_names,
+            timm_model_names,
+        )
+
+        return lazyslide_model_names() | timm_model_names()
+
+    def supports_pathforge_feature_extractors(self) -> bool:
+        """Return that LazySlide can run PathForge extractors through its adapter."""
+        return True
+
+    def _materialize_feature_extractor(
+        self,
+        request: FeatureExtractionRequest,
+    ) -> str | LazySlideFeatureExtractorAdapter:
+        """Make one preselected extractor executable by LazySlide.
+
+        Processor-native selections pass through as names. PathForge-native
+        selections are constructed only at runtime and adapted to LazySlide's
+        image-model protocol.
+        """
+        from pathforge.core.feature_extractors.factory import (
+            registered_feature_extractor_names,
+        )
+
+        selection = request.selection
+        if not selection.requires_pathforge_adapter:
+            if selection.name in registered_feature_extractor_names():
+                logger.info(
+                    "[LazySlide] Processor-native feature extractor '%s' takes precedence "
+                    "over the registered PathForge extractor with the same name.",
+                    selection.name,
+                )
+            return selection.name
+
+        extractor = build_feature_extractor(selection.name)
+        return LazySlideFeatureExtractorAdapter(selection.name, extractor)
 
     # ---------------------------------------------------------------------
     # Conversions: backend -> policy
@@ -680,13 +733,10 @@ class LazySlideProcessor(SlideProcessorBase):
         wsi: WSI,
         coords: np.ndarray,
         tiling_spec: dict,
-        config: Dict[str, Any],
+        request: FeatureExtractionRequest,
     ) -> np.ndarray:
-        # Require an explicit model name (never default silently).
-        if "model" not in config or not config["model"]:
-            raise ValueError("[LazySlide] Feature extraction requires config['model'] (no default).")
-        model_name = str(config["model"])
-        params = dict(config.get("params", {}))
+        model_name = request.selection.name
+        params = dict(request.execution_params)
 
         coords = np.asarray(coords, dtype=np.int32)
         if coords.ndim != 2 or coords.shape[1] != 5:
@@ -711,14 +761,7 @@ class LazySlideProcessor(SlideProcessorBase):
         # ---- Device default ----
         if "device" not in params and torch.cuda.is_available():
             params["device"] = "cuda"
-        if config.get("color_norm") is not None:
-            params["color_norm"] = config["color_norm"]
-
-        # ---- Validate model availability ----
-        available = zs.models.list_models() + timm.list_models()
-        if model_name not in available:
-            raise ValueError(f"[LazySlide] Model '{model_name}' not found in LazySlide/timm.")
-
+        model = self._materialize_feature_extractor(request)
         logger.info(
             "[LazySlide] Feature extraction: model=%s, device=%s, params=%s",
             model_name,
@@ -727,7 +770,7 @@ class LazySlideProcessor(SlideProcessorBase):
         )
 
         # ---- Run feature extraction ----
-        zs.tl.feature_extraction(wsi=wsi.obj, model=model_name, **params)
+        zs.tl.feature_extraction(wsi=wsi.obj, model=model, **params)
 
         key = f"{model_name}_tiles"
         if key not in wsi.obj:

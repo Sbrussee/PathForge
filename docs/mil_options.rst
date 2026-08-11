@@ -43,11 +43,11 @@ Preprocessing grid
 Feature extractors
 ------------------
 
-PathForge accepts the union returned by
-:func:`pathforge.utils.registries.all_feature_extractor_names`: registered
-PathForge extractors, ``timm.list_models()``, and the installed LazySlide model
-catalogue. The exact list therefore depends on installed package versions and
-access to gated weights. The `LazySlide model zoo
+PathForge resolves extractors for the selected slide-processing backend.
+LazySlide accepts its installed model catalogue and ``timm.list_models()``,
+then falls back to registered PathForge extractors when it can wrap them. The
+exact list therefore depends on installed package versions and access to gated
+weights. The `LazySlide model zoo
 <https://lazyslide.readthedocs.io/en/stable/avail_models.html>`_ documents
 pathology-specific models, input assumptions, access requirements, and
 licenses. LazySlide also supports timm vision models.
@@ -56,10 +56,9 @@ Inspect the actual options in the active environment:
 
 .. code-block:: python
 
-   from pathforge.utils.registries import list_feature_extractors
+   from pathforge.core.feature_extractors.factory import available_feature_extractor_names
 
-   for item in list_feature_extractors():
-       print(item.name, item.backend, item.available)
+   print(available_feature_extractor_names("lazyslide"))
 
 MIL architectures
 -----------------

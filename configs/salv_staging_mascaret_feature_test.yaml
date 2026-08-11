@@ -1,0 +1,63 @@
+# One-slide, non-destructive staging test for PathForge's Mascaret extractor.
+# The Slurm job selects the dataset from the slide filename's centre prefix.
+experiment:
+  project_name: salv_staging_mascaret_test
+  annotation_file: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/all_key_diagnostic.csv
+  task: null
+  mode: feature_extraction
+  aggregation_level: slide
+  report: false
+  thumbnail: false
+  mixed_precision: true
+  num_workers: 8
+
+slide_processing:
+  backend: lazyslide
+  segmentation_method: otsu
+  save_tiles: false
+  feature_extraction:
+    batch_size: 32
+    num_workers: 4
+    amp: true
+
+# The selected dataset determines the destination artifact directory.  Source
+# slides remain in slides_staging; the single-slide CLI receives that path.
+datasets:
+  - name: Salv-LUMC
+    slides_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-LUMC/slides
+    artifacts_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-LUMC/slide_artifacts
+    tissue_annotations_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-LUMC/tissue_annotations
+    used_for: testing
+  - name: Salv-HMC
+    slides_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-HMC/slides
+    artifacts_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-HMC/slide_artifacts
+    tissue_annotations_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-HMC/tissue_annotations
+    used_for: testing
+  - name: Salv-MUMC
+    slides_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-MUMC/slides
+    artifacts_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-MUMC/slide_artifacts
+    tissue_annotations_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-MUMC/tissue_annotations
+    used_for: testing
+  - name: Salv-UMCU
+    slides_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-UMCU/slides
+    artifacts_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-UMCU/slide_artifacts
+    tissue_annotations_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-UMCU/tissue_annotations
+    used_for: testing
+  - name: Salv-RUMC
+    slides_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-RUMC/slides
+    artifacts_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-RUMC/slide_artifacts
+    tissue_annotations_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-RUMC/tissue_annotations
+    used_for: testing
+  - name: Salv-EMC
+    slides_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-EMC/slides
+    artifacts_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-EMC/slide_artifacts
+    tissue_annotations_dir: /exports/path-pulmogroep-hpc/Jurre/03_Resources/Datasets/Salv-Dataset/Salv-EMC/tissue_annotations
+    used_for: testing
+
+benchmark_parameters:
+  tile_px: [256]
+  tile_mpp: [1.0]
+  color_norm: [null]
+  feature_extraction: [mascaret, phaet]
+  mil: []
+  loss: []

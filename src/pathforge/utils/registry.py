@@ -1,7 +1,8 @@
 # pathforge/utils/registry.py
-from pathforge.core.base import RegistryBase
-from typing import Callable, Dict, Sequence, TypeVar
+from collections.abc import Callable
+from typing import Dict, Sequence, TypeVar
 
+from pathforge.core.base import RegistryBase
 T = TypeVar('T')
 
 class Registry(RegistryBase):

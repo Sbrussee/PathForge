@@ -3,31 +3,29 @@ from __future__ import annotations
 import csv
 import inspect
 import os
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional
 
 import torch
 import yaml
-
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
-from pathforge.utils.constants import TASK_TYPES, MODE_TYPES, AGGREGATION_LEVELS
+from pathforge.adapters.tcga_tools import resolve_external_dataset_sources
+from pathforge.core.feature_extractors.factory import resolve_feature_extractor_source
+from pathforge.core.models.mil_base import MILModelBase
+from pathforge.utils.constants import AGGREGATION_LEVELS, MODE_TYPES, TASK_TYPES
+from pathforge.utils.optional.mil_lab import is_mil_lab_available
 from pathforge.utils.optional.torchmil import (
     is_torchmetrics_available,
     is_torchmil_available,
     is_torchsurv_available,
 )
-from pathforge.utils.optional.mil_lab import is_mil_lab_available
 from pathforge.utils.registries import (
     MODELS,
-    LAZYSLIDE_MODEL_NAMES,
-    is_feature_extractor_available,
-    all_feature_extractor_names,
     populate_dynamic_registries,
 )
-from pathforge.core.models.mil_base import MILModelBase
-from pathforge.adapters.tcga_tools import resolve_external_dataset_sources
 
 TaskType = Literal[tuple(TASK_TYPES)]
 ModeType = Literal[tuple(MODE_TYPES)]
@@ -724,22 +722,6 @@ class BenchmarkParameters(BaseModel):
                 raise ValueError(f"Invalid tile_mpp: {mpp}. Must be > 0.")
         return v
 
-    @field_validator("feature_extraction")
-    @classmethod
-    def validate_feature_extractors(
-        cls,
-        v: list[BenchmarkParamInput],
-    ) -> list[BenchmarkParamInput]:
-        populate_dynamic_registries()
-        for entry in cls._normalize_entries(v, field_name="feature_extraction"):
-            fe = str(entry.value)
-            if not is_feature_extractor_available(fe):
-                raise ValueError(
-                    f"Feature extractor '{fe}' is not registered. "
-                    f"Available feature extractors: {sorted(all_feature_extractor_names())}"
-                )
-        return v
-
     @field_validator("color_norm")
     @classmethod
     def validate_color_norm(
@@ -898,20 +880,15 @@ class Config(BaseModel):
     benchmark_parameters: BenchmarkParameters = Field(default_factory=BenchmarkParameters)
 
     weights_dir: str = "./pretrained_weights"
-    hf_key: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_backend_constraints(self) -> "Config":
         """Ensures selected optional backends are installed before runtime uses them."""
         backend = self.slide_processing.backend
         fe_list = self.benchmark_parameters.get_values("feature_extraction")
-
-        for fe in fe_list:
-            if fe in LAZYSLIDE_MODEL_NAMES and backend != "lazyslide":
-                raise ValueError(
-                    f"Feature extractor '{fe}' requires 'lazyslide' backend. "
-                    f"Current backend: '{backend}'."
-                )
+        if fe_list:
+            for fe in fe_list:
+                resolve_feature_extractor_source(backend, str(fe))
 
         if (
             self.experiment.mode != "feature_extraction"

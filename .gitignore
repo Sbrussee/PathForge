@@ -60,3 +60,5 @@ user_configs/
 # Editor
 .idea/
 .vscode/
+
+docs_temp/

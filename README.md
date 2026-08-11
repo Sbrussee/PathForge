@@ -308,7 +308,6 @@ benchmark_parameters:
   mil: []
 
 weights_dir: ./pretrained_weights
-hf_key: null
 ```
 
 Top-level sections:
