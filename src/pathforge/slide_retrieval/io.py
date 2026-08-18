@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import csv
 import json
-from pathlib import Path
 import re
-from typing import Any, Mapping
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -17,8 +18,7 @@ from pathforge.core.io.slide_retrieval import (
 from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathforge.slide_retrieval.search_strategies.types import SearchResult
-from pathforge.slide_retrieval.search_strategies.types import SearchHit
+from pathforge.slide_retrieval.search_strategies.types import SearchHit, SearchResult
 from pathforge.slide_retrieval.types import (
     RetrievalItemIdentity,
     SlideRetrievalManifest,
@@ -142,7 +142,9 @@ def build_slide_retrieval_representation_root(
     - `eval_slide_retrieval/<tiling+feature>/<retrieval_representation>/`
     """
 
-    tiling_component = f"{_safe_output_name(tiling_id)}_{_safe_output_name(feature_name)}"
+    tiling_component = (
+        f"{_safe_output_name(tiling_id)}_{_safe_output_name(feature_name)}"
+    )
     representation_component = _safe_output_name(
         slide_representation,
         hyphenate_underscores=True,
@@ -211,6 +213,9 @@ def load_slide_retrieval_representation(
         sample_id=identity.sample_id,
         exclusion_key=identity.exclusion_key,
         data=entry["embedding"],
+        representation_type=str(
+            entry["metadata"].get("representation_type", "patch_vector")
+        ),
         additional_data=dict(entry["additional_data"]),
     )
 
@@ -230,9 +235,11 @@ def save_slide_retrieval_representation(
         tile_id=tile_id,
         representation_id=representation_id,
         entry_id=entry_id,
-        metadata=RetrievalItemIdentity(
-            sample_id=representation.sample_id,
-        ).to_dict(),
+        metadata={
+            **RetrievalItemIdentity(sample_id=representation.sample_id).to_dict(),
+            "representation_type": representation.representation_type,
+            "aggregation_level": "slide",
+        },
         embedding=representation.data,
         params=dict(params or {}),
         additional_data=representation.additional_data,
@@ -345,7 +352,11 @@ def read_slide_retrieval_results_csv(path: str | Path) -> list[SearchResult]:
 
             rank = int(match.group("rank"))
             score_raw = row.get(f"rank_{rank}_score", "")
-            score = 0.0 if pd.isna(score_raw) or score_raw in ("", None) else float(score_raw)
+            score = (
+                0.0
+                if pd.isna(score_raw) or score_raw in ("", None)
+                else float(score_raw)
+            )
             hits.append(
                 SearchHit(
                     sample_id=str(value),
@@ -364,7 +375,9 @@ def read_slide_retrieval_results_csv(path: str | Path) -> list[SearchResult]:
     return results
 
 
-def write_metrics_csv(path: str | Path, metrics: Mapping[str, Mapping[str, Any]]) -> None:
+def write_metrics_csv(
+    path: str | Path, metrics: Mapping[str, Mapping[str, Any]]
+) -> None:
     """
     Write legacy flat metric rows for retrieval metrics.
 

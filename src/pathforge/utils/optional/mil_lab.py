@@ -18,6 +18,8 @@ def _is_module_available(module_name: str) -> bool:
     try:
         return find_spec(module_name) is not None
     except (ImportError, ModuleNotFoundError, ValueError):
+        # ``find_spec("src.builder")`` raises rather than returning ``None``
+        # when its optional ``src`` parent package is not installed.
         return False
 
 

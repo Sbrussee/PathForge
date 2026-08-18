@@ -169,12 +169,10 @@ a separate feature matrix for each combination into the same H5 file:
    224px_0.5mpp/features/resnet50   — float32 (N, 2048)
    224px_0.5mpp/features/uni        — float32 (N, 1024)
 
-Foundation models (``uni``, ``conch``, ``gigapath``, ``phikon``) require a
-Hugging Face token:
-
-.. code-block:: yaml
-
-   hf_key: hf_your_token_here
+Gated Hugging Face models, including ``mascaret``, use the standard Hugging
+Face authentication context. Accept the model's access terms with the account
+that executes the job, then run ``hf auth login`` on that environment or set
+``HF_TOKEN`` in its job environment. Do not place tokens in PathForge YAML.
 
 Skipping Existing Artifacts
 -----------------------------

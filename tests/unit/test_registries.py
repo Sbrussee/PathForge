@@ -52,8 +52,9 @@ def test_dynamic_registry_population_imports_builtin_trainers_once(monkeypatch) 
         lambda: imported_modules.append("pathforge.training.lightning"),
     )
     monkeypatch.setattr(registries_module, "_import_native_model_modules", lambda: None)
-    monkeypatch.setattr(registries_module, "_timm_module", lambda: None)
-    monkeypatch.setattr(registries_module, "_lazyslide_models_module", lambda: None)
+    monkeypatch.setattr(
+        registries_module, "populate_pathforge_feature_extractors", lambda: None
+    )
     monkeypatch.setattr(registries_module, "is_torchmil_available", lambda: False)
     monkeypatch.setattr(registries_module, "is_mil_lab_available", lambda: False)
     monkeypatch.setattr(registries_module, "is_torchmetrics_available", lambda: False)

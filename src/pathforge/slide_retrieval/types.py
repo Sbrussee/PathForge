@@ -106,6 +106,9 @@ class SlideRetrievalManifest:
     top_k_saved: int
     slide_representation_params: dict[str, Any] = field(default_factory=dict)
     search_params: dict[str, Any] = field(default_factory=dict)
+    combo_cfg: dict[str, Any] = field(default_factory=dict)
+    query_sample_ids: list[str] = field(default_factory=list)
+    reference_sample_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -121,6 +124,9 @@ class SlideRetrievalManifest:
             "num_queries": self.num_queries,
             "num_reference_items": self.num_reference_items,
             "top_k_saved": self.top_k_saved,
+            "combo_cfg": dict(self.combo_cfg),
+            "query_sample_ids": list(self.query_sample_ids),
+            "reference_sample_ids": list(self.reference_sample_ids),
         }
 
     def build_run_hash(self, length: int = 8) -> str:

@@ -47,7 +47,6 @@ Top-Level Structure
    explainability: ...
    optimization: ...
    weights_dir: ./pretrained_weights
-   hf_key: null
 
 Blocks may be omitted when their defaults are sufficient or they do not apply
 to the selected task. ``experiment``, ``datasets``, and the relevant
@@ -621,6 +620,3 @@ Top-Level Fields
    * - ``weights_dir``
      - ``./pretrained_weights``
      - Directory for pre-trained model weights.
-   * - ``hf_key``
-     - ``null``
-     - Hugging Face API token for gated model downloads.

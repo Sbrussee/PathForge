@@ -34,12 +34,6 @@ Representation strategies
 .. automodule:: pathforge.slide_retrieval.representation_strategies.mean_rgb
    :members:
 
-.. automodule:: pathforge.slide_retrieval.representation_strategies.panther
-   :members:
-
-.. automodule:: pathforge.slide_retrieval.representation_strategies.prototype_bundles
-   :members:
-
 Search strategies
 -----------------
 

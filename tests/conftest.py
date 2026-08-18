@@ -7,9 +7,11 @@ a known feature-extractor name (_DUMMY_FE) and a known MIL model name
 from __future__ import annotations
 
 import pytest
+from torch import Tensor
 
-from pathforge.utils.registries import FEATURE_EXTRACTORS, MODELS
+from pathforge.core.feature_extractors.base import FeatureExtractorBase
 from pathforge.core.models.mil_base import MILModelBase
+from pathforge.utils.registries import FEATURE_EXTRACTORS, MODELS
 
 # ---------------------------------------------------------------------------
 # Dummy plugin names exposed to tests
@@ -18,9 +20,19 @@ DUMMY_FE = "dummy_fe"
 DUMMY_MIL = "DummyMIL"
 
 if not FEATURE_EXTRACTORS.is_available(DUMMY_FE):
+
     @FEATURE_EXTRACTORS.register(DUMMY_FE)
-    def _dummy_fe():  # pragma: no cover
-        return DUMMY_FE
+    class _DummyFeatureExtractor(FeatureExtractorBase):
+        """Minimal registered native extractor used by configuration tests."""
+
+        def build_model(self) -> object:
+            return object()
+
+        def get_transform(self) -> None:
+            return None
+
+        def encode_images(self, images: Tensor) -> Tensor:  # pragma: no cover
+            return images
 
 if not MODELS.is_available(DUMMY_MIL):
     @MODELS.register(DUMMY_MIL)

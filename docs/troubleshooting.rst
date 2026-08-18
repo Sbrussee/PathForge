@@ -102,9 +102,8 @@ Check available extractors:
 
 .. code-block:: python
 
-   from pathforge.utils.registries import all_feature_extractor_names, populate_dynamic_registries
-   populate_dynamic_registries()
-   print(all_feature_extractor_names())
+   from pathforge.core.feature_extractors.factory import available_feature_extractor_names
+   print(available_feature_extractor_names("lazyslide"))
 
 Dataset Errors
 --------------

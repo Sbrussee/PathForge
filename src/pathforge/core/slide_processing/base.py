@@ -1,13 +1,76 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 
 from pathforge.core.datasets.wsi_dataset import WSI
+from pathforge.core.feature_extractors.selection import FeatureExtractorSelection
+
+FEATURE_EXTRACTION_EXECUTION_PARAM_NAMES = frozenset(
+    {"batch_size", "num_workers", "amp", "device", "color_norm"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class FeatureExtractionRequest:
+    """All extractor-selection and execution options for one feature run.
+
+    Args:
+        selection: Build-free choice of processor- or PathForge-native model.
+        execution_params: Backend execution options such as batch size and AMP.
+
+    Example:
+        >>> request.selection.name
+        'resnet18'
+    """
+
+    selection: FeatureExtractorSelection
+    execution_params: dict[str, Any]
+
+    def __post_init__(self) -> None:
+        """Ensure request options are backend execution controls, never model kwargs."""
+        unsupported = sorted(
+            set(self.execution_params) - FEATURE_EXTRACTION_EXECUTION_PARAM_NAMES
+        )
+        if unsupported:
+            raise ValueError(
+                "Unsupported feature-extraction execution options: "
+                f"{unsupported}. Allowed options: "
+                f"{sorted(FEATURE_EXTRACTION_EXECUTION_PARAM_NAMES)}."
+            )
 
 
 class SlideProcessorBase(ABC):
     """Base class for slide processing backends."""
+
+    def native_feature_extractor_names(self) -> set[str]:
+        """Return feature-extractor names implemented by this processor.
+
+        Returns:
+            Names that this processor can pass directly to its feature
+            extraction implementation. The default empty set represents a
+            processor without built-in encoders.
+
+        Example:
+            >>> processor.native_feature_extractor_names()
+            set()
+        """
+        return set()
+
+    def supports_pathforge_feature_extractors(self) -> bool:
+        """Return whether this processor can execute PathForge-native extractors.
+
+        Returns:
+            ``True`` when the processor provides an adapter for
+            ``FeatureExtractorBase`` implementations; otherwise ``False``.
+
+        Example:
+            >>> processor.supports_pathforge_feature_extractors()
+            False
+        """
+        return False
 
     @abstractmethod
     def load_wsi(self, wsi: WSI) -> None:
@@ -79,13 +142,20 @@ class SlideProcessorBase(ABC):
         pass
 
     @abstractmethod
-    def extract_features(self, wsi: WSI, tiles: pd.DataFrame, tile_spec: str, config: Optional[Dict[str, Any]] = None) -> Any:
+    def extract_features(
+        self,
+        wsi: WSI,
+        coords: np.ndarray,
+        tiling_spec: dict[str, Any],
+        request: FeatureExtractionRequest,
+    ) -> Any:
         """
         Extract features from the slide object.
 
         Args:
-            tiles: DataFrame with required columns: 'tile_id', 'x', 'y'
-            tile_spec: JSON string returned by extract_patches() (backend-defined)
+            coords: Tile coordinates with shape ``(N, 5)``.
+            tiling_spec: Backend-agnostic persisted tiling specification.
+            request: Selected extractor and backend execution options.
         """
         pass
 

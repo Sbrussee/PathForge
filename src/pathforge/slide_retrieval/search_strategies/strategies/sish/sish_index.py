@@ -4,11 +4,12 @@ import torch.nn as nn
 import copy
 from torch.utils.data import DataLoader
 import slideflow as sf
-import logging 
+import logging
 
 from ...utils import load_patch_dicts_pickle
 
 logger = logging.getLogger(__name__)
+
 
 class PatchTFRecordDataset(torch.utils.data.Dataset):
     """Dataset adapter that decodes selected TFRecord patches into ``[-1, 1]`` tensors."""
@@ -16,48 +17,56 @@ class PatchTFRecordDataset(torch.utils.data.Dataset):
     def __init__(self, mosaic_pkl_path: str, transform):
         # load the mosaic “properties” + “patches”
         data = load_patch_dicts_pickle(mosaic_pkl_path, reconstruct_features=False)
-        self.patches     = data["patches"]
-        self.tfr_path    = data["properties"]["tfr_path"]
-        self.transform   = transform
-        self._tfr        = sf.TFRecord(self.tfr_path)
-    
+        self.patches = data["patches"]
+        self.tfr_path = data["properties"]["tfr_path"]
+        self.transform = transform
+        self._tfr = sf.TFRecord(self.tfr_path)
+
     def __len__(self):
         return len(self.patches)
-    
+
     def __getitem__(self, idx):
         rec = self._tfr[self.patches[idx]["tfr_index"]]
         pil_img = sf.io.decode_image(bytes(rec["image_raw"]))  # PIL.Image
 
         # Convert PIL→numpy→Tensor, cast and scale
-        arr = np.array(pil_img)                    # H×W×C, uint8 [0,255]
-        tensor = torch.from_numpy(arr)             # ByteTensor [0,255]
-        tensor = tensor.permute(2,0,1).float()     # FloatTensor [0,255]
-        tensor = tensor.div(255.0)                 # FloatTensor [0,1]
-        tensor = tensor.mul(2).sub(1)              # FloatTensor in [-1,1]
+        arr = np.array(pil_img)  # H×W×C, uint8 [0,255]
+        tensor = torch.from_numpy(arr)  # ByteTensor [0,255]
+        tensor = tensor.permute(2, 0, 1).float()  # FloatTensor [0,255]
+        tensor = tensor.div(255.0)  # FloatTensor [0,1]
+        tensor = tensor.mul(2).sub(1)  # FloatTensor in [-1,1]
 
         return tensor
-    
+
+
 def compute_latent_features(
     mosaic_pkl: str,
     transform: object,
     vqvae: nn.Module,
     device: torch.device,
     batch_size: int = 16,
-    num_workers: int = 4
+    num_workers: int = 4,
 ) -> np.ndarray:
     """Encode all mosaic patches into VQ-VAE latent index maps."""
     ds = PatchTFRecordDataset(mosaic_pkl, transform)
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
-                        num_workers=num_workers, pin_memory=False, persistent_workers=False)
+    loader = DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=False,
+        persistent_workers=False,
+    )
     all_latents = []
     vqvae.to(device).eval()
     with torch.no_grad():
         for batch in loader:
             batch = batch.to(device)
-            latents = vqvae(batch)       # (B, H, W) integer indices
+            latents = vqvae(batch)  # (B, H, W) integer indices
             all_latents.append(latents.cpu().numpy())
-            
+
     return np.concatenate(all_latents, 0)
+
 
 def to_latent_semantic(
     latent: np.ndarray,
@@ -98,13 +107,15 @@ def slide_to_index(
         arr = np.asarray(latent)
         # single 64×64 map → make a batch of size 1
         if arr.ndim == 2:
-            sem = to_latent_semantic(arr, codebook_semantic)        # (64,64)
-            feat = torch.from_numpy(sem[np.newaxis, ...])          # (1,64,64)
+            sem = to_latent_semantic(arr, codebook_semantic)  # (64,64)
+            feat = torch.from_numpy(sem[np.newaxis, ...])  # (1,64,64)
         # already a batch of N maps
         elif arr.ndim == 3:
-            sem_list = [to_latent_semantic(arr[i], codebook_semantic)
-                        for i in range(arr.shape[0])]
-            feat = torch.from_numpy(np.stack(sem_list, axis=0))    # (N,64,64)
+            sem_list = [
+                to_latent_semantic(arr[i], codebook_semantic)
+                for i in range(arr.shape[0])
+            ]
+            feat = torch.from_numpy(np.stack(sem_list, axis=0))  # (N,64,64)
         else:
             raise ValueError(f"Expected latent of ndim 2 or 3, got {arr.ndim}")
     else:
@@ -128,8 +139,9 @@ def slide_to_index(
             index = copy.deepcopy(level_sum_dict[level])
         elif level > 1:
             index += level_sum_dict[level] * power
-            
+
     return index
+
 
 def min_max_binarized(feat: np.ndarray) -> str:
     """
@@ -140,7 +152,7 @@ def min_max_binarized(feat: np.ndarray) -> str:
     Output:
         output_binarized (str): A binary code of length  1024
     """
-    prev = float('inf')
+    prev = float("inf")
     output_binarized = []
     for ele in feat:
         if ele < prev:

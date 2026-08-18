@@ -19,7 +19,7 @@ def test_lazyslide_passes_explicit_reader_to_wsidata(monkeypatch):
         return opened
 
     monkeypatch.setattr(
-        "pathforge.core.slide_processing.lazyslide.open_wsi", fake_open_wsi
+        "pathforge.core.slide_processing.lazyslide.processor.open_wsi", fake_open_wsi
     )
     wsi = SimpleNamespace(path="slide.svs", _obj=None)
 
@@ -37,7 +37,7 @@ def test_lazyslide_auto_reader_is_forwarded_as_none(monkeypatch):
         return object()
 
     monkeypatch.setattr(
-        "pathforge.core.slide_processing.lazyslide.open_wsi", fake_open_wsi
+        "pathforge.core.slide_processing.lazyslide.processor.open_wsi", fake_open_wsi
     )
     wsi = SimpleNamespace(path="slide.svs", _obj=None)
 
@@ -57,7 +57,7 @@ def test_lazyslide_uses_configured_fallback(monkeypatch, caplog):
         return opened
 
     monkeypatch.setattr(
-        "pathforge.core.slide_processing.lazyslide.open_wsi", fake_open_wsi
+        "pathforge.core.slide_processing.lazyslide.processor.open_wsi", fake_open_wsi
     )
     wsi = SimpleNamespace(path="slide.svs", _obj=None)
 

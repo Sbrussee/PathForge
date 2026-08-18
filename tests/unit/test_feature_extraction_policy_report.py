@@ -11,9 +11,11 @@ import numpy as np
 import pytest
 
 import pathforge.policy.feature_extraction as fe_mod
+from pathforge.config.config import FeatureExtractionRuntimeConfig
 from pathforge.core.datasets.wsi_dataset import WSI
 from pathforge.core.experiments.combinations import ComboConfig
-from pathforge.config.config import FeatureExtractionRuntimeConfig
+from pathforge.core.feature_extractors.selection import FeatureExtractorSelection
+from pathforge.core.slide_processing.base import FeatureExtractionRequest
 from pathforge.policy.feature_extraction import FeatureExtractionPolicy
 
 
@@ -55,7 +57,11 @@ class _FakeSlideProcessor:
         return self.thumbnail.copy(), 10.0, 10.0
 
     def extract_features(
-        self, wsi: WSI, coords: np.ndarray, tiling_spec: dict, config: dict[str, Any]
+        self,
+        wsi: WSI,
+        coords: np.ndarray,
+        tiling_spec: dict,
+        request: FeatureExtractionRequest,
     ) -> np.ndarray:
         self.extract_features_calls += 1
         n = int(coords.shape[0])
@@ -118,6 +124,45 @@ def test_feature_runtime_config_is_forwarded_to_backend() -> None:
     }
 
 
+def test_feature_request_keeps_selection_and_execution_options_together(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The policy creates one typed request for extractor execution."""
+    policy = FeatureExtractionPolicy.__new__(FeatureExtractionPolicy)
+    policy.backend_name = "lazyslide"
+    policy.config = SimpleNamespace(
+        slide_processing=SimpleNamespace(
+            feature_extraction=FeatureExtractionRuntimeConfig(
+                batch_size=24,
+                num_workers=3,
+                amp=True,
+            )
+        )
+    )
+    monkeypatch.setattr(
+        fe_mod,
+        "resolve_feature_extractor_selection",
+        lambda backend, name: FeatureExtractorSelection(
+            name=name,
+            source="processor-native",
+        ),
+    )
+    combo = ComboConfig(
+        tile_px=256,
+        tile_mpp=0.5,
+        feature_extraction="resnet18",
+    )
+
+    request = policy._build_feature_request(combo)
+
+    assert request.selection.name == "resnet18"
+    assert request.execution_params == {
+        "batch_size": 24,
+        "num_workers": 3,
+        "amp": True,
+    }
+
+
 def _make_wsi(tmp_path: Path) -> WSI:
     return WSI(
         slide="S1",
@@ -132,7 +177,13 @@ def _run_configs() -> dict[str, Any]:
     return {
         "seg_config": {"method": "otsu", "params": {}},
         "tile_config": {"tile_px": 256, "tile_mpp": 0.5, "params": {}},
-        "feat_config": {"model": "dummy_extractor", "params": {}},
+        "feat_request": FeatureExtractionRequest(
+            selection=FeatureExtractorSelection(
+                name="dummy_extractor",
+                source="processor-native",
+            ),
+            execution_params={},
+        ),
     }
 
 

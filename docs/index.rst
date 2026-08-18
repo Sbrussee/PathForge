@@ -71,6 +71,7 @@ definitions of WSI, tile, feature bag, artifact, task, policy, and backend.
    architecture
    contributing
    HDF5_structure
+   slide-retrieval
    slide_retrieval_h5_structure
    slide-retrieval-results-and-metrics
    task_outputs

@@ -127,13 +127,6 @@ def extracted_wsi_workspace(
     experiment = Experiment(cfg)
     policy = FeatureExtractionPolicy(experiment)
     policy._build_seg_config = lambda: {"method": "otsu", "params": {}}  # type: ignore[method-assign]
-    policy._build_feat_config = (  # type: ignore[method-assign]
-        lambda combo_cfg: {
-            "model": combo_cfg.feature_extraction,
-            "params": {"pretrained": False},
-        }
-    )
-
     with capture_smoke_metrics(
         metrics_dir,
         step_name="hf_wsi_feature_extraction",

@@ -18,6 +18,23 @@ from lazyslide._utils import default_pbar
 from lazyslide_models.base import ImageModel
 
 
+def _uses_image_model_protocol(model: object) -> bool:
+    """Return whether a model exposes LazySlide's image-embedding protocol.
+
+    Inputs:
+        model: A loaded feature-extraction model or LazySlide model wrapper.
+
+    Returns:
+        ``True`` when features must be obtained through ``encode_image``.
+
+    Example:
+        ``_uses_image_model_protocol(model) is True`` for a Timm model wrapper.
+    """
+    return isinstance(model, ImageModel) or callable(
+        getattr(model, "encode_image", None)
+    )
+
+
 def _restore_image_like_tile(tile):
     """Convert color-normalized output back to the image-like format transforms expect."""
     if isinstance(tile, torch.Tensor):
@@ -68,8 +85,9 @@ def feature_extraction_patched(
     load_kws = {} if load_kws is None else load_kws
 
     if model is not None:
-        if isinstance(model, Callable):
-            model = model
+        if _uses_image_model_protocol(model):
+            if model_name is None:
+                model_name = model.name
         elif isinstance(model, str):
             model, default_model_name = _features.load_models(
                 model_name=model,
@@ -79,10 +97,7 @@ def feature_extraction_patched(
             )
             if model_name is None:
                 model_name = default_model_name
-        elif isinstance(model, ImageModel):
-            model = model
-            model_name = model.name
-        else:
+        elif not isinstance(model, Callable):
             raise ValueError("Model must be a model name or a model object.")
     else:
         if model_path is None:
@@ -98,7 +113,7 @@ def feature_extraction_patched(
     if key_added is None:
         if model_name is not None:
             key_added = model_name
-        elif isinstance(model, ImageModel):
+        elif _uses_image_model_protocol(model):
             key_added = model.name
         elif hasattr(model, "__class__"):
             key_added = model.__class__.__name__
@@ -113,7 +128,7 @@ def feature_extraction_patched(
     except Exception:
         pass
 
-    if transform is None and isinstance(model, ImageModel):
+    if transform is None and _uses_image_model_protocol(model):
         transform = model.get_transform()
 
     if color_norm is not None and transform is not None:
@@ -149,7 +164,7 @@ def feature_extraction_patched(
         with amp_ctx, torch.inference_mode():
             for batch in loader:
                 image = batch["image"].to(device)
-                if isinstance(model, ImageModel):
+                if _uses_image_model_protocol(model):
                     output = model.encode_image(image)
                 else:
                     output = model(image)

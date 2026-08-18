@@ -7,7 +7,9 @@ import numpy as np
 from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_precompute import SISHPrecompute
+from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_precompute import (
+    SISHPrecompute,
+)
 from pathforge.slide_retrieval.types import RetrievalItemMetadata
 
 
@@ -68,5 +70,5 @@ def test_sish_precompute_enriches_representation_with_indices_and_packed_bits(
     )
     np.testing.assert_array_equal(
         enriched.additional_data["sish_packed_bits"],
-        np.packbits((np.asarray(representation.data) > 0).astype(np.uint8), axis=1),
+        np.asarray([[32], [96]], dtype=np.uint8),
     )

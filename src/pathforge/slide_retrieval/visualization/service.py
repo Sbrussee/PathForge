@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib import import_module
 import logging
 from pathlib import Path
 from typing import Any
@@ -43,7 +42,6 @@ from pathforge.utils.constants import (
     SLIDE_FILE_FORMATS,
     SLIDE_ID_COL,
 )
-from pathforge.utils.registries import SLIDE_PROCESSORS
 
 
 logger = logging.getLogger(__name__)
@@ -739,17 +737,11 @@ class SlideRetrievalVisualizationService:
         if self._slide_processor is not None:
             return self._slide_processor
 
-        backend_name = str(self.cfg.slide_processing.backend)
-        if not SLIDE_PROCESSORS.is_available(backend_name):
-            import_module(f"pathforge.core.slide_processing.{backend_name}")
+        from pathforge.core.slide_processing.factory import build_slide_processor
 
-        processor_cls = SLIDE_PROCESSORS.get(backend_name)
-        if processor_cls is None:
-            raise ValueError(
-                f"Slide processing backend '{backend_name}' is not registered."
-            )
-
-        self._slide_processor = processor_cls()
+        self._slide_processor = build_slide_processor(
+            str(self.cfg.slide_processing.backend)
+        )
         return self._slide_processor
 
     def _ensure_output_dir(self, visualization_name: str) -> Path:

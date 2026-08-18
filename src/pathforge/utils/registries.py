@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 from importlib import import_module
-from typing import Any
-
 from pathforge.adapters.losses import register_builtin_loss_factories
-from pathforge.utils.registry import Registry
 from pathforge.core.base import CoreRegistries
+from pathforge.core.feature_extractors.registry import FeatureExtractorRegistry
 from pathforge.utils.optional.mil_lab import is_mil_lab_available
 from pathforge.utils.optional.torchmil import (
     is_torchmetrics_available,
     is_torchmil_available,
     is_torchsurv_available,
 )
+from pathforge.utils.registry import Registry
 
 # Define Registries
 REGISTRIES = CoreRegistries(
@@ -22,7 +20,7 @@ REGISTRIES = CoreRegistries(
     losses=Registry(),
     tasks=Registry(),
     explainers=Registry(),
-    feature_extractors=Registry(),
+    feature_extractors=FeatureExtractorRegistry(),
     normalizers=Registry(),
     augmentation_methods=Registry(),
 )
@@ -45,10 +43,6 @@ SURVIVAL_METRICS = Registry()
 SURVIVAL_LOSSES = Registry()
 
 register_builtin_loss_factories(LOSSES)
-
-# Track Lazyslide-specific models for validation (filled by populate_dynamic_registries)
-LAZYSLIDE_MODEL_NAMES: set[str] = set()
-
 
 @dataclass(frozen=True)
 class BackendCatalogEntry:
@@ -79,144 +73,17 @@ class BackendCatalogEntry:
 
 
 # ---------------------------------------------------------------------------
-# Optional dependency discovery (safe, lazy)
-# ---------------------------------------------------------------------------
-
-
-@lru_cache(maxsize=1)
-def _timm_module():
-    try:
-        import timm  # noqa: WPS433
-
-        return timm
-    except Exception:
-        return None
-
-
-@lru_cache(maxsize=1)
-def _lazyslide_models_module():
-    try:
-        import lazyslide_models  # noqa: WPS433
-
-        return lazyslide_models
-    except Exception:
-        return None
-
-
-def _normalize_model_names(items: Any) -> set[str]:
-    """
-    Convert list_models() output to a set[str], even if entries are not plain strings.
-    """
-    names: set[str] = set()
-    if items is None:
-        return names
-
-    for item in items:
-        if isinstance(item, str):
-            names.add(item)
-            continue
-
-        if hasattr(item, "key"):
-            try:
-                names.add(str(item.key))
-                continue
-            except Exception:
-                pass
-
-        if isinstance(item, dict) and "key" in item:
-            try:
-                names.add(str(item["key"]))
-                continue
-            except Exception:
-                pass
-
-        try:
-            names.add(str(item))
-        except Exception:
-            continue
-
-    return names
-
-
-@lru_cache(maxsize=1)
-def timm_model_names() -> set[str]:
-    """Return the TIMM model names visible in the current Python environment."""
-    timm = _timm_module()
-    if timm is None:
-        return set()
-    try:
-        return _normalize_model_names(timm.list_models())
-    except Exception:
-        return set()
-
-
-@lru_cache(maxsize=1)
-def lazyslide_model_names() -> set[str]:
-    """Return the LazySlide model names visible in the current Python environment."""
-    lazyslide_models = _lazyslide_models_module()
-    if lazyslide_models is None:
-        return set()
-    try:
-        return _normalize_model_names(lazyslide_models.list_models())
-    except Exception:
-        return set()
-
-
-def registered_feature_extractor_names() -> set[str]:
-    """
-    Best-effort extraction of names currently registered in PathForge FEATURE_EXTRACTORS.
-    """
-    # Prefer public APIs if your Registry exposes them
-    for attr in ("keys", "list", "names"):
-        fn = getattr(FEATURE_EXTRACTORS, attr, None)
-        if callable(fn):
-            try:
-                return set(fn())
-            except Exception:
-                pass
-
-    # Fallback to common internal dict names
-    for attr in ("_registry", "_items", "registry"):
-        obj = getattr(FEATURE_EXTRACTORS, attr, None)
-        if isinstance(obj, dict):
-            return set(obj.keys())
-
-    return set()
-
-
-def available_feature_extractor_names() -> dict[str, set[str]]:
-    """Return extractor names grouped by the backend that provides them."""
-    return {
-        "pathforge": registered_feature_extractor_names(),
-        "timm": timm_model_names(),
-        "lazyslide": lazyslide_model_names(),
-    }
-
-
-def all_feature_extractor_names() -> set[str]:
-    """Return the union of PathForge-native and dynamically discovered extractors."""
-    grouped = available_feature_extractor_names()
-    return grouped["pathforge"] | grouped["timm"] | grouped["lazyslide"]
-
-
-def is_feature_extractor_available(name: str) -> bool:
-    """
-    Used by config validation without importing timm/torchvision at module import time.
-    """
-    if FEATURE_EXTRACTORS.is_available(name):
-        return True
-    if name in timm_model_names():
-        return True
-    if name in lazyslide_model_names():
-        return True
-    return False
-
-
-# ---------------------------------------------------------------------------
 # Dynamic registry population (explicit, not at import time)
 # ---------------------------------------------------------------------------
 
 _populated = False
+
+_feature_extractors_populated = False
+
+_NATIVE_FEATURE_EXTRACTOR_MODULES: tuple[str, ...] = (
+    "pathforge.core.feature_extractors.mascaret",
+    "pathforge.core.feature_extractors.phaet",
+)
 
 _NATIVE_MODEL_MODULES: tuple[str, ...] = (
     "pathforge.core.models.perceiver_mil",
@@ -261,47 +128,52 @@ def _import_native_model_modules() -> None:
         import_module(module_name)
 
 
+def populate_pathforge_feature_extractors() -> None:
+    """Import built-in PathForge extractor modules so their decorators register them.
+
+    The PathForge extractor registry intentionally contains only native
+    ``FeatureExtractorBase`` implementations. Processor-owned encoders, such
+    as LazySlide and timm models, are discovered by the selected processor and
+    are never registered here.
+
+    Example:
+        >>> populate_pathforge_feature_extractors()
+    """
+    global _feature_extractors_populated
+    if _feature_extractors_populated:
+        return
+
+    for module_name in _NATIVE_FEATURE_EXTRACTOR_MODULES:
+        import_module(module_name)
+
+    _feature_extractors_populated = True
+
+
 def populate_dynamic_registries() -> None:
     """
-    Populate optional backend registries with entries from installed packages.
+    Populate all optional backend registries with entries from installed packages.
 
     IMPORTANT:
     - This is NOT called automatically at import time.
-    - Call it explicitly in CLI/policy paths that require optional backends.
+    - Call it explicitly only in paths that require the complete catalog.
+    - Feature-extractor-only paths should call
+      ``available_feature_extractor_names()`` instead.
     """
     global _populated
     if _populated:
         return
 
     _import_builtin_trainer_modules()
+    populate_pathforge_feature_extractors()
     _import_native_model_modules()
 
-    timm = _timm_module()
-    if timm is not None:
-        for model_name in timm_model_names():
-            if not FEATURE_EXTRACTORS.is_available(model_name):
-
-                @FEATURE_EXTRACTORS.register(model_name)
-                def _timm_factory(name=model_name, pretrained=True, **kwargs):
-                    return timm.create_model(name, pretrained=pretrained, **kwargs)
-
-    lazyslide_models = _lazyslide_models_module()
-    if lazyslide_models is not None:
-        for model_name in lazyslide_model_names():
-            LAZYSLIDE_MODEL_NAMES.add(model_name)
-            if not FEATURE_EXTRACTORS.is_available(model_name):
-
-                @FEATURE_EXTRACTORS.register(model_name)
-                def _zs_factory(name=model_name, **kwargs):
-                    return name
-
     if is_torchmil_available():
+        from pathforge.adapters.mil_lab.backend import (
+            register_torchmil_fallback_aliases,
+        )
         from pathforge.adapters.torchmil.backend import register_torchmil_backend
         from pathforge.adapters.torchmil.heatmap_explainer import (
             register_torchmil_heatmap_explainer,
-        )
-        from pathforge.adapters.mil_lab.backend import (
-            register_torchmil_fallback_aliases,
         )
 
         register_torchmil_backend()
@@ -357,6 +229,14 @@ def list_feature_extractors() -> list[BackendCatalogEntry]:
             lazyslide_only = [item.name for item in entries if item.backend == "lazyslide"]
 
     """
+
+    from pathforge.core.feature_extractors.factory import (
+        registered_feature_extractor_names,
+    )
+    from pathforge.core.slide_processing.lazyslide.catalog import (
+        lazyslide_model_names,
+        timm_model_names,
+    )
 
     config_field = "benchmark_parameters.feature_extraction"
     entries = [

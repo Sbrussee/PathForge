@@ -6,12 +6,24 @@ from importlib import import_module
 import pytest
 
 import pathforge.config.config as config_module
+import pathforge.core.feature_extractors.factory as feature_factory
+import pathforge.core.slide_processing.factory as slide_processor_factory
 import pathforge.utils.registries as registries_module
 from pathforge.adapters.mil_lab.backend import register_mil_lab_backend
 from pathforge.adapters.torchmil.backend import register_torchmil_backend
 from pathforge.config.config import Config
+from pathforge.core.feature_extractors.factory import (
+    available_feature_extractor_names,
+    resolve_feature_extractor_source,
+)
 from pathforge.core.slide_processing.base import SlideProcessorBase
-from pathforge.utils.registries import list_feature_extractors, list_mil_models
+from pathforge.core.slide_processing.factory import build_slide_processor
+from pathforge.utils.registries import (
+    FEATURE_EXTRACTORS,
+    list_feature_extractors,
+    list_mil_models,
+)
+from pathforge.utils.registry import Registry
 from tests.conftest import DUMMY_FE, DUMMY_MIL
 
 
@@ -25,6 +37,32 @@ def test_lazyslide_backend_registers_slide_processor() -> None:
     assert issubclass(processor_cls, SlideProcessorBase)
 
 
+def test_build_slide_processor_loads_registered_backend() -> None:
+    """The shared factory constructs the processor registered by its backend module."""
+    pytest.importorskip("lazyslide")
+
+    processor = build_slide_processor("lazyslide")
+
+    assert isinstance(processor, SlideProcessorBase)
+
+
+def test_build_slide_processor_rejects_missing_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shared factory reports an unavailable backend before construction."""
+    monkeypatch.setattr(registries_module, "SLIDE_PROCESSORS", Registry())
+    import pathforge.core.slide_processing.factory as factory_module
+
+    monkeypatch.setattr(
+        factory_module,
+        "import_module",
+        lambda module_name: (_ for _ in ()).throw(ModuleNotFoundError(module_name)),
+    )
+
+    with pytest.raises(ValueError, match="backend 'missing' is not available"):
+        build_slide_processor("missing")
+
+
 def test_config_accepts_lazyslide_backend_for_lazyslide_extractors(
     minimal_fe_config: dict[str, object],
     monkeypatch: pytest.MonkeyPatch,
@@ -33,23 +71,209 @@ def test_config_accepts_lazyslide_backend_for_lazyslide_extractors(
     cfg_dict = copy.deepcopy(minimal_fe_config)
     cfg_dict["benchmark_parameters"]["feature_extraction"] = ["lazy_backbone"]
 
-    monkeypatch.setattr(config_module, "populate_dynamic_registries", lambda: None)
     monkeypatch.setattr(
         config_module,
-        "is_feature_extractor_available",
-        lambda name: name == "lazy_backbone",
+        "resolve_feature_extractor_source",
+        lambda backend_name, name: (
+            "processor-native"
+            if (backend_name, name) == ("lazyslide", "lazy_backbone")
+            else pytest.fail(f"unexpected extractor resolution: {backend_name}/{name}")
+        ),
     )
-    monkeypatch.setattr(
-        config_module,
-        "all_feature_extractor_names",
-        lambda: {"lazy_backbone"},
-    )
-    monkeypatch.setattr(config_module, "LAZYSLIDE_MODEL_NAMES", {"lazy_backbone"})
 
     cfg = Config.model_validate(cfg_dict)
 
     assert cfg.slide_processing.backend == "lazyslide"
     assert cfg.benchmark_parameters.feature_extraction == ["lazy_backbone"]
+
+
+def test_config_does_not_resolve_processor_without_feature_extractors(
+    minimal_fe_config: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty feature grids do not require an installed slide processor at config time."""
+    cfg_dict = copy.deepcopy(minimal_fe_config)
+    cfg_dict["slide_processing"]["backend"] = "openslide"
+    cfg_dict["benchmark_parameters"]["feature_extraction"] = []
+    monkeypatch.setattr(
+        config_module,
+        "resolve_feature_extractor_source",
+        lambda backend_name, name: pytest.fail(
+            f"unexpected extractor resolution: {backend_name}/{name}"
+        ),
+    )
+
+    cfg = Config.model_validate(cfg_dict)
+
+    assert cfg.slide_processing.backend == "openslide"
+
+
+def test_available_feature_extractors_combine_selected_processor_and_pathforge_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The selected processor's names are combined transiently with PathForge names."""
+
+    class ProcessorWithEncoders:
+        def native_feature_extractor_names(self) -> set[str]:
+            return {"processor_encoder", "shared_encoder"}
+
+        def supports_pathforge_feature_extractors(self) -> bool:
+            return True
+
+    monkeypatch.setattr(
+        slide_processor_factory,
+        "build_slide_processor",
+        lambda backend_name: ProcessorWithEncoders(),
+    )
+    monkeypatch.setattr(
+        feature_factory,
+        "registered_feature_extractor_names",
+        lambda: {"pathforge_encoder", "shared_encoder"},
+    )
+
+    assert available_feature_extractor_names("test-processor") == {
+        "pathforge_encoder",
+        "processor_encoder",
+        "shared_encoder",
+    }
+
+
+def test_available_feature_extractors_reject_unavailable_processor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unknown processor names fail before feature-extractor validation proceeds."""
+    monkeypatch.setattr(registries_module, "SLIDE_PROCESSORS", Registry())
+
+    def raise_missing_module(module_name: str) -> None:
+        raise ModuleNotFoundError(module_name)
+
+    monkeypatch.setattr(registries_module, "import_module", raise_missing_module)
+
+    with pytest.raises(ValueError, match="backend 'missing-processor' is not available"):
+        available_feature_extractor_names("missing-processor")
+
+
+def test_available_feature_extractors_reject_processor_module_without_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Imported backend modules must register the requested processor name."""
+    monkeypatch.setattr(registries_module, "SLIDE_PROCESSORS", Registry())
+    monkeypatch.setattr(slide_processor_factory, "import_module", lambda module_name: None)
+
+    with pytest.raises(ValueError, match="backend 'unregistered-processor' is not registered"):
+        available_feature_extractor_names("unregistered-processor")
+
+
+def test_resolve_feature_extractor_source_prefers_processor_native_on_collision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A processor-native name wins even when PathForge registers the same name."""
+
+    class ProcessorWithCollision:
+        def native_feature_extractor_names(self) -> set[str]:
+            return {"shared_encoder"}
+
+        def supports_pathforge_feature_extractors(self) -> bool:
+            return True
+
+    monkeypatch.setattr(
+        slide_processor_factory,
+        "build_slide_processor",
+        lambda backend_name: ProcessorWithCollision(),
+    )
+
+    assert (
+        resolve_feature_extractor_source("test-processor", "shared_encoder")
+        == "processor-native"
+    )
+
+
+def test_resolve_feature_extractor_source_rejects_native_registry_for_unadapted_processor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Registrations require an explicit processor adapter before validation accepts them."""
+
+    class ProcessorWithoutAdapter:
+        def native_feature_extractor_names(self) -> set[str]:
+            return set()
+
+        def supports_pathforge_feature_extractors(self) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        slide_processor_factory,
+        "build_slide_processor",
+        lambda backend_name: ProcessorWithoutAdapter(),
+    )
+    monkeypatch.setattr(
+        feature_factory,
+        "is_native_feature_extractor_available",
+        lambda name: name == "pathforge_encoder",
+    )
+
+    with pytest.raises(ValueError, match="pathforge_encoder.*test-processor"):
+        resolve_feature_extractor_source("test-processor", "pathforge_encoder")
+
+
+def test_lazyslide_processor_lists_lazyslide_and_timm_encoders(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LazySlide advertises both catalogs that its extraction API accepts."""
+    pytest.importorskip("lazyslide")
+    lazyslide_module = import_module("pathforge.core.slide_processing.lazyslide")
+    import pathforge.core.slide_processing.lazyslide.catalog as catalog_module
+
+    monkeypatch.setattr(catalog_module, "lazyslide_model_names", lambda: {"lazy"})
+    monkeypatch.setattr(catalog_module, "timm_model_names", lambda: {"timm"})
+
+    assert lazyslide_module.LazySlideProcessor().native_feature_extractor_names() == {
+        "lazy",
+        "timm",
+    }
+
+
+def test_pathforge_feature_extractor_population_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Known native extractor modules are imported once without full population."""
+    imported_modules: list[str] = []
+    monkeypatch.setattr(registries_module, "_feature_extractors_populated", False)
+    monkeypatch.setattr(
+        registries_module,
+        "_NATIVE_FEATURE_EXTRACTOR_MODULES",
+        ("pathforge.test_feature_extractor",),
+    )
+    monkeypatch.setattr(
+        registries_module,
+        "import_module",
+        lambda module_name: imported_modules.append(module_name),
+    )
+
+    registries_module.populate_pathforge_feature_extractors()
+    registries_module.populate_pathforge_feature_extractors()
+
+    assert imported_modules == ["pathforge.test_feature_extractor"]
+
+
+def test_dynamic_population_does_not_register_external_feature_extractors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """timm and LazySlide discovery must not mutate the PathForge extractor registry."""
+    monkeypatch.setattr(registries_module, "_populated", False)
+    monkeypatch.setattr(registries_module, "_import_native_model_modules", lambda: None)
+    monkeypatch.setattr(
+        registries_module,
+        "populate_pathforge_feature_extractors",
+        lambda: None,
+    )
+    monkeypatch.setattr(registries_module, "is_torchmil_available", lambda: False)
+    monkeypatch.setattr(registries_module, "is_mil_lab_available", lambda: False)
+    monkeypatch.setattr(registries_module, "is_torchmetrics_available", lambda: False)
+    monkeypatch.setattr(registries_module, "is_torchsurv_available", lambda: False)
+    names_before = set(FEATURE_EXTRACTORS.list_plugins())
+    registries_module.populate_dynamic_registries()
+
+    assert set(FEATURE_EXTRACTORS.list_plugins()) == names_before
 
 
 def test_config_accepts_torchmil_backend_and_heatmap_backend_when_available(
@@ -201,17 +425,11 @@ def test_list_feature_extractors_reports_backend_requirements(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Feature extractor listing should expose the backend required per entry."""
-    monkeypatch.setattr(
-        registries_module,
-        "registered_feature_extractor_names",
-        lambda: {"native_fe"},
-    )
-    monkeypatch.setattr(registries_module, "timm_model_names", lambda: {"resnet18"})
-    monkeypatch.setattr(
-        registries_module,
-        "lazyslide_model_names",
-        lambda: {"lazy_uni"},
-    )
+    import pathforge.core.slide_processing.lazyslide.catalog as catalog_module
+
+    monkeypatch.setattr(feature_factory, "registered_feature_extractor_names", lambda: {"native_fe"})
+    monkeypatch.setattr(catalog_module, "timm_model_names", lambda: {"resnet18"})
+    monkeypatch.setattr(catalog_module, "lazyslide_model_names", lambda: {"lazy_uni"})
 
     entries = list_feature_extractors()
 
@@ -230,13 +448,11 @@ def test_list_feature_extractors_handles_missing_optional_catalogs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Extractor listing should still work when optional backends are absent."""
-    monkeypatch.setattr(
-        registries_module,
-        "registered_feature_extractor_names",
-        lambda: {"native_fe"},
-    )
-    monkeypatch.setattr(registries_module, "timm_model_names", lambda: set())
-    monkeypatch.setattr(registries_module, "lazyslide_model_names", lambda: set())
+    import pathforge.core.slide_processing.lazyslide.catalog as catalog_module
+
+    monkeypatch.setattr(feature_factory, "registered_feature_extractor_names", lambda: {"native_fe"})
+    monkeypatch.setattr(catalog_module, "timm_model_names", lambda: set())
+    monkeypatch.setattr(catalog_module, "lazyslide_model_names", lambda: set())
 
     entries = list_feature_extractors()
 
