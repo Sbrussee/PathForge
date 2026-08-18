@@ -48,8 +48,13 @@ class LazySlideProcessor(SlideProcessorBase):
     BACKEND_NAME = "lazyslide"
     COORD_SPACE = "level0"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        reader: str = "auto",
+        reader_fallbacks: Optional[list[str]] = None,
+    ) -> None:
         super().__init__()
+        self.readers = [reader, *(reader_fallbacks or [])]
 
     def native_feature_extractor_names(self) -> set[str]:
         """Return LazySlide and timm encoders executable by this processor.
@@ -525,7 +530,25 @@ class LazySlideProcessor(SlideProcessorBase):
     def load_wsi(self, wsi: WSI) -> None:
         if getattr(wsi, "_obj", None) is not None:
             return
-        wsi._obj = open_wsi(wsi.path)
+        failures: list[str] = []
+        for index, reader in enumerate(self.readers):
+            selected_reader = None if reader == "auto" else reader
+            try:
+                wsi._obj = open_wsi(wsi.path, reader=selected_reader)
+                if index:
+                    logger.warning(
+                        "[LazySlide] Opened %s with fallback reader '%s' after %s failed.",
+                        wsi.path,
+                        reader,
+                        ", ".join(failures),
+                    )
+                return
+            except Exception as exc:
+                failures.append(f"{reader}: {exc}")
+        raise RuntimeError(
+            f"[LazySlide] No configured reader could open {wsi.path}. "
+            + " | ".join(failures)
+        )
 
     def close_wsi(self, wsi: WSI) -> None:
         obj = getattr(wsi, "_obj", None)

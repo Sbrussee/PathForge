@@ -1,7 +1,32 @@
 Quick Start
 ===========
 
-This page shows the minimum working examples for each major workflow.
+This page shows the minimum configuration shape for each major workflow.
+Replace every ``/data/...`` and ``/experiments/...`` example with an absolute
+path that exists on the machine running PathForge.
+
+How the Examples Fit Together
+-----------------------------
+
+Feature extraction produces the HDF5 slide artifacts consumed by
+benchmarking, optimization, retrieval, and config-driven inference. The
+examples use the same ``tile_px``, ``tile_mpp``, and feature extractor so that
+downstream commands can reuse those artifacts.
+
+.. code-block:: text
+
+   annotations.csv + slides
+            │
+            ▼  feature extraction
+      artifacts/*.h5
+        ├──► benchmark ─► metrics + checkpoint + model package
+        ├──► optimize  ─► trials + ranked pipeline results
+        ├──► retrieval ─► ranked similar slides
+        └──► inference ─► task-specific predictions
+
+The snippets omit settings for which defaults are sufficient. Use
+:doc:`configuration` for the full schema and :ref:`core-terms` for definitions
+of tile, MPP, bag, artifact, task, combination, and trial.
 
 Annotation CSV
 --------------
@@ -26,6 +51,10 @@ annotation examples, slide naming rules, and a validation checklist.
 
 Feature Extraction
 ------------------
+
+This step reads each WSI belonging to ``TrainingSet``, identifies tissue,
+creates tile coordinates, runs ``resnet18`` over the tiles, and writes one HDF5
+file per slide beneath ``/data/artifacts/train``. It does not train a MIL model.
 
 **Config** (``features.yaml``):
 
@@ -58,8 +87,17 @@ Feature Extraction
 
    pathforge-features --config features.yaml
 
+After completion, a file such as
+``/data/artifacts/train/SLIDE_001.h5`` should exist. Re-running a compatible
+configuration normally reuses already-complete feature data.
+
 Benchmarking
 ------------
+
+Benchmarking forms combinations from the active lists under
+``benchmark_parameters``. This example contains one value on every active
+axis, so it trains one ``PerceiverMIL`` model. Dataset roles come from
+``used_for``; names such as ``TrainingSet`` do not assign a role by themselves.
 
 **Config** (``benchmark.yaml``):
 
@@ -103,8 +141,17 @@ Benchmarking
 
    pathforge-benchmark --config benchmark.yaml
 
+The policy can create a missing required feature matrix before training.
+Successful Lightning runs write a best checkpoint, a self-contained
+``*_package.pt`` inference package, validation metrics, and figures. See
+:doc:`task_outputs` for the output layout.
+
 Pipeline Optimization
 ----------------------------
+
+Optimization uses Optuna. A **trial** is one sampled pipeline configuration;
+it can complete, fail, or be stopped early by the pruner. ``trials: 30`` is the
+maximum requested number of trial evaluations, not the number of epochs.
 
 **Config** (``optimize.yaml``):
 
@@ -150,12 +197,22 @@ Pipeline Optimization
 
    pathforge-optimize --config optimize.yaml
 
+This configuration fixes every pipeline component to one value but still uses
+the schema's default numeric search space for learning rate, epochs, latent
+dimension, dropout, and weight decay. Declare ``optimization.search_space``
+explicitly to make those ranges visible and reproducible in the YAML, or to
+change them; see :doc:`configuration`.
+
 Inference
 ---------
 
 Run a packaged model on one feature artifact. Benchmarking and optimization
 write a ``*_package.pt`` model beside each successful Lightning checkpoint;
 the raw ``.ckpt`` file is not a self-contained inference input.
+
+The input HDF5 must contain the tiling and feature extractor recorded in the
+package. The command writes the prediction to the requested JSON path and does
+not modify the source WSI.
 
 .. code-block:: bash
 
@@ -180,6 +237,8 @@ Generate an attention heatmap alongside the prediction:
 
 For config-driven inference over many slides (``experiment.mode='inference'``),
 use ``pathforge-infer --config inference.yaml --input-csv slides.csv``.
+That path creates a timestamped inference directory and delegates to the
+configured task. See :doc:`tutorials/inference` for the input CSV contract.
 
 End-to-End Example
 ------------------
@@ -212,6 +271,11 @@ Slide Retrieval
 
 Rank reference slides against query slides using bag-level representations and a
 search strategy.
+
+``reference`` slides form the searchable collection; ``query`` slides are
+looked up against it. ``exclusion_level: patient`` removes candidates from the
+same patient before ranking, preventing related slides from becoming trivial
+matches.
 
 **Config** (``retrieval.yaml``):
 
@@ -253,3 +317,5 @@ search strategy.
 
 Each combination writes a ranked ``query_results.xlsx`` and ``manifest.json``
 under the project root; see :doc:`/slide-retrieval-results-and-metrics`.
+The first command materializes reusable retrieval representations from feature
+bags. The second applies the search strategy and records ranked matches.

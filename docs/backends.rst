@@ -10,6 +10,12 @@ WSI Processing Backends
 
 Configured via ``slide_processing.backend``.
 
+When using the LazySlide backend, ``slide_processing.reader`` selects the
+WSIData slide reader. It defaults to ``auto``; set it to ``cucim`` to require
+cuCIM rather than allowing WSIData to choose another installed reader. Use
+``slide_processing.reader_fallbacks`` for an ordered fallback list, for example
+``[openslide]`` for slides that cuCIM cannot open.
+
 .. list-table::
    :widths: 20 80
    :header-rows: 1
@@ -131,16 +137,28 @@ The ``torchmil`` backend wraps any TorchMIL model class through a single
 generic adapter :class:`~pathforge.adapters.torchmil.backend.TorchMILBackendModel`.
 Requires the ``mil-backends`` extra.
 
-PathForge currently catalogs ``ABMIL``, ``DSMIL``, and ``CLAM``. See the
+PathForge currently catalogs ``ABMIL``, ``DSMIL``, ``CLAM``, ``TransMIL``, and
+``PatchGCN``. See the
 `TorchMIL model API <https://torchmil.readthedocs.io/en/latest/api/models/>`_
 for upstream model documentation; an upstream model is selectable only after
 PathForge adds it to its adapter catalog.
+
+``PatchGCN`` declares required batch keys ``X`` and ``adj``. It therefore needs
+node features and adjacency information. PathForge reads ``X`` from the normal
+feature bag and automatically constructs ``adj`` for this catalogued model.
+Configure construction under ``mil.graph``; see :ref:`graph-model-inputs`.
 
 Example config:
 
 .. code-block:: yaml
 
    mil:
+     graph:
+       enabled: false
+       neighbor_space: spatial
+       k: 8
+       symmetric: true
+       self_loops: true
      torchmil_model_kwargs:
        in_shape: [1024]
        out_shape: 2

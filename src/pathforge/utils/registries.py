@@ -108,6 +108,12 @@ _OPTIONAL_NATIVE_MIL_MODELS: dict[str, str] = {
 }
 
 
+def _import_builtin_trainer_modules() -> None:
+    """Import built-in trainer modules so their registry decorators run."""
+
+    import_module("pathforge.training.lightning")
+
+
 def _import_native_model_modules() -> None:
     """Import native PathForge model modules so their registry decorators run."""
 
@@ -157,6 +163,7 @@ def populate_dynamic_registries() -> None:
     if _populated:
         return
 
+    _import_builtin_trainer_modules()
     populate_pathforge_feature_extractors()
     _import_native_model_modules()
 

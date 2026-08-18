@@ -33,8 +33,22 @@ classification:
   skip_extracted: false
   skip_feature_extraction: false
 
+mil:
+  # Graph models always receive X from the feature bag. Enable this for a
+  # generic graph model so PathForge also constructs dense adj [B, N, N].
+  # Catalogued models that declare adj as required (for example PatchGCN)
+  # trigger construction automatically even when enabled is false.
+  graph:
+    enabled: false
+    neighbor_space: spatial  # spatial tile coordinates or feature embeddings
+    k: 8
+    symmetric: true
+    self_loops: true
+
 slide_processing:
   backend: "lazyslide"
+  reader: "auto"  # auto, openslide, tiffslide, fastslide, bioformats, cucim, or isyntax
+  reader_fallbacks: []  # tried in order only when the primary reader cannot open a slide
   save_tiles: false
   segmentation_method: "otsu"
   qc_filters: []   # passed as kwargs to lazyslide find_tissues; keep empty unless you know supported params
@@ -63,6 +77,7 @@ execution:
   work_dir: "./pathforge-work"
   resume: true
   max_workers: 4
+  slides_per_shard: 1            # Process this many slides sequentially per task.
   resources:
     feature_extraction: {cpus: 4, gpus: 1, memory_gb: 32, time: "12:00:00"}
     benchmarking: {cpus: 4, gpus: 1, memory_gb: 32, time: "12:00:00"}

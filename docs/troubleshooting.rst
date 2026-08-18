@@ -3,6 +3,30 @@ Troubleshooting
 
 This page covers common errors and how to resolve them.
 
+Start Here
+----------
+
+Preserve the first complete traceback and identify its stage: configuration,
+slide resolution, feature extraction, dataset construction, training,
+retrieval, or output writing. Later errors are often consequences of the first
+failure.
+
+Check these conditions in order:
+
+#. the command uses the intended YAML file and Python environment;
+#. configured paths are visible and writable from the current compute node;
+#. annotation dataset and slide IDs resolve as described in
+   :doc:`data_preparation`;
+#. each selected optional backend is installed and available;
+#. the required HDF5 tiling ID and feature name exist; and
+#. two uncoordinated processes are not writing the same project or slide
+   artifact.
+
+Where possible, reproduce the problem with one slide or one pipeline
+combination. This separates data-dependent failures from scheduler scale and
+keeps the diagnostic log small. Definitions of artifact, combination, backend,
+MPP, bag, and other recurring terms are in :ref:`core-terms`.
+
 Installation Errors
 -------------------
 

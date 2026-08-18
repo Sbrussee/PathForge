@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from abc import abstractmethod
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
@@ -218,7 +217,10 @@ class BagDataset(BagDatasetBase):
     def __getitem__(self, index: int) -> BagBatch:
         bag = self.load_bag(index)
         target = self._target_from_index(index)
-        return as_bag_batch({"X": bag, "Y": target})
+        payload: dict[str, Any] = {"X": bag, "Y": target}
+        if self._mode == "artifact":
+            payload["coords"] = self.load_coords(index)
+        return as_bag_batch(payload)
 
     def get_sample(self, index: int) -> BagSample:
         mode = getattr(self, "_mode", "artifact")
@@ -247,6 +249,18 @@ class BagDataset(BagDatasetBase):
 
     def get_bag_sample(self, index: int) -> tuple[torch.Tensor, BagSample]:
         return self.load_bag(index), self.get_sample(index)
+
+    def load_coords(self, index: int) -> torch.Tensor:
+        """Load tile coordinates using the same deterministic bag-size selection."""
+
+        sample = self.samples[index]
+        coordinates: list[torch.Tensor] = []
+        for artifact_path in sample.artifact_paths:
+            with FileHandleH5(artifact_path, mode="r") as slide_artifact:
+                values = tiles_io.read_coords(slide_artifact, bag_id=self.tiling_id)
+            coordinates.append(torch.from_numpy(values[:, :2]).float())
+        coords = torch.cat(coordinates, dim=0)
+        return self._materialize_bag_size(coords)
 
     def _target_from_index(self, index: int) -> Any:
         if self._mode == "prepared":

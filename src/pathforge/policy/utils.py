@@ -262,6 +262,11 @@ def build_mil_model_for_config(
             ),
             "task": task,
             "torchmil_model_kwargs": backend_kwargs,
+            "graph_neighbor_space": config.mil.graph.neighbor_space,
+            "graph_k": config.mil.graph.k,
+            "graph_enabled": config.mil.graph.enabled,
+            "graph_symmetric": config.mil.graph.symmetric,
+            "graph_self_loops": config.mil.graph.self_loops,
         }
     elif backend == "mil-lab":
         backend_kwargs = dict(config.mil.mil_lab_model_kwargs)

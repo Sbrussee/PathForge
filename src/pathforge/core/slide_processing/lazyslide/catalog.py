@@ -36,8 +36,8 @@ def timm_model_names() -> set[str]:
 def lazyslide_model_names() -> set[str]:
     """Return LazySlide model names visible in the current Python environment."""
     try:
-        import lazyslide as zs
+        import lazyslide_models
 
-        return _normalize_model_names(zs.models.list_models())
+        return _normalize_model_names(lazyslide_models.list_models())
     except Exception:
         return set()

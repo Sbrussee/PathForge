@@ -150,6 +150,22 @@ pathforge retrieval sish-vqvae      --config retrieval.yaml
 pathforge infer run       --config inference.yaml --input-csv slides.csv
 ```
 
+Distributed feature extraction creates one work shard per slide by default.
+To submit fewer, longer-running local, Dask, or SLURM tasks, configure how many
+slides each shard processes sequentially:
+
+```yaml
+execution:
+  slides_per_shard: 4
+  max_shards: 50
+```
+
+For example, 10 slides with `slides_per_shard: 4` produce three feature shards
+containing 4, 4, and 2 slides. The default is `1`. Optional `max_shards` caps
+the total number of feature shards by grouping more slides sequentially when
+needed. `execution.slurm.max_concurrent` is separate: it limits how many SLURM
+array elements run simultaneously, not how many shards the plan contains.
+
 Run `pathforge --help` (or `pathforge <group> --help`) to list every command.
 
 ### Flat console scripts
@@ -580,6 +596,24 @@ Shape and value contracts:
 - Padded instances are zero-filled and marked `false` in `mask`.
 
 Datasets and collate adapters use the canonical bag dictionary throughout.
+
+Graph models receive `X` from the feature bag and require `adj`. Configure
+automatic dense k-nearest-neighbor adjacency construction with:
+
+```yaml
+mil:
+  graph:
+    enabled: true
+    neighbor_space: spatial  # spatial coordinates, or feature embeddings
+    k: 8
+    symmetric: true
+    self_loops: true
+```
+
+Known models that declare `adj` as required, including `PatchGCN`, trigger
+construction automatically even when `enabled` is false. Spatial graphs use
+tile `(x, y)` coordinates from the HDF5 artifact; feature graphs use rows of
+`X`. The dense adjacency has shape `[B, N, N]`.
 
 ## Benchmarking
 

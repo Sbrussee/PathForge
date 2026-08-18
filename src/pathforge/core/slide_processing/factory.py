@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from importlib import import_module
+from typing import Any
 
 from pathforge.core.slide_processing.base import SlideProcessorBase
 
 
-def build_slide_processor(backend_name: str) -> SlideProcessorBase:
+def build_slide_processor(backend_name: str, **kwargs: Any) -> SlideProcessorBase:
     """Load and construct the registered processor for one backend name.
 
     Args:
@@ -37,7 +38,7 @@ def build_slide_processor(backend_name: str) -> SlideProcessorBase:
     if not SLIDE_PROCESSORS.is_available(backend_name):
         raise ValueError(f"Slide processing backend '{backend_name}' is not registered.")
 
-    processor = SLIDE_PROCESSORS.get(backend_name)()
+    processor = SLIDE_PROCESSORS.get(backend_name)(**kwargs)
     if not isinstance(processor, SlideProcessorBase):
         raise TypeError(
             f"Slide processing backend '{backend_name}' did not construct a "

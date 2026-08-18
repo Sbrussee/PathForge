@@ -26,6 +26,10 @@ Files prefixed with `benchmark_` enumerate task-supported fixed pipeline grids.
 Files prefixed with `optimize_` use Optuna ranges plus categorical pipeline
 choices. The parallel templates show generated SLURM workflows; parallel optimization needs
 a shared PostgreSQL database and must not use SQLite across nodes.
+Set `execution.slides_per_shard` in either parallel template to process multiple
+slides sequentially in each feature-extraction array task. Larger values reduce
+the number of submitted tasks while increasing each task's runtime; the default
+value of `1` preserves one task per slide.
 
 The current Optuna policy is MIL-training-specific. The
 `optimize_slide_retrieval.yaml` file documents the intended retrieval search

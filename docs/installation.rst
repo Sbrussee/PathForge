@@ -8,6 +8,10 @@ Requirements
 - PyTorch (CPU or CUDA)
 - `uv <https://docs.astral.sh/uv/>`_ (recommended) or pip
 
+The commands below assume that PathForge has been cloned and the shell is in
+the repository root—the directory containing ``pyproject.toml``. ``uv sync``
+creates or updates the local ``.venv`` and installs that checkout.
+
 Recommended Install
 -------------------
 
@@ -17,6 +21,10 @@ backend and optional TorchMetrics/TorchSurv integrations with:
 .. code-block:: bash
 
    uv sync --extra mil-backends
+
+Use the default/CPU PyTorch installation when CUDA 12.8 is unavailable or GPU
+acceleration is unnecessary. PathForge does not install a system CUDA driver;
+the device support comes from the selected PyTorch build.
 
 GPU (CUDA 12.8) build:
 
@@ -29,6 +37,9 @@ Development install (adds pytest and coverage):
 .. code-block:: bash
 
    uv sync --extra mil-backends --extra dev
+
+Extras are additive. A contributor who also builds the docs can run
+``uv sync --extra mil-backends --extra dev --extra docs``.
 
 Optional Extras
 ---------------
@@ -87,6 +98,15 @@ Verifying the Install
 
    python -c "import pathforge; print('ok')"
 
+Confirm that the command-line entry point is visible:
+
+.. code-block:: bash
+
+   pathforge --help
+
+If importing succeeds but the command is not found, use
+``uv run pathforge --help`` or activate the repository's ``.venv``.
+
 Check optional backends:
 
 .. code-block:: python
@@ -102,3 +122,6 @@ Check optional backends:
    print(is_mil_lab_available())
    print(is_torchmetrics_available())
    print(is_torchsurv_available())
+
+``False`` is expected for an optional backend that was not installed. It is
+only a problem when the active configuration selects that backend.

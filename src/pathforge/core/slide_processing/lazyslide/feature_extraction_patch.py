@@ -15,7 +15,7 @@ import lazyslide._api as _api
 import lazyslide.tools._features as _features
 from lazyslide._const import Key
 from lazyslide._utils import default_pbar
-from lazyslide.models import ImageModel
+from lazyslide_models.base import ImageModel
 
 
 def _uses_image_model_protocol(model: object) -> bool:

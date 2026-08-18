@@ -8,6 +8,7 @@ import json
 import math
 import os
 import socket
+import sys
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime
@@ -129,25 +130,47 @@ def _config_snapshot(cfg: Config, destination: Path) -> None:
 
 
 def _feature_records(cfg: Config, config_path: Path) -> list[WorkRecord]:
+    """Build feature shards containing sequentially processed slide payloads.
+
+    Each returned record is one scheduler work unit. Its ``slides`` payload is
+    ordered deterministically and contains at most
+    ``cfg.execution.slides_per_shard`` slide dictionaries unless
+    ``cfg.execution.max_shards`` requires a larger shard size. The latter caps
+    the total number of scheduler work units without dropping slides.
+    """
+
     annotations = pd.read_csv(cfg.experiment.annotation_file)
     datasets = build_wsi_datasets(cfg=cfg, annotations_df=annotations)
-    records: list[WorkRecord] = []
+    slides: list[dict[str, str]] = []
     for dataset in datasets:
         for wsi in dataset.samples:
-            payload = {
-                "dataset": dataset.name,
-                "slide_id": wsi.slide,
-                "input_path": str(wsi.path),
-            }
-            records.append(
-                WorkRecord(
-                    stage="features",
-                    work_id=f"features__{_canonical_hash(payload)}",
-                    config_path=str(config_path),
-                    payload=payload,
-                )
+            slides.append(
+                {
+                    "dataset": dataset.name,
+                    "slide_id": wsi.slide,
+                    "input_path": str(wsi.path),
+                }
             )
-    return sorted(records, key=lambda item: item.work_id)
+    slides.sort(key=lambda item: _canonical_hash(item))
+
+    records: list[WorkRecord] = []
+    shard_size = cfg.execution.slides_per_shard
+    if cfg.execution.max_shards is not None and slides:
+        shard_size = max(
+            shard_size,
+            math.ceil(len(slides) / cfg.execution.max_shards),
+        )
+    for offset in range(0, len(slides), shard_size):
+        payload = {"slides": slides[offset : offset + shard_size]}
+        records.append(
+            WorkRecord(
+                stage="features",
+                work_id=f"features__{_canonical_hash(payload)}",
+                config_path=str(config_path),
+                payload=payload,
+            )
+        )
+    return records
 
 
 def _benchmark_records(
@@ -205,6 +228,7 @@ def _render_array_script(
     manifest: Path,
     count: int,
 ) -> str:
+    pathforge_cli = str(Path(sys.prefix) / "bin" / "pathforge")
     resource = (
         cfg.execution.resources.feature_extraction
         if stage == "features"
@@ -217,7 +241,7 @@ def _render_array_script(
         f"#SBATCH --array=0-{array_max}%{cfg.execution.slurm.max_concurrent}",
         *_slurm_directives(resource, cfg),
         "set -euo pipefail",
-        f'pathforge execution worker --plan "{plan_dir / "plan.json"}" '
+        f'"{pathforge_cli}" execution worker --plan "{plan_dir / "plan.json"}" '
         f'--stage {stage} --index "$SLURM_ARRAY_TASK_ID"',
     ]
     if count == 0:
@@ -233,6 +257,7 @@ def _render_slurm_files(
     feature_count: int,
     benchmark_count: int,
 ) -> None:
+    pathforge_cli = str(Path(sys.prefix) / "bin" / "pathforge")
     slurm_dir = plan_dir / "slurm"
     feature_script = slurm_dir / "features.sbatch"
     benchmark_script = slurm_dir / "benchmark.sbatch"
@@ -262,11 +287,19 @@ def _render_slurm_files(
         "#SBATCH --job-name=pathforge-aggregate",
         *_slurm_directives(cfg.execution.resources.aggregation, cfg),
         "set -euo pipefail",
-        f'pathforge execution aggregate --plan "{plan_dir / "plan.json"}"',
+        f'"{pathforge_cli}" execution aggregate --plan "{plan_dir / "plan.json"}"',
     ]
     _atomic_write_text(aggregate_script, "\n".join(aggregate_lines) + "\n")
     submit_lines = ["#!/usr/bin/env bash", "set -euo pipefail"]
-    submit_lines.append(f'FEATURE_JOB=$(sbatch --parsable "{feature_script}")')
+    submit_lines.extend(
+        [
+            'if [[ -n "${PATHFORGE_UPSTREAM_JOB:-}" ]]; then',
+            f'  FEATURE_JOB=$(sbatch --parsable --dependency="afterany:${{PATHFORGE_UPSTREAM_JOB}}" "{feature_script}")',
+            "else",
+            f'  FEATURE_JOB=$(sbatch --parsable "{feature_script}")',
+            "fi",
+        ]
+    )
     if cfg.experiment.mode == "optimization":
         worker_count = math.ceil(
             cfg.optimization.trials / cfg.optimization.trials_per_worker
@@ -283,7 +316,7 @@ def _render_slurm_files(
             "START=$((SLURM_ARRAY_TASK_ID * TRIALS_PER_WORKER))",
             "REMAINING=$((TOTAL_TRIALS - START))",
             "WORKER_TRIALS=$((REMAINING < TRIALS_PER_WORKER ? REMAINING : TRIALS_PER_WORKER))",
-            f'pathforge optimize worker --config "{plan_dir / "config.snapshot.yaml"}" '
+            f'"{pathforge_cli}" optimize worker --config "{plan_dir / "config.snapshot.yaml"}" '
             '--trials "$WORKER_TRIALS"',
         ]
         _atomic_write_text(optimization_script, "\n".join(optimization_lines) + "\n")
@@ -293,20 +326,22 @@ def _render_slurm_files(
             "#SBATCH --job-name=pathforge-optuna-finalize",
             *_slurm_directives(cfg.execution.resources.aggregation, cfg),
             "set -euo pipefail",
-            f'pathforge optimize finalize --config "{plan_dir / "config.snapshot.yaml"}"',
+            f'"{pathforge_cli}" optimize finalize --config "{plan_dir / "config.snapshot.yaml"}"',
         ]
         _atomic_write_text(finalize_script, "\n".join(finalize_lines) + "\n")
         submit_lines.extend(
             [
                 f'OPTIMIZATION_JOB=$(sbatch --parsable --dependency="afterok:${{FEATURE_JOB}}" "{optimization_script}")',
-                f'sbatch --dependency="afterany:${{OPTIMIZATION_JOB}}" "{finalize_script}"',
+                f'FINAL_JOB=$(sbatch --parsable --dependency="afterany:${{OPTIMIZATION_JOB}}" "{finalize_script}")',
+                'echo "$FINAL_JOB"',
             ]
         )
     else:
         submit_lines.extend(
             [
                 f'BENCHMARK_JOB=$(sbatch --parsable --dependency="afterok:${{FEATURE_JOB}}" "{benchmark_script}")',
-                f'sbatch --dependency="afterany:${{BENCHMARK_JOB}}" "{aggregate_script}"',
+                f'FINAL_JOB=$(sbatch --parsable --dependency="afterany:${{BENCHMARK_JOB}}" "{aggregate_script}")',
+                'echo "$FINAL_JOB"',
             ]
         )
     _atomic_write_text(slurm_dir / "submit.sh", "\n".join(submit_lines) + "\n")
@@ -408,22 +443,39 @@ def _base_status(record: WorkRecord) -> WorkStatus:
 
 
 def _run_feature_record(record: WorkRecord) -> dict[str, Any]:
-    from pathforge.cli.feature_extraction_slide import (
+    """Process every slide in a feature shard sequentially.
+
+    Legacy single-slide records remain supported for existing execution plans.
+    """
+
+    from pathforge.cli.features_slide import (
         run_feature_extraction_single_slide,
     )
 
-    exit_code = run_feature_extraction_single_slide(
-        config=Path(record.config_path),
-        dataset=str(record.payload["dataset"]),
-        input_path=Path(record.payload["input_path"]),
-    )
-    if exit_code != 0:
-        raise RuntimeError(f"feature worker returned exit code {exit_code}.")
-    return {
-        "dataset": record.payload["dataset"],
-        "slide_id": record.payload["slide_id"],
-        "input_path": record.payload["input_path"],
-    }
+    slides = record.payload.get("slides")
+    if slides is None:
+        slides = [record.payload]
+
+    results: list[dict[str, Any]] = []
+    for slide in slides:
+        exit_code = run_feature_extraction_single_slide(
+            config=Path(record.config_path),
+            dataset=str(slide["dataset"]),
+            input_path=Path(slide["input_path"]),
+        )
+        if exit_code != 0:
+            raise RuntimeError(
+                f"feature worker returned exit code {exit_code} for slide "
+                f"{slide['slide_id']}."
+            )
+        results.append(
+            {
+                "dataset": slide["dataset"],
+                "slide_id": slide["slide_id"],
+                "input_path": slide["input_path"],
+            }
+        )
+    return {"slides": results}
 
 
 def _run_benchmark_record(record: WorkRecord, plan: ExecutionPlan) -> dict[str, Any]:

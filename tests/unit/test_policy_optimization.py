@@ -168,11 +168,11 @@ def test_optimization_objective_uses_mil_lab_user_config_and_inferred_dims(
     cfg.benchmark_parameters.mil = ["mil-lab"]
     cfg.optimization.search_space = {}
 
-    fake_integration = types.ModuleType("optuna.integration")
+    fake_integration = types.ModuleType("optuna_integration")
     fake_integration.PyTorchLightningPruningCallback = (
         lambda trial, monitor: object()
     )
-    monkeypatch.setitem(sys.modules, "optuna.integration", fake_integration)
+    monkeypatch.setitem(sys.modules, "optuna_integration", fake_integration)
     monkeypatch.setattr(opt_mod, "build_bag_dataset_for_task", lambda *args, **kwargs: _FakeDataset())
     monkeypatch.setattr(opt_mod, "resolve_dataset_feature_dir", lambda dataset_entry: tmp_path)
     monkeypatch.setattr(
@@ -289,11 +289,11 @@ def test_optimization_objective_uses_dataset_use_semantics_and_does_not_mutate_b
             _ = (model, ds_train, ds_val, loss_fn)
             return "checkpoint.ckpt", 0.5
 
-    fake_integration = types.ModuleType("optuna.integration")
+    fake_integration = types.ModuleType("optuna_integration")
     fake_integration.PyTorchLightningPruningCallback = (
         lambda trial, monitor: object()
     )
-    monkeypatch.setitem(sys.modules, "optuna.integration", fake_integration)
+    monkeypatch.setitem(sys.modules, "optuna_integration", fake_integration)
 
     cfg = _make_cfg(tmp_path)
     cfg.datasets = [

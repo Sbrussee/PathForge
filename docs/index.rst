@@ -11,6 +11,38 @@ Policies and trainers resolve implementations through PathForge interfaces and
 registries, while concrete third-party integrations are concentrated in
 adapter modules where practical.
 
+How to Use These Documentation Pages
+------------------------------------
+
+New users should read **Getting Started** in order. The introduction explains
+why PathForge exists and defines its terminology; data preparation defines the
+required files and identifiers; the quick start turns those inputs into a
+first run. The tutorials then develop complete workflows.
+
+Use **Reference** while configuring or interpreting a run.
+``configuration`` explains YAML fields, ``mil_options`` and ``backends`` list
+selectable implementations, and ``task_outputs`` explains where results are
+written. ``architecture`` and ``contributing`` are for developers changing
+PathForge itself.
+
+Most workflows share this data flow:
+
+.. code-block:: text
+
+   annotation CSV + WSI files
+              │
+              ▼
+   per-slide HDF5 feature artifacts
+              │
+              ▼
+   benchmark, optimization, retrieval, or inference
+              │
+              ▼
+   metrics + visualizations + reusable model/retrieval artifacts
+
+Feature extraction can be run separately and reused. See :ref:`core-terms` for
+definitions of WSI, tile, feature bag, artifact, task, policy, and backend.
+
 ----
 
 .. toctree::
@@ -37,6 +69,7 @@ adapter modules where practical.
    testing
    backends
    architecture
+   contributing
    HDF5_structure
    slide-retrieval
    slide_retrieval_h5_structure

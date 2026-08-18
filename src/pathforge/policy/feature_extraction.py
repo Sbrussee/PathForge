@@ -620,7 +620,13 @@ class FeatureExtractionPolicy(PolicyBase):
         }
 
     def _build_processor(self) -> SlideProcessorBase:
-        slide_processor = build_slide_processor(self.backend_name)
+        processor_kwargs: dict[str, Any] = {}
+        if self.backend_name == "lazyslide":
+            processor_kwargs = {
+                "reader": self.config.slide_processing.reader,
+                "reader_fallbacks": self.config.slide_processing.reader_fallbacks,
+            }
+        slide_processor = build_slide_processor(self.backend_name, **processor_kwargs)
         logger.info("[Policy] Using backend '%s' -> %s", self.backend_name, slide_processor)
         return slide_processor
 
