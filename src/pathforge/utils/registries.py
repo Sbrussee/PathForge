@@ -94,11 +94,11 @@ def _timm_module():
 
 
 @lru_cache(maxsize=1)
-def _lazyslide_module():
+def _lazyslide_models_module():
     try:
-        import lazyslide as zs  # noqa: WPS433
+        import lazyslide_models  # noqa: WPS433
 
-        return zs
+        return lazyslide_models
     except Exception:
         return None
 
@@ -153,11 +153,11 @@ def timm_model_names() -> set[str]:
 @lru_cache(maxsize=1)
 def lazyslide_model_names() -> set[str]:
     """Return the LazySlide model names visible in the current Python environment."""
-    zs = _lazyslide_module()
-    if zs is None:
+    lazyslide_models = _lazyslide_models_module()
+    if lazyslide_models is None:
         return set()
     try:
-        return _normalize_model_names(zs.models.list_models())
+        return _normalize_model_names(lazyslide_models.list_models())
     except Exception:
         return set()
 
@@ -241,6 +241,12 @@ _OPTIONAL_NATIVE_MIL_MODELS: dict[str, str] = {
 }
 
 
+def _import_builtin_trainer_modules() -> None:
+    """Import built-in trainer modules so their registry decorators run."""
+
+    import_module("pathforge.training.lightning")
+
+
 def _import_native_model_modules() -> None:
     """Import native PathForge model modules so their registry decorators run."""
 
@@ -267,6 +273,7 @@ def populate_dynamic_registries() -> None:
     if _populated:
         return
 
+    _import_builtin_trainer_modules()
     _import_native_model_modules()
 
     timm = _timm_module()
@@ -278,8 +285,8 @@ def populate_dynamic_registries() -> None:
                 def _timm_factory(name=model_name, pretrained=True, **kwargs):
                     return timm.create_model(name, pretrained=pretrained, **kwargs)
 
-    zs = _lazyslide_module()
-    if zs is not None:
+    lazyslide_models = _lazyslide_models_module()
+    if lazyslide_models is not None:
         for model_name in lazyslide_model_names():
             LAZYSLIDE_MODEL_NAMES.add(model_name)
             if not FEATURE_EXTRACTORS.is_available(model_name):

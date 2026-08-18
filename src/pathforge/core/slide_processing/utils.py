@@ -3,6 +3,7 @@ from ..config import Config
 from typing import Optional
 import timm
 import lazyslide as zs
+from lazyslide_models import list_models as list_lazyslide_models
 from wsidata import open_wsi
 
 def segment_tissue(config: Config, slide: zs.WSIData, method: str = "otsu") -> None:
@@ -51,7 +52,8 @@ def extract_features(config: Config, slide: zs.WSIData, model: str) -> None:
         config (Config): Configuration object containing feature extraction parameters.
         slide (zs.WSIData): The WSI object with tiled regions.
         model (str): Model name used for feature extraction.
-            Must be available in `zs.models.list_models()` or `timm.list_models()`.
+            Must be available in ``lazyslide_models.list_models()`` or
+            ``timm.list_models()``.
 
     Raises:
         AssertionError: If the provided model is not found in LazySlide or timm model zoo.
@@ -59,7 +61,7 @@ def extract_features(config: Config, slide: zs.WSIData, model: str) -> None:
     Returns:
         None
     """
-    assert model in zs.models.list_models() or model in timm.list_models(), \
+    assert model in list_lazyslide_models() or model in timm.list_models(), \
         f"Model '{model}' not found in LazySlide or timm model zoo."
 
     zs.tl.extract_features(wsi=slide, model=model, **config.slide_processing.feature_extraction)
@@ -91,4 +93,3 @@ def load_slide(path: str) -> zs.WSIData:
         zs.WSIData: Loaded Whole Slide Image object.
     """
     return open_wsi(path)
-

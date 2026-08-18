@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, Tuple
 import logging
 
 import lazyslide as zs
+from lazyslide_models import list_models as list_lazyslide_models
 from wsidata import open_wsi
 
 import numpy as np
@@ -709,7 +710,7 @@ class LazySlideProcessor(SlideProcessorBase):
             params["color_norm"] = config["color_norm"]
 
         # ---- Validate model availability ----
-        available = zs.models.list_models() + timm.list_models()
+        available = list_lazyslide_models() + timm.list_models()
         if model_name not in available:
             raise ValueError(f"[LazySlide] Model '{model_name}' not found in LazySlide/timm.")
 

@@ -145,7 +145,7 @@ class OptimizationPolicy(PolicyBase):
 
         # 4. Training
         # We can optionally pass an Optuna Pruning Callback here if the Trainer supports it
-        from optuna.integration import PyTorchLightningPruningCallback
+        from optuna_integration import PyTorchLightningPruningCallback
 
         pruning_callback = PyTorchLightningPruningCallback(
             trial, monitor=trial_cfg.optimization.objective_metric
