@@ -6,6 +6,26 @@ evaluation, visualization, and optimization code. ``project_root`` below means
 ``experiment.project_root``. HDF5 contents are documented separately in
 :doc:`HDF5_structure`.
 
+Two Output Locations
+--------------------
+
+Reusable slide data and experiment results are intentionally separate:
+
+.. code-block:: text
+
+   datasets[].artifacts_dir/          experiment project directory/
+   └── <slide>.h5                     ├── checkpoints and model packages
+       reusable across runs           ├── metrics and summaries
+                                      ├── visualizations
+                                      └── run metadata
+
+Look in ``artifacts_dir`` for data describing an individual slide independent
+of a particular run. Look in the named project directory for the outcome of a
+benchmark, optimization, retrieval, or inference invocation. Deleting one
+location does not automatically delete the other. Definitions of artifact,
+feature bag, project root, objective, and common metric symbols are in
+:ref:`core-terms`.
+
 At a glance
 -----------
 
@@ -79,6 +99,11 @@ Lightning training output layout:
 ``metrics.*_metrics`` selects scalar values written to ``val_metrics.json``.
 ``val_curves.json`` retains the arrays used to create the figures. Figures are
 generated from the validation predictions after the best checkpoint is loaded.
+
+The ``.ckpt`` file contains Lightning-oriented state for training and resume
+workflows. The neighboring ``*_package.pt`` file is the portable PathForge
+inference input: it includes the configuration and model metadata needed by
+``pathforge-infer-model``.
 
 Classification
 ~~~~~~~~~~~~~~
@@ -236,6 +261,12 @@ columns ``run_index``, ``status``, ``objective_metric``, ``objective_value``,
 ``rank``, task/pipeline selections, and checkpoint paths when available.
 Optimization additionally retains Optuna's raw ``params_*`` and
 ``user_attrs_*`` columns for auditability.
+
+Check ``status`` before comparing objective values. Failed and skipped rows are
+kept for traceability and may not have a numeric objective. The direction of
+``objective_value`` depends on ``objective_metric``: lower is better for losses
+and error measures, while higher is normally better for accuracy, concordance,
+and similar scores.
 
 Generate fresh standalone HTML charts from either saved CSV without rerunning
 training:

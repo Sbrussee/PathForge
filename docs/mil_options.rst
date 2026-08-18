@@ -79,9 +79,9 @@ The current catalog is exposed by
        ``MambaMIL`` when the ``mamba`` dependency is installed
      - Select names in ``benchmark_parameters.mil``.
    * - TorchMIL
-     - Explicitly catalogued: ``ABMIL``, ``CLAM``, ``DSMIL``. The generic
-       adapter also accepts another class exposed by the installed
-       ``torchmil.models`` package.
+     - Explicitly catalogued: ``ABMIL``, ``CLAM``, ``DSMIL``, ``TransMIL``,
+       and ``PatchGCN``. The generic adapter also accepts another class exposed
+       by the installed ``torchmil.models`` package.
      - Select concrete names in ``benchmark_parameters.mil``. Pass shared
        constructor arguments through ``mil.torchmil_model_kwargs``.
    * - MIL-Lab
@@ -94,6 +94,11 @@ TorchMIL evolves independently, so consult its `model API
 <https://torchmil.readthedocs.io/en/stable/api/models/>`_ for constructor
 parameters, input shapes, and outputs. PathForge forwards
 ``mil.torchmil_model_kwargs`` directly to the chosen constructor.
+Graph models consume ``X`` and ``adj``. PathForge obtains ``X`` from the feature
+bag and can construct ``adj`` from spatial coordinates or feature distances
+using ``mil.graph``. Catalogued models such as ``PatchGCN`` request this
+automatically; set ``mil.graph.enabled: true`` for another graph model. See
+:ref:`graph-model-inputs`.
 
 The concrete model name determines the backend for each combination. This
 allows a grid such as ``[PerceiverMIL, ABMIL, clam]`` when PathForge, TorchMIL,

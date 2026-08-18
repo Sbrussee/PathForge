@@ -9,6 +9,30 @@ PathForge requires two inputs before any workflow can run:
 
 This page documents both requirements in full.
 
+How Rows Become Runtime Datasets
+--------------------------------
+
+The annotation CSV and YAML ``datasets`` list are joined by name. For each CSV
+row, PathForge finds the configured dataset entry whose ``name`` exactly equals
+the row's ``dataset`` value. That entry determines where the WSI is read, where
+its reusable HDF5 artifact is written or found, and which role it has.
+
+.. code-block:: text
+
+   CSV row: dataset = TrainingSet
+                    │ exact match
+                    ▼
+   - name: TrainingSet
+     slides_dir: ...       raw WSI location
+     artifacts_dir: ...    reusable HDF5 location
+     used_for: training    workflow role
+
+``used_for`` controls behavior; ``TrainingSet`` and ``TestSet`` are only names.
+Prediction tasks use roles such as ``training``, ``validation``, ``testing``,
+and ``all``. Retrieval uses ``reference``, ``query``, or ``query_reference``.
+See :ref:`core-terms` for the distinction between a dataset entry, slide
+artifact, feature bag, task, and aggregation level.
+
 ----
 
 Annotation CSV
@@ -70,6 +94,11 @@ Optional Columns
        whose metadata does not contain valid MPP information (e.g. scanned
        without calibration). Provide this value so PathForge can still tile
        at the correct resolution.
+
+Populate optional columns consistently. A missing ``patient`` value prevents
+reliable patient-level grouping or exclusion, and a partially populated
+``wsi_path`` column makes some rows use explicit paths while others depend on
+``slides_dir`` resolution.
 
 Survival Task Columns
 ~~~~~~~~~~~~~~~~~~~~~
@@ -375,3 +404,8 @@ A quick sanity check using pandas:
        if not slide_exists(row.slide)
    ]
    print("Missing slides:", missing)
+
+Run this check separately for every configured dataset because entries may use
+different ``slides_dir`` values. An empty ``Missing slides`` result verifies
+names and paths only; a one-slide feature-extraction run is still needed to
+detect unreadable WSI metadata, missing MPP, or model-access problems.

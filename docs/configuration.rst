@@ -5,6 +5,31 @@ PathForge is driven entirely by YAML configuration files. Every CLI command
 accepts ``--config <path>`` and builds a :class:`~pathforge.config.config.Config`
 object via Pydantic v2 validation before any work begins.
 
+How to Read This Reference
+--------------------------
+
+Configuration values have three different roles:
+
+* **Identity and routing** values under ``experiment`` and ``datasets`` select
+  the task and locate inputs and outputs.
+* **Fixed runtime values** under ``mil``, ``slide_processing``, ``metrics``, and
+  related blocks apply throughout a run unless optimization overrides a
+  supported parameter.
+* **Combination axes** under ``benchmark_parameters`` are lists. The selected
+  task chooses which lists form its Cartesian grid.
+
+For example, two feature extractors, two MIL models, and two losses produce up
+to ``2 × 2 × 2 = 8`` MIL combinations when every other active axis has one
+value. Pipeline optimization is different: ranges under
+``optimization.search_space`` are sampled per Optuna trial rather than
+expanded exhaustively.
+
+For reproducible local and cluster runs, use absolute paths for annotation
+files, slide directories, artifact directories, project roots, weights, and
+shared storage. Definitions of recurring variables such as ``tile_px``,
+``tile_mpp``, ``N``, ``D``, bag, combination, and trial are in
+:ref:`core-terms`.
+
 Top-Level Structure
 -------------------
 
@@ -23,6 +48,11 @@ Top-Level Structure
    optimization: ...
    weights_dir: ./pretrained_weights
    hf_key: null
+
+Blocks may be omitted when their defaults are sufficient or they do not apply
+to the selected task. ``experiment``, ``datasets``, and the relevant
+``benchmark_parameters`` values are the usual starting point. Pydantic rejects
+invalid values and incompatible task/mode settings before workflow execution.
 
 ``experiment``
 --------------
@@ -183,12 +213,58 @@ MIL model and training loop settings.
    * - ``encoder_layers``
      - ``1``
      - Number of encoder layers in attention networks.
+   * - ``graph``
+     - See below
+     - Graph-input construction for models that consume an adjacency matrix.
    * - ``skip_extracted``
      - ``true``
      - Skip slides whose H5 features already exist.
    * - ``skip_feature_extraction``
      - ``true``
      - Skip feature extraction step if artifacts exist.
+
+.. _graph-model-inputs:
+
+Graph Model Inputs
+~~~~~~~~~~~~~~~~~~
+
+Every MIL batch contains ``X``, the tile-feature tensor shaped ``[B, N, D]``.
+Graph models additionally consume ``adj``, a dense adjacency tensor shaped
+``[B, N, N]``. Configure k-nearest-neighbor construction as follows:
+
+.. code-block:: yaml
+
+   mil:
+     graph:
+       enabled: true
+       neighbor_space: spatial
+       k: 8
+       symmetric: true
+       self_loops: true
+
+``enabled`` forces adjacency construction for any selected TorchMIL model. It
+may remain ``false`` for a catalogued graph model such as ``PatchGCN`` because
+that model declares ``adj`` as required and triggers construction
+automatically. Set it to ``true`` for another graph model whose generic catalog
+entry does not declare the requirement.
+
+``neighbor_space`` defines what “nearest” means:
+
+* ``spatial`` uses Euclidean distance between tile ``(x, y)`` coordinates
+  loaded from the slide artifact. It connects nearby tissue regions and
+  requires artifact-backed bags with coordinates.
+* ``feature`` uses Euclidean distance between rows of ``X``. It connects tiles
+  with similar embeddings and works without coordinates.
+
+``k`` selects the number of nearest non-self neighbors per valid tile.
+``symmetric: true`` adds the reverse edge whenever either tile selected the
+other. ``self_loops: true`` adds a diagonal edge for each non-padding tile.
+Padded instances receive no edges. Match these conventions to the selected
+backend model's API.
+
+Adjacency is dense, so memory grows as ``B × N²``. ``mil.graph.k`` changes edge
+density but not the allocated tensor shape. For large WSI bags, control memory
+with ``mil.bag_size`` and ``mil.batch_size``.
 
 ``slide_processing``
 --------------------
@@ -516,12 +592,21 @@ when their shared constructor settings are compatible.
 
 Global local, Dask, and SLURM orchestration settings. ``backend`` is one of
 ``local``, ``dask``, or ``slurm``; ``resume`` skips successful work records and
-``max_workers`` controls local process execution. ``resources`` contains
+``max_workers`` controls local process execution. ``slides_per_shard`` controls
+how many feature-extraction slides each distributed work record processes
+sequentially (default ``1``). Optional ``max_shards`` caps the total number of
+feature work records by increasing the effective slides per shard when needed;
+it must be a positive integer. ``resources`` contains
 ``feature_extraction``, ``benchmarking``, ``optimization``, and ``aggregation``
 blocks with ``cpus``, ``gpus``, ``memory_gb``, and ``time``. The ``slurm`` block
 accepts ``partition``, ``account``, ``qos``, ``constraint``,
 ``max_concurrent``, and ``extra_directives``. See :doc:`scaling` for complete
 examples and worker commands.
+
+Do not confuse ``max_shards`` with ``slurm.max_concurrent``. The former changes
+how many feature records exist in every execution backend; the latter only
+limits how many elements of a generated SLURM array may run at once. The
+effective shard-size formula and examples are in :doc:`scaling`.
 
 Top-Level Fields
 ----------------

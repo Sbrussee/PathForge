@@ -1,227 +1,366 @@
 Architecture
 ============
 
-PathForge separates shared contracts, workflow orchestration, command-line
-entry points, and third-party integrations where practical. The boundaries are
-intended to improve testability and extension, but they are not strict rings:
-some task, configuration, training, and registry modules deliberately compose
-across packages.
+PathForge is a configuration-driven workflow framework for computational
+pathology. It connects command-line workflows to reusable policies, task
+implementations, scientific components, and persistent artifacts. Registries
+allow a configuration value such as a model or search-strategy name to select
+the corresponding implementation at runtime.
 
-Layer Overview
---------------
+The architecture is modular, but it is not a strict sequence of isolated
+layers. In particular, ``pathforge.core.tasks`` contains application-level
+orchestration, and configuration is shared by most runtime subsystems. The
+diagrams and dependency notes below describe the implemented code rather than
+an idealized layering model.
+
+System at a Glance
+------------------
+
+The normal direction of control is from a user command to an orchestrated
+workflow and then to stored results:
 
 .. code-block:: text
 
-   ┌─────────────────────────────────────────────────┐
-   │  CLI  (thin shell, argument parsing only)        │
-   └──────────────────────┬──────────────────────────┘
-                          │
-   ┌──────────────────────▼──────────────────────────┐
-   │  Policy  (use-case orchestration)                │
-   │  FeatureExtractionPolicy                        │
-   │  BenchmarkingPolicy                             │
-   │  OptimizationPolicy                             │
-   └──────────────────────┬──────────────────────────┘
-                          │
-   ┌──────────────────────▼──────────────────────────┐
-   │  Core  (shared contracts and implementations)    │
-   │  Models, Losses, Datasets, Experiments, I/O      │
-   └──────────────┬──────────────────────────────────┘
-                  │
-   ┌──────────────▼──────────────────────────────────┐
-   │  Infrastructure / Adapters                       │
-   │  LightningTrainer, TorchMILBackendModel,         │
-   │  TorchMetrics, TorchSurv, LazySlide             │
-   └─────────────────────────────────────────────────┘
-                  │
-   ┌──────────────▼──────────────────────────────────┐
-   │  Config  (Pydantic v2 validation)                │
-   │  Drives all layer construction                   │
-   └─────────────────────────────────────────────────┘
+   YAML configuration
+          │
+          ▼
+   ┌──────────────────────┐
+   │ CLI and execution    │  Parse commands or schedule work units
+   └──────────┬───────────┘
+              ▼
+   ┌──────────────────────┐
+   │ Policies and tasks   │  Coordinate complete use cases
+   └──────────┬───────────┘
+              ▼
+   ┌──────────────────────────────────────────────────────┐
+   │ Datasets │ models │ trainers │ retrieval strategies │
+   │ slide processing │ evaluation │ visualization        │
+   └──────────┬───────────────────────────────────────────┘
+              ▼
+   ┌──────────────────────────────────────────────────────┐
+   │ HDF5 slide artifacts │ model packages │ CSV/XLSX/PDF │
+   └──────────────────────────────────────────────────────┘
 
-Package Dependency Guidelines
------------------------------
+Component selection happens through shared registries:
 
-Dependencies generally point toward stable contracts:
+.. code-block:: text
 
-- Most of ``core/`` is independent of ``policy/``, ``cli/``, and adapters.
-  Task modules are the deliberate exception: they reuse policy workflow
-  helpers to provide application-level task orchestration.
-- ``policy/`` imports from ``core/`` and resolves implementations via registries.
-- ``cli/`` is a thin composition layer that may invoke policies, inference,
-  retrieval, and configuration entry points.
-- ``adapters/`` and ``infrastructure/`` implement ``core/`` interfaces and
-  register themselves.
+   configuration name
+          │
+          ▼
+   ┌───────────────────┐       imports/registers       ┌──────────────────┐
+   │ Registry          │◄──────────────────────────────│ Implementation   │
+   │ models, tasks,    │                               │ native or adapter│
+   │ losses, trainers, │────── constructs/returns ───►│                  │
+   │ extractors, ...   │                               └──────────────────┘
+   └───────────────────┘
 
-Shared contracts remain independently testable where possible; orchestration
-modules may require the dependencies of the workflows they expose.
-
-Core Layer (``pathforge.core``)
---------------------------------
-
-Shared abstractions plus selected models, storage implementations, reports,
-visualization helpers, and task orchestration. This package is not entirely
-framework-independent: concrete scientific and slide-processing dependencies
-are used by several subpackages.
-
-.. list-table::
-   :widths: 30 70
-   :header-rows: 1
-
-   * - Sub-package
-     - Contents
-   * - ``core.models``
-     - :class:`~pathforge.core.models.base.ModelBase`,
-       :class:`~pathforge.core.models.base.TorchModelBase`,
-       :class:`~pathforge.core.models.mil_base.MILModelBase`,
-       :class:`~pathforge.core.models.base.ScikitBase`
-   * - ``core.losses``
-     - :class:`~pathforge.core.losses.base.BaseLoss`,
-       :class:`~pathforge.core.losses.base.ClassificationLoss`,
-       :class:`~pathforge.core.losses.base.SurvivalContinuousLoss`,
-       :class:`~pathforge.core.losses.base.SurvivalDiscreteLoss`
-   * - ``core.datasets``
-     - :class:`~pathforge.core.datasets.base.DatasetBase`,
-       :class:`~pathforge.core.datasets.base.BagDatasetBase`,
-       :class:`~pathforge.core.datasets.wsi_dataset.WSIDataset`,
-       :class:`~pathforge.core.datasets.wsi_dataset.WSI`
-   * - ``core.experiments``
-     - :class:`~pathforge.core.experiments.base.Experiment`,
-       :class:`~pathforge.core.experiments.base.ComboConfig`
-   * - ``core.tasks``
-     - :class:`~pathforge.core.tasks.base.TaskBase`, task registry
-       (:func:`~pathforge.core.tasks.registry.register_task`,
-       :func:`~pathforge.core.tasks.registry.build_task`,
-       :func:`~pathforge.core.tasks.registry.import_task_modules`),
-       MIL tasks (``ClassificationMilTask``, ``RegressionMilTask``,
-       ``SurvivalMilTask``, ``SurvivalDiscreteMilTask``),
-       :class:`~pathforge.core.tasks.slide_retrieval.SlideRetrievalTask`
-   * - ``core.io.h5``
-     - :class:`~pathforge.core.io.h5.base.FileHandleH5`, coordinate/feature/tissue I/O helpers
-   * - ``core.slide_processing``
-     - :class:`~pathforge.core.slide_processing.base.SlideProcessorBase`
-   * - ``core.explainer_base``
-     - :class:`~pathforge.core.explainer_base.ExplainerBase`
-
-Policy Layer (``pathforge.policy``)
--------------------------------------
-
-Orchestrates domain objects. Never imports concrete framework packages directly.
-
-- :class:`~pathforge.policy.feature_extraction.FeatureExtractionPolicy` — Runs tiling and feature extraction for all configured combinations.
-- :class:`~pathforge.policy.benchmarking.BenchmarkingPolicy` — Grid-searches model/loss/feature configurations.
-- :class:`~pathforge.policy.optimization.OptimizationPolicy` — Runs Optuna studies.
-
-CLI Layer (``pathforge.cli``)
-------------------------------
-
-Thin shells that parse arguments and delegate to policies.
-
-- :func:`~pathforge.cli.feature_extraction.main` → ``pathforge-features``
-- :func:`~pathforge.cli.benchmark.main` → ``pathforge-benchmark``
-- :func:`~pathforge.cli.optimize.main` → ``pathforge-optimize``
-- :func:`~pathforge.cli.inference.main` → ``pathforge-infer``
-- :func:`~pathforge.cli.slide_retrieval_representations.main` → ``pathforge-slide-retrieval-representations``
-
-Infrastructure / Adapters (``pathforge.adapters``, ``pathforge.training``)
----------------------------------------------------------------------------
-
-Concrete implementations registered through the registry system.
-
-.. list-table::
-   :widths: 35 65
-   :header-rows: 1
-
-   * - Module
-     - What it provides
-   * - ``training.lightning``
-     - PyTorch Lightning trainer registered as ``"lightning"`` in :data:`~pathforge.utils.registries.TRAINERS`.
-   * - ``adapters.torchmil.backend``
-     - ``TorchMILBackendModel`` — generic PathForge wrapper for any TorchMIL model.
-   * - ``adapters.torchmil.collate``
-     - Collate functions for canonical PathForge bag dictionaries and padded TorchMIL-compatible batches.
-   * - ``adapters.torchmil.heatmap_explainer``
-     - TorchMIL heatmap explainer registered in :data:`~pathforge.utils.registries.EXPLAINERS`.
-   * - ``adapters.metrics.classification``
-     - TorchMetrics classification backend.
-   * - ``adapters.metrics.survival``
-     - TorchSurv survival metrics backend.
-   * - ``adapters.losses``
-     - ``torch.nn`` and TorchSurv-backed loss adapters registered in :data:`~pathforge.utils.registries.LOSSES`.
-   * - ``core.slide_processing.lazyslide``
-     - Lazyslide/WSIData/timm slide processor registered in :data:`~pathforge.utils.registries.SLIDE_PROCESSORS`.
-
-Registry System
----------------
-
-All extensible components use a registry pattern:
-
-.. code-block:: python
-
-   from pathforge.utils.registries import MODELS, LOSSES, TRAINERS
-   from pathforge.utils.registries import FEATURE_EXTRACTORS, SLIDE_PROCESSORS
-   from pathforge.utils.registries import CLASSIFICATION_METRICS, SURVIVAL_METRICS
-   from pathforge.utils.registries import EXPLAINERS
-
-Registration is done via a decorator:
-
-.. code-block:: python
-
-   @MODELS.register("MyMIL")
-   class MyMIL(MILModelBase):
-       ...
-
-Lookup:
-
-.. code-block:: python
-
-   cls = MODELS.get("MyMIL")
-   print(MODELS.is_available("MyMIL"))
-
-Dynamic population of optional backends:
-
-.. code-block:: python
-
-   from pathforge.utils.registries import populate_dynamic_registries
-   populate_dynamic_registries()  # registers installed TorchMIL, MIL-Lab, and metric adapters
-
-H5 Artifact Contract
+Implemented Packages
 --------------------
 
-PathForge writes one H5 file per slide. The layout is backend-agnostic:
+``pathforge.cli``
+~~~~~~~~~~~~~~~~~
+
+The Typer command tree is the main user-facing entry point. It exposes feature
+extraction, slide retrieval, benchmarking, evaluation, visualization,
+reporting, inference, pipeline optimization, and distributed-execution
+commands. CLI modules translate command-line arguments into validated
+configuration and delegate work to policies or dedicated services; they do
+not contain the scientific algorithms themselves.
+
+``pathforge.config``
+~~~~~~~~~~~~~~~~~~~~
+
+Pydantic models define and validate the YAML configuration for experiments,
+datasets, feature extraction, MIL, retrieval, evaluation, optimization, and
+execution. The resulting :class:`~pathforge.config.config.Config` object is the
+shared construction input for policies, tasks, trainers, and execution plans.
+Configuration also delegates external TCGA source resolution to the TCGA
+adapter.
+
+``pathforge.policy``
+~~~~~~~~~~~~~~~~~~~~
+
+Policies coordinate application workflows:
+
+* :class:`~pathforge.policy.feature_extraction.FeatureExtractionPolicy`
+  processes configured WSIs and writes reusable slide artifacts.
+* :class:`~pathforge.policy.benchmarking.BenchmarkingPolicy` expands benchmark
+  combinations, ensures their features exist, builds datasets, and delegates
+  each run to its registered task.
+* :class:`~pathforge.policy.optimization.OptimizationPolicy` runs Optuna-based
+  searches over the configured pipeline.
+* :class:`~pathforge.policy.inference.InferencePolicy` prepares datasets and
+  delegates task-specific inference.
+
+Policies depend on core data structures and use registries to resolve trainers,
+losses, models, and other replaceable components.
+
+``pathforge.core``
+~~~~~~~~~~~~~~~~~~
+
+``core`` contains both shared contracts and most reusable scientific services:
+
+.. list-table::
+   :widths: 28 72
+   :header-rows: 1
+
+   * - Area
+     - Responsibility
+   * - ``annotations``
+     - Annotation contracts, CSV-backed annotations, and target binning.
+   * - ``datasets``
+     - WSI and feature-bag data models, schemas, factories, samplers, and
+       task-specific dataset wrappers.
+   * - ``experiments``
+     - Project metadata, benchmark combinations, and canonical identifiers for
+       tilings, features, and bags.
+   * - ``models`` and ``losses``
+     - Model/loss contracts plus native MIL, slide-vector, and scikit-learn
+       implementations.
+   * - ``tasks``
+     - The task contract and registry, MIL task execution, and the complete
+       slide-retrieval use case.
+   * - ``io.h5``
+     - Low-level reads and writes for HDF5 coordinates, features, tissue,
+       descriptors, tiles, and prediction heatmaps.
+   * - ``io.slide_artifacts``
+     - Higher-level slide-artifact layouts and atomic update operations.
+   * - ``io.slide_retrieval``
+     - Retrieval-specific layouts, descriptors, and representation storage.
+   * - ``slide_processing``
+     - The slide-processor contract and LazySlide-based implementation.
+   * - ``evaluation``
+     - Evaluation orchestration, task adapters, and slide-retrieval metrics.
+   * - ``visualization``
+     - Visualization orchestration, thumbnails, tile overviews, and task
+       visualization adapters.
+   * - ``reports`` and ``explainer_base``
+     - Report generation and the shared explainer contract.
+
+Although tasks live under ``core``, they are use-case orchestrators rather than
+inner domain objects. MIL tasks use policy construction helpers and trainer/loss
+registries. ``SlideRetrievalTask`` coordinates the separate
+``pathforge.slide_retrieval`` subsystem. The architecture tests deliberately
+exclude ``core.tasks`` from the rule that prevents core from importing outer
+application packages.
+
+``pathforge.training``
+~~~~~~~~~~~~~~~~~~~~~~
+
+Training defines :class:`~pathforge.training.base.TrainerBase` and provides
+Lightning and scikit-learn trainers. Trainers consume PathForge models and bag
+datasets, calculate task metrics, and return checkpoints and objective scores.
+The Lightning implementation also uses adapter-provided collation/output
+normalization and can create an inference model package.
+
+``pathforge.adapters``
+~~~~~~~~~~~~~~~~~~~~~~
+
+Adapters translate third-party behavior into PathForge conventions. Current
+integrations cover TorchMIL, MIL-Lab, TorchMetrics, TorchSurv, PyTorch losses,
+and TCGA Tools. Optional backend modules are loaded when their packages are
+available; registrations make their implementations selectable in the same way
+as native implementations.
+
+``pathforge.slide_retrieval``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Slide retrieval is organized as two independently selectable stages:
+
+.. code-block:: text
+
+   bag features
+       │
+       ▼
+   representation strategy ──► stored retrieval representation
+       │
+       ▼
+   search strategy ──────────► ranked matches
+       │
+       ├──► retrieval metrics
+       └──► manifests, spreadsheets, and visualizations
+
+Representation strategies include mean-RGB, feature aggregation, prototype,
+SPLICE, and Yottixel implementations. Search strategies include PBSS, RetCCL,
+SISH, and Yottixel implementations. Each family has a base class, typed values,
+and a registry. ``SlideRetrievalTask`` validates that the selected
+representation, search strategy, feature level, and dataset roles are
+compatible before running them.
+
+``pathforge.inference``
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Inference supports portable MIL model packages and attention heatmaps. A model
+package records the configuration, registry model name, dimensions, metadata,
+and learned state required to restore a trained model. Prediction helpers load
+feature bags from supported array or HDF5 inputs and normalize backend-specific
+outputs. Heatmap services write per-instance prediction scores back to slide
+artifacts.
+
+``pathforge.execution``
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Distributed execution turns an experiment into immutable, scheduler-neutral
+work records. Feature records contain deterministic slide shards; benchmark
+records contain parameter combinations and depend on feature-record IDs.
+Workers can execute locally, while generated SLURM array scripts use the same
+manifests. Atomic JSON status files make work resumable and aggregatable.
+
+``pathforge.utils``
+~~~~~~~~~~~~~~~~~~~
+
+Utilities provide registries, optional-dependency detection, constants,
+serialization, logging, general I/O, and reusable test samples. This is a
+cross-cutting package rather than an architectural layer. The global registry
+module connects core registry contracts to built-in and optional adapter
+registration.
+
+End-to-End Workflows
+--------------------
+
+Feature Extraction
+~~~~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+   CLI ─► Config + Experiment ─► FeatureExtractionPolicy
+                                      │
+                                      ▼
+                                 WSI datasets
+                                      │
+                                      ▼
+                              registered slide processor
+                                      │
+                                      ▼
+                     per-slide HDF5 artifact
+                     ├── tissue information
+                     ├── level-0 tile coordinates
+                     ├── thumbnails/overviews
+                     └── row-aligned feature matrices
+
+Coordinates and feature rows share an index. A compatible existing tiling can
+therefore be reused when another workflow needs the same bag features.
+
+Benchmarking and Training
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+   BenchmarkingPolicy
+       ├── expand configured combinations
+       ├── group combinations that share one bag
+       ├── ensure the bag features exist
+       ├── build datasets by their configured use
+       └── registered task
+             ├── MIL task ─► model + loss + trainer ─► checkpoint/score
+             └── retrieval task ─► representation + search ─► ranked results
+
+Grouping combinations by bag identity avoids repeating feature extraction for
+model and loss combinations that consume the same features.
+
+Pipeline Optimization
+~~~~~~~~~~~~~~~~~~~~~
+
+The optimization policy creates an Optuna study, samples configured pipeline
+choices, and evaluates them through the same task, dataset, model, trainer, and
+metric machinery used by benchmarking. This keeps optimized and benchmarked
+pipelines comparable.
+
+Inference
+~~~~~~~~~
+
+.. code-block:: text
+
+   model package + input features
+              │
+              ▼
+      restore registered model
+              │
+              ▼
+       task-aware prediction
+              │
+              ├──► prediction output
+              └──► optional attention heatmap in slide HDF5
+
+Task-level inference is coordinated by ``InferencePolicy``. Model-package
+helpers provide the lower-level restoration and bag-prediction path.
+
+Distributed Execution
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+   experiment configuration
+             │
+             ▼
+        execution plan
+        ├── feature manifest ─────┐
+        └── benchmark manifest ◄──┘ dependency IDs
+             │
+             ├── local workers
+             └── SLURM arrays
+                    │
+                    ▼
+              atomic statuses ─► aggregate results
+
+Dependency Boundaries
+---------------------
+
+The implemented import direction is summarized below. Arrows mean "imports
+from"; they describe source dependencies, not the runtime flow shown earlier.
+
+.. code-block:: text
+
+   cli ─────────────► config, core, execution, inference, policy, retrieval
+   policy ──────────► config, core, training, utils
+   execution ───────► cli, config, core, policy
+   training ────────► adapters, config, core, inference, utils
+   inference ───────► adapters, config, core, policy, utils
+   slide_retrieval ─► config, core, utils
+   config ──────────► adapters, core, slide_retrieval, utils
+   core ────────────► config, utils
+   core.tasks ──────► policy and slide_retrieval as explicit exceptions
+   adapters ────────► core, utils
+   utils ───────────► adapters, core
+
+The maintained boundary rules are narrower than strict Clean Architecture:
+
+* core modules outside ``core.tasks`` must not import CLI, policy, training, or
+  inference packages;
+* policies must not import CLI modules;
+* training must not import CLI modules;
+* concrete trainers and retrieval/evaluation/visualization strategies must
+  extend their declared base classes.
+
+These rules are checked in ``tests/interface/test_dependency_boundaries.py``
+and ``tests/interface/test_adapter_structure.py``. See :doc:`contributing` for
+the placement rules contributors should follow when extending the system.
+
+Artifact Contract
+-----------------
+
+Feature extraction and inference share one per-slide HDF5 artifact. Its central
+layout is:
 
 .. code-block:: text
 
    slide.h5
    └── bags/
-       └── {tile_px}px_{tile_mpp:g}mpp/
-           ├── coords         — int32  (N, 5): [x0, y0, read_w, read_h, level]
-           ├── tiling_spec    — JSON:  tile_px, tile_mpp, stride_px, coord_space
+       └── {tiling_id}/
+           ├── coords              int32 (N, 5)
+           ├── tiling_spec         JSON metadata
            ├── features/
-           │   └── {extractor}  — float32 (N, D), row-aligned with coords
-           ├── tiles_overview — uint8  (M,): compressed JPEG/PNG bytes
+           │   └── {feature_name}  float32 (N, D)
+           ├── tiles_overview      encoded image bytes
            └── predictions/
                └── heatmaps/
                    └── {name}/
-                       ├── coords    — float32 (K, 2)
-                       ├── scores    — float32 (K,) in [0, 1]
-                       └── metadata  — JSON
+                       ├── coords
+                       ├── scores
+                       └── metadata
 
-Invariants:
-
-- ``coords`` rows and ``features`` rows share the same index.
-- ``tiling_spec`` always contains ``coord_space: "level0"``.
-- Feature extraction can reuse existing rows when the tiling spec matches.
-
-Optional Package Isolation
---------------------------
-
-Optional dependencies (``torchmil``, ``torchmetrics``, ``torchsurv``) are
-confined to two locations:
-
-- ``pathforge.adapters.*`` — concrete implementations
-- ``pathforge.utils.optional.*`` — availability guards
-
-All other layers (core, policy, training, config, CLI) are import-safe without
-these packages. Architecture tests in ``tests/unit/test_torchmil_architecture.py``
-enforce this boundary automatically.
+``coords`` stores ``[x0, y0, read_w, read_h, level]`` in level-0 coordinate
+space. Feature matrices are row-aligned with those coordinates. Detailed
+storage contracts are documented in :doc:`HDF5_structure` and
+:doc:`slide_retrieval_h5_structure`.
