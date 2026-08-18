@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+title: PathBench-MIL
+type: software
+repository: https://github.com/Sbrussee/PathBench-MIL
+identifiers:
+- type: other
+  value: PathBench-MIL
+  description: bio.tools
+license: GPL-3.0
+keywords:
+- term: Pathology
+  uri: http://edamontology.org/topic_0634
+- term: Machine learning
+  uri: http://edamontology.org/topic_3474
+abstract: PathBench-MIL is a comprehensive, flexible benchmarking/AutoML framework
+  for multiple instance learning in histopathology. PathBench-MIL is expected to be
+  deprecated and replaced by PathForge.
+message: If you use this software, please cite it using this CITATION.cff.
