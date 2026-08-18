@@ -27,5 +27,6 @@ def test_backend_docs_list_all_mil_backend_modes() -> None:
     for backend in ("native", "torchmil", "mil-lab"):
         assert backend in backend_docs
 
-    assert "PathForge currently catalogs ``ABMIL``, ``DSMIL``, and ``CLAM``" in backend_docs
+    for model_name in ("ABMIL", "DSMIL", "CLAM", "TransMIL", "PatchGCN"):
+        assert f"``{model_name}``" in backend_docs
     assert "MIL-Lab is not installed by the ``mil-backends`` extra" in backend_docs

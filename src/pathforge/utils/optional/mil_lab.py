@@ -15,7 +15,10 @@ class MILLabModules:
 
 
 def _is_module_available(module_name: str) -> bool:
-    return find_spec(module_name) is not None
+    try:
+        return find_spec(module_name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
 
 
 def is_mil_lab_available() -> bool:

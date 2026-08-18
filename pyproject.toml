@@ -45,6 +45,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cucim = ["cucim-cu12>=26.8.0"]
 cu128 = [
     "torch==2.9.1",
     "torchvision==0.24.1",

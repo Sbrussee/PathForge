@@ -53,6 +53,7 @@ execution:
   backend: slurm
   work_dir: /path/to/shared/work
   resume: true
+  slides_per_shard: 1
   resources:
     feature_extraction: {cpus: 8, gpus: 1, memory_gb: 48, time: "08:00:00"}
     benchmarking: {cpus: 4, gpus: 1, memory_gb: 32, time: "08:00:00"}

@@ -17,7 +17,13 @@ _MIL_DATASET_USES = frozenset({"training", "validation", "testing", "all"})
 
 
 class _BaseMilTask(TaskBase):
-    grid_keys = ["feature_extraction", "tile_px", "tile_mpp", "mil", "loss"]
+    grid_keys = [
+        "feature_extraction",
+        "tile_px",
+        "tile_mpp",
+        "mil",
+        "loss",
+    ]
     allowed_dataset_uses = _MIL_DATASET_USES
 
     def execute(

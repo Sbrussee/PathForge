@@ -62,6 +62,35 @@ def test_from_yaml_missing_file_raises(tmp_path):
         Config.from_yaml(tmp_path / "does_not_exist.yaml")
 
 
+def test_graph_settings_are_configurable() -> None:
+    cfg = Config.model_validate(
+        {
+            "experiment": {
+                "project_name": "graph",
+                "annotation_file": "annotations.csv",
+                "mode": "feature_extraction",
+            },
+            "mil": {
+                "graph": {
+                    "enabled": True,
+                    "neighbor_space": "feature",
+                    "k": 12,
+                    "symmetric": False,
+                    "self_loops": False,
+                }
+            },
+            "datasets": [],
+            "benchmark_parameters": {"feature_extraction": []},
+        }
+    )
+
+    assert cfg.mil.graph.enabled is True
+    assert cfg.mil.graph.neighbor_space == "feature"
+    assert cfg.mil.graph.k == 12
+    assert cfg.mil.graph.symmetric is False
+    assert cfg.mil.graph.self_loops is False
+
+
 def test_inference_mode_requires_task(tmp_path):
     yaml_text = dedent("""
                         experiment:

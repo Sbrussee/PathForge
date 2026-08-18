@@ -27,6 +27,6 @@ benchmark_parameters:
   tile_px: [224]
   tile_mpp: [0.5, 1.0]
   color_norm: [null, macenko]
-  feature_extraction: [h-optimus-1, uni2, virchow2, gpfm]
+  feature_extraction: [h-optimus-1, uni2, virchow2, gpfm, resnet50]
   mil: [ABMIL, DSMIL, TransMIL]
   loss: [CrossEntropyLoss, NLLLoss]

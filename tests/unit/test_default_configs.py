@@ -34,12 +34,17 @@ def test_default_config_validates_against_live_schema(filename: str) -> None:
     config = Config.from_yaml(DEFAULT_CONFIG_DIR / filename)
 
     assert config.benchmark_parameters.tile_px == [224]
-    assert config.benchmark_parameters.get_values("feature_extraction") == [
+    expected_extractors = [
         "h-optimus-1",
         "uni2",
         "virchow2",
         "gpfm",
     ]
+    if filename == "benchmark_classification.yaml":
+        expected_extractors.append("resnet50")
+    assert config.benchmark_parameters.get_values("feature_extraction") == (
+        expected_extractors
+    )
 
 
 def test_default_config_catalog_is_complete() -> None:

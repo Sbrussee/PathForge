@@ -36,6 +36,15 @@ AggregationLevel = Literal[tuple(AGGREGATION_LEVELS)]
 BenchmarkScalar = int | float | str | None
 BenchmarkParamMapping = dict[BenchmarkScalar, dict[str, Any]]
 BenchmarkParamInput = BenchmarkScalar | BenchmarkParamMapping
+SlideReader = Literal[
+    "auto",
+    "openslide",
+    "tiffslide",
+    "fastslide",
+    "bioformats",
+    "cucim",
+    "isyntax",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +175,16 @@ class ClassificationConfig(BaseModel):
     skip_feature_extraction: bool = True
 
 
+class GraphSettings(BaseModel):
+    """Graph construction used by graph-based MIL models."""
+
+    enabled: bool = False
+    neighbor_space: Literal["spatial", "feature"] = "spatial"
+    k: int = Field(8, ge=1)
+    symmetric: bool = True
+    self_loops: bool = True
+
+
 class MILConfig(BaseModel):
     """MIL backend selection and training settings."""
 
@@ -202,6 +221,7 @@ class MILConfig(BaseModel):
     z_dim: int = 256
     dropout_p: float = Field(0.1, ge=0.0, le=1.0)
     k: int = 2
+    graph: GraphSettings = Field(default_factory=GraphSettings)
 
     skip_extracted: bool = True
     skip_feature_extraction: bool = True
@@ -360,6 +380,16 @@ class SlideProcessingConfig(BaseModel):
     """Settings for slide processing backends."""
 
     backend: Literal["lazyslide", "openslide", "cucim"] = "lazyslide"
+    reader: SlideReader = "auto"
+    reader_fallbacks: List[SlideReader] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_reader_fallbacks(self) -> "SlideProcessingConfig":
+        if self.reader in self.reader_fallbacks:
+            raise ValueError("slide_processing.reader_fallbacks must not repeat reader.")
+        if len(self.reader_fallbacks) != len(set(self.reader_fallbacks)):
+            raise ValueError("slide_processing.reader_fallbacks contains duplicates.")
+        return self
     save_tiles: bool = False
     segmentation_method: Optional[str] = None
     feature_extraction: FeatureExtractionRuntimeConfig = Field(
@@ -452,6 +482,8 @@ class ExecutionConfig(BaseModel):
     work_dir: Optional[str] = None
     resume: bool = True
     max_workers: int = Field(1, gt=0)
+    slides_per_shard: int = Field(1, gt=0)
+    max_shards: Optional[int] = Field(default=None, gt=0)
     resources: ExecutionResourcesConfig = Field(default_factory=ExecutionResourcesConfig)
     slurm: SlurmExecutionConfig = Field(default_factory=SlurmExecutionConfig)
 

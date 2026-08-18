@@ -628,7 +628,13 @@ class FeatureExtractionPolicy(PolicyBase):
         if not ProcessorClass:
             raise ValueError(f"Slide processing backend '{self.backend_name}' not found in registry.")
 
-        slide_processor: SlideProcessorBase = ProcessorClass()
+        processor_kwargs: dict[str, Any] = {}
+        if self.backend_name == "lazyslide":
+            processor_kwargs["reader"] = self.config.slide_processing.reader
+            processor_kwargs["reader_fallbacks"] = (
+                self.config.slide_processing.reader_fallbacks
+            )
+        slide_processor: SlideProcessorBase = ProcessorClass(**processor_kwargs)
         logger.info("[Policy] Using backend '%s' -> %s", self.backend_name, slide_processor)
         return slide_processor
 

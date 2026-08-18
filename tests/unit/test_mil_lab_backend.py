@@ -11,7 +11,16 @@ from pathforge.adapters.mil_lab.backend import (
 from pathforge.config.config import Config
 from pathforge.training.metrics import save_task_evaluation_artifacts
 from pathforge.utils import registries as registries_module
+from pathforge.utils.optional import mil_lab as optional_mil_lab
 from tests.conftest import DUMMY_FE, DUMMY_MIL
+
+
+def test_nested_module_probe_returns_false_when_parent_is_absent(monkeypatch) -> None:
+    def missing_parent(module_name: str):
+        raise ModuleNotFoundError(module_name)
+
+    monkeypatch.setattr(optional_mil_lab, "find_spec", missing_parent)
+    assert optional_mil_lab._is_module_available("src.builder") is False
 
 
 class _FakeMILLabModel(torch.nn.Module):

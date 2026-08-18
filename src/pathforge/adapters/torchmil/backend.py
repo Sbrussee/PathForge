@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import inspect
 from typing import Any, Iterable, Protocol
 
 import torch
@@ -59,7 +60,7 @@ class TorchMILModelSpec:
     """
 
     name: str
-    task_types: tuple[str, ...] = ("classification",)
+    task_types: tuple[str, ...] = ("classification", "regression", "survival")
     required_keys: tuple[str, ...] = ("X",)
     build_kwargs: dict[str, Any] = field(default_factory=dict)
 
@@ -68,6 +69,8 @@ TORCHMIL_MODEL_SPECS: dict[str, TorchMILModelSpec] = {
     "ABMIL": TorchMILModelSpec(name="ABMIL"),
     "DSMIL": TorchMILModelSpec(name="DSMIL"),
     "CLAM": TorchMILModelSpec(name="CLAM"),
+    "TransMIL": TorchMILModelSpec(name="TransMIL"),
+    "PatchGCN": TorchMILModelSpec(name="PatchGCN", required_keys=("X", "adj")),
 }
 
 
@@ -111,6 +114,16 @@ def build_torchmil_model(spec: TorchMILModelSpec, config_kwargs: dict[str, Any])
     if model_factory is None:
         raise ValueError(f"TorchMIL model '{spec.name}' was not found in torchmil.models.")
     kwargs = {**spec.build_kwargs, **config_kwargs}
+    signature = inspect.signature(model_factory)
+    if not any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        kwargs = {
+            name: value
+            for name, value in kwargs.items()
+            if name in signature.parameters
+        }
     model = model_factory(**kwargs)
     if not isinstance(model, nn.Module):
         raise TypeError(f"TorchMIL model '{spec.name}' did not return a torch.nn.Module.")
@@ -161,11 +174,21 @@ class TorchMILBackendModel(MILModelBase):
         torchmil_model: str,
         task: str = "classification",
         torchmil_model_kwargs: dict[str, Any] | None = None,
+        graph_enabled: bool = False,
+        graph_neighbor_space: str = "spatial",
+        graph_k: int = 8,
+        graph_symmetric: bool = True,
+        graph_self_loops: bool = True,
         **_: Any,
     ) -> None:
         super().__init__()
         require_torchmil("MIL backend 'torchmil'")
         self.task = task
+        self.graph_enabled = graph_enabled
+        self.graph_neighbor_space = graph_neighbor_space
+        self.graph_k = graph_k
+        self.graph_symmetric = graph_symmetric
+        self.graph_self_loops = graph_self_loops
         self.spec = resolve_torchmil_model_spec(torchmil_model)
         if task not in self.spec.task_types:
             raise ValueError(
@@ -193,6 +216,27 @@ class TorchMILBackendModel(MILModelBase):
             batch["coords"] = coords
         if adj is not None:
             batch["adj"] = adj
+        elif self.graph_enabled or "adj" in self.spec.required_keys:
+            if self.graph_neighbor_space == "spatial":
+                if coords is None:
+                    raise ValueError(
+                        f"Graph model '{self.spec.name}' uses spatial neighbors "
+                        "and therefore requires tile coordinates."
+                    )
+                graph_vectors = coords.float()
+            elif self.graph_neighbor_space == "feature":
+                graph_vectors = bag.float()
+            else:
+                raise ValueError(
+                    f"Unsupported graph neighbor space: {self.graph_neighbor_space!r}."
+                )
+            batch["adj"] = _knn_adjacency(
+                graph_vectors,
+                mask=mask,
+                k=self.graph_k,
+                symmetric=self.graph_symmetric,
+                self_loops=self.graph_self_loops,
+            )
         assert_bag_schema(batch, batched=True)
 
         for key in self.spec.required_keys:
@@ -205,6 +249,7 @@ class TorchMILBackendModel(MILModelBase):
             return {"logits": normalized, "loss": loss_fn(normalized, label)}
         return normalized
 
+
     def _call_backend(self, batch: BagBatch | dict[str, Any]) -> Any:
         # Route only model inputs (never the label ``Y``). Modern TorchMIL
         # models (>=1.0) take the bag features ``X`` as a positional tensor with
@@ -212,6 +257,16 @@ class TorchMILBackendModel(MILModelBase):
         routed = {key: batch[key] for key in ("X", "mask", "coords", "adj") if key in batch}
         bag = routed["X"]
         extra = {key: value for key, value in routed.items() if key != "X"}
+        forward_signature = inspect.signature(self.backend_model.forward)
+        if not any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in forward_signature.parameters.values()
+        ):
+            extra = {
+                name: value
+                for name, value in extra.items()
+                if name in forward_signature.parameters
+            }
         try:
             return self.backend_model(bag, **extra)
         except TypeError:
@@ -223,6 +278,45 @@ class TorchMILBackendModel(MILModelBase):
 
     def get_learnable_parameters(self) -> Iterable[torch.nn.Parameter]:
         return (param for param in self.parameters() if param.requires_grad)
+
+
+def _knn_adjacency(
+    vectors: torch.Tensor,
+    *,
+    mask: torch.Tensor | None = None,
+    k: int = 8,
+    symmetric: bool = True,
+    self_loops: bool = True,
+) -> torch.Tensor:
+    """Build a deterministic symmetric k-NN graph from vector distances.
+
+    ``vectors`` may contain spatial coordinates or feature embeddings. Edges
+    connect the nearest vectors by Euclidean distance and include self-loops.
+    """
+
+    if vectors.ndim != 3:
+        raise ValueError(f"Expected vectors shape [B, N, D], got {tuple(vectors.shape)}.")
+    distances = torch.cdist(vectors.float(), vectors.float())
+    batch_size, instances, _ = distances.shape
+    valid = (
+        mask.bool()
+        if mask is not None
+        else torch.ones((batch_size, instances), dtype=torch.bool, device=vectors.device)
+    )
+    pair_valid = valid.unsqueeze(1) & valid.unsqueeze(2)
+    distances = distances.masked_fill(~pair_valid, float("inf"))
+    eye = torch.eye(instances, dtype=torch.bool, device=vectors.device).unsqueeze(0)
+    distances = distances.masked_fill(eye, float("inf"))
+    neighbour_count = min(k, max(instances - 1, 1))
+    indices = distances.topk(neighbour_count, dim=-1, largest=False).indices
+    adjacency = torch.zeros_like(distances, dtype=vectors.dtype)
+    adjacency.scatter_(2, indices, 1.0)
+    if symmetric:
+        adjacency = torch.maximum(adjacency, adjacency.transpose(1, 2))
+    adjacency = adjacency * pair_valid.to(adjacency.dtype)
+    if self_loops:
+        adjacency = adjacency + torch.diag_embed(valid.to(adjacency.dtype))
+    return adjacency
 
 
 def register_torchmil_backend() -> None:
