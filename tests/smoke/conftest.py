@@ -175,11 +175,8 @@ def extracted_bag_workspace(
     extracted_wsi_workspace: ExtractedWsiWorkspace,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> PreparedBagWorkspace:
-    """Convert extracted H5 tile features into reusable MIL bag tensors."""
-    torch = pytest.importorskip("torch")
+    """Expose extracted H5 tile features as reusable native MIL artifacts."""
     root_dir = tmp_path_factory.mktemp("hf_smoke_bags")
-    feature_dir = root_dir / "bags"
-    feature_dir.mkdir(parents=True, exist_ok=True)
     metrics_dir = root_dir / "metrics"
 
     annotations_df = pd.read_csv(extracted_wsi_workspace.annotations_csv)
@@ -212,10 +209,6 @@ def extracted_bag_workspace(
             )
             input_dim = int(feature_matrix.shape[1])
             bag_lengths[slide_id] = int(feature_matrix.shape[0])
-            torch.save(
-                torch.from_numpy(feature_matrix.astype(np.float32, copy=False)),
-                feature_dir / f"{slide_id}.pt",
-            )
             category_name = category_by_slide[slide_id]
             label_rows.append(
                 {
@@ -229,18 +222,21 @@ def extracted_bag_workspace(
             metadata,
             step_name="hf_prepare_extracted_bags",
             intermediate={"source_artifacts_dir": extracted_wsi_workspace.artifacts_dir},
-            final={"feature_dir": feature_dir},
+            final={"artifacts_dir": extracted_wsi_workspace.artifacts_dir},
         )
 
     metadata_csv = root_dir / "bag_metadata.csv"
     pd.DataFrame(label_rows).to_csv(metadata_csv, index=False)
     return PreparedBagWorkspace(
         root_dir=root_dir,
-        feature_dir=feature_dir,
+        artifacts_dir=extracted_wsi_workspace.artifacts_dir,
         metadata_csv=metadata_csv,
         slide_ids=[row["slide_id"] for row in label_rows],
         input_dim=input_dim,
         bag_lengths=bag_lengths,
+        tile_px=224,
+        tile_mpp=1.0,
+        extractor_name=extracted_wsi_workspace.extractor_name,
         metrics_path=metrics_dir / "hf_prepare_extracted_bags.metrics.json",
     )
 
@@ -250,14 +246,15 @@ def survival_bag_workspace(
     smoke_assets: DownloadedSmokeAssets,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> PreparedBagWorkspace:
-    """Create tiny one-instance MIL bags from TCGA READ slide-level features."""
+    """Create tiny one-instance MIL bags in native PathForge H5 artifacts."""
     ad = pytest.importorskip("anndata")
-    torch = pytest.importorskip("torch")
 
     root_dir = tmp_path_factory.mktemp("hf_smoke_survival")
-    feature_dir = root_dir / "bags"
-    feature_dir.mkdir(parents=True, exist_ok=True)
+    artifacts_dir = root_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
     metrics_dir = root_dir / "metrics"
+    tile_px, tile_mpp, extractor_name = 224, 1.0, "survival-h5ad"
+    bag_id = f"{tile_px}px_{tile_mpp:g}mpp"
 
     with capture_smoke_metrics(
         metrics_dir,
@@ -283,12 +280,21 @@ def survival_bag_workspace(
         bag_lengths: dict[str, int] = {}
         for row_index, row in merged.iterrows():
             slide_id = str(row["slide_id"])
-            bag_tensor = (
-                torch.from_numpy(feature_matrix[row_index])
-                .reshape(1, input_dim)
-                .float()
-            )
-            torch.save(bag_tensor, feature_dir / f"{slide_id}.pt")
+            from pathforge.core.io.h5 import features as features_io
+            from pathforge.core.io.h5 import tiles as tiles_io
+            from pathforge.core.io.h5.base import FileHandleH5
+
+            with FileHandleH5(artifacts_dir / f"{slide_id}.h5", mode="a") as artifact:
+                tiles_io.write_coords(artifact, bag_id, np.zeros((1, 5), dtype=np.int32))
+                tiles_io.write_tiling_spec(
+                    artifact, bag_id, {"tile_px": tile_px, "tile_mpp": tile_mpp}
+                )
+                features_io.write_features(
+                    artifact,
+                    bag_id,
+                    extractor_name,
+                    feature_matrix[row_index].reshape(1, input_dim),
+                )
             bag_lengths[slide_id] = 1
         attach_smoke_outputs(
             metadata,
@@ -297,7 +303,7 @@ def survival_bag_workspace(
                 "source_h5ad": smoke_assets.survival_h5ad,
                 "source_survival_csv": smoke_assets.survival_csv,
             },
-            final={"feature_dir": feature_dir},
+            final={"artifacts_dir": artifacts_dir},
         )
 
     metadata_csv = root_dir / "survival_metadata.csv"
@@ -306,11 +312,14 @@ def survival_bag_workspace(
     )
     return PreparedBagWorkspace(
         root_dir=root_dir,
-        feature_dir=feature_dir,
+        artifacts_dir=artifacts_dir,
         metadata_csv=metadata_csv,
         slide_ids=merged["slide_id"].astype(str).tolist(),
         input_dim=input_dim,
         bag_lengths=bag_lengths,
+        tile_px=tile_px,
+        tile_mpp=tile_mpp,
+        extractor_name=extractor_name,
         metrics_path=metrics_dir / "hf_prepare_survival_bags.metrics.json",
     )
 
@@ -332,7 +341,7 @@ def gtex_survival_workspace(
     extracted_bag_workspace: PreparedBagWorkspace,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> PreparedBagWorkspace:
-    """Derive survival labels from GTEx bag metadata, reusing existing .pt features.
+    """Derive survival labels from GTEx metadata, reusing existing H5 features.
 
     Reuses the tile-level feature bags already produced by
     ``extracted_bag_workspace``, so no additional feature extraction is needed.
@@ -370,11 +379,14 @@ def gtex_survival_workspace(
     )
     return PreparedBagWorkspace(
         root_dir=root_dir,
-        feature_dir=extracted_bag_workspace.feature_dir,
+        artifacts_dir=extracted_bag_workspace.artifacts_dir,
         metadata_csv=survival_csv,
         slide_ids=metadata_df["slide_id"].tolist(),
         input_dim=extracted_bag_workspace.input_dim,
         bag_lengths=extracted_bag_workspace.bag_lengths,
+        tile_px=extracted_bag_workspace.tile_px,
+        tile_mpp=extracted_bag_workspace.tile_mpp,
+        extractor_name=extracted_bag_workspace.extractor_name,
         metrics_path=metrics_dir / "hf_prepare_gtex_survival_bags.metrics.json",
     )
 
@@ -405,7 +417,11 @@ def retrieval_wsi_datasets(extracted_wsi_workspace: ExtractedWsiWorkspace) -> Re
             artifacts_dir=str(extracted_wsi_workspace.artifacts_dir),
             used_for="all",
         )
-        return SlideRetrievalBagDataset(ds_cfg, filtered, combo_cfg)
+        return SlideRetrievalBagDataset(
+            ds_cfg=ds_cfg,
+            annotations_df=filtered,
+            combo_cfg=combo_cfg,
+        )
 
     ref_ids = all_slide_ids[:10]
     qry_ids = all_slide_ids[10:20]

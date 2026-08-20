@@ -526,7 +526,6 @@ class DatasetEntry(BaseModel):
     name: str
     slides_dir: str
     artifacts_dir: str
-    features_dir: Optional[str] = None
     tissue_annotations_dir: Optional[str] = None
     used_for: str
 

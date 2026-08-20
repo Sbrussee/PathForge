@@ -19,6 +19,41 @@ DEFAULT_SMOKE_EPOCHS = int(os.environ.get("PATHFORGE_SMOKE_EPOCHS", "5"))
 DEFAULT_SMOKE_BATCH_SIZE = int(os.environ.get("PATHFORGE_SMOKE_BATCH_SIZE", "2"))
 
 
+def artifact_bag_dataset(
+    workspace: Any,
+    *,
+    name: str,
+    target_column: str,
+    task: str = "classification",
+) -> Any:
+    """Build the canonical H5-backed bag dataset used by smoke tests."""
+    from pathforge.config.config import DatasetEntry
+    from pathforge.core.datasets.bag_dataset import BagDataset
+    from pathforge.core.experiments.combinations import ComboConfig
+
+    annotations = pd.read_csv(workspace.metadata_csv).copy()
+    annotations["dataset"] = name
+    return BagDataset(
+        ds_cfg=DatasetEntry(
+            name=name,
+            slides_dir=str(workspace.root_dir),
+            artifacts_dir=str(workspace.artifacts_dir),
+            used_for="all",
+        ),
+        annotations_df=annotations,
+        combo_cfg=ComboConfig(
+            tile_px=workspace.tile_px,
+            tile_mpp=workspace.tile_mpp,
+            feature_extraction=workspace.extractor_name,
+            color_norm=None,
+        ),
+        aggregation_level="slide",
+        task=task,
+        target_column=target_column,
+        slide_column="slide_id",
+    )
+
+
 @dataclass(frozen=True)
 class SmokeTrainingResult:
     """Summary of one tiny MIL training run.
@@ -75,7 +110,9 @@ class SurvivalBagDataset:
     Args:
         metadata_df: DataFrame containing ``slide_id``, one time column, and one
             event column.
-        feature_dir: Directory containing one ``{slide_id}.pt`` tensor per row.
+        artifacts_dir: Directory containing one native H5 artifact per slide.
+        bag_id: Tiling identifier used within each H5 artifact.
+        extractor_name: Feature extractor identifier used within each artifact.
         time_column: Survival time column name.
         event_column: Event indicator column name.
         discrete_time: When true, return integer time bins for discrete
@@ -90,7 +127,9 @@ class SurvivalBagDataset:
         self,
         metadata_df: pd.DataFrame,
         *,
-        feature_dir: Path,
+        artifacts_dir: Path,
+        bag_id: str,
+        extractor_name: str,
         time_column: str,
         event_column: str,
         discrete_time: bool,
@@ -99,7 +138,9 @@ class SurvivalBagDataset:
 
         self._torch = torch
         self.metadata_df = metadata_df.reset_index(drop=True).copy()
-        self.feature_dir = feature_dir
+        self.artifacts_dir = artifacts_dir
+        self.bag_id = bag_id
+        self.extractor_name = extractor_name
         self.time_column = time_column
         self.event_column = event_column
         self.discrete_time = discrete_time
@@ -109,7 +150,15 @@ class SurvivalBagDataset:
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         row = self.metadata_df.iloc[index]
-        bag = self._torch.load(self.feature_dir / f"{row['slide_id']}.pt")
+        from ._smoke_dataset import read_h5_feature_matrix
+
+        bag = self._torch.from_numpy(
+            read_h5_feature_matrix(
+                self.artifacts_dir / f"{row['slide_id']}.h5",
+                bag_id=self.bag_id,
+                extractor_name=self.extractor_name,
+            )
+        )
         time_value = row[self.time_column]
         event_value = row[self.event_column]
         target = {

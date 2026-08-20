@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-import torch
 
 from ._smoke_dataset import (
     ExtractedWsiWorkspace,
@@ -15,20 +14,17 @@ from ._smoke_dataset import (
     attach_smoke_outputs,
     capture_smoke_metrics,
 )
-from ._smoke_training import DEFAULT_SMOKE_EPOCHS, fit_smoke_model
+from ._smoke_training import DEFAULT_SMOKE_EPOCHS, artifact_bag_dataset, fit_smoke_model
 from ._smoke_training import make_training_config
 
 
 def _build_bag_dataset(workspace: PreparedBagWorkspace, *, target_column: str):
     """Construct a production ``BagDataset`` for one target column."""
     pytest.importorskip("torch")
-    from pathforge.core.datasets.bag_dataset import BagDataset
-
-    return BagDataset(
-        f"smoke_{target_column}",
-        str(workspace.feature_dir),
-        str(workspace.metadata_csv),
-        target_column,
+    return artifact_bag_dataset(
+        workspace,
+        name=f"smoke_{target_column}",
+        target_column=target_column,
     )
 
 
@@ -198,17 +194,15 @@ def test_torchmil_backend_mil_benchmark(
 ) -> None:
     """Run a binary MIL benchmark using the torchmil backend (ABMIL)."""
     from pathforge.adapters.torchmil.backend import TorchMILBackendModel, register_torchmil_backend
-    from pathforge.core.datasets.bag_dataset import BagDataset
     from pathforge.training.lightning import LightningTrainer
     from pathforge.utils.registries import LOSSES
 
     register_torchmil_backend()
 
-    dataset = BagDataset(
-        "smoke_torchmil_binary",
-        str(extracted_bag_workspace.feature_dir),
-        str(extracted_bag_workspace.metadata_csv),
-        "binary_label",
+    dataset = artifact_bag_dataset(
+        extracted_bag_workspace,
+        name="smoke_torchmil_binary",
+        target_column="binary_label",
     )
     cfg = make_training_config(
         tmp_path / "torchmil_benchmark",
@@ -261,17 +255,15 @@ def test_mil_lab_backend_mil_benchmark(
     """Run a binary MIL benchmark using the mil-lab backend (abmil)."""
     pytest.importorskip("mil_lab")
     from pathforge.adapters.mil_lab.backend import MILLabBackendModel, register_mil_lab_backend
-    from pathforge.core.datasets.bag_dataset import BagDataset
     from pathforge.training.lightning import LightningTrainer
     from pathforge.utils.registries import LOSSES
 
     register_mil_lab_backend()
 
-    dataset = BagDataset(
-        "smoke_mil_lab_binary",
-        str(extracted_bag_workspace.feature_dir),
-        str(extracted_bag_workspace.metadata_csv),
-        "binary_label",
+    dataset = artifact_bag_dataset(
+        extracted_bag_workspace,
+        name="smoke_mil_lab_binary",
+        target_column="binary_label",
     )
     cfg = make_training_config(
         tmp_path / "mil_lab_benchmark",
@@ -335,18 +327,16 @@ def test_heatmap_overlays_from_benchmark_models(
     exported as PNG overlays.
     """
     from pathforge.adapters.torchmil.heatmap_explainer import register_torchmil_heatmap_explainer
-    from pathforge.core.datasets.bag_dataset import BagDataset
     from pathforge.core.io.h5 import heatmaps as heatmap_io
     from pathforge.core.io.h5.base import FileHandleH5
     from pathforge.inference.heatmaps import create_inference_heatmap
 
     register_torchmil_heatmap_explainer()
 
-    dataset = BagDataset(
-        "smoke_heatmap",
-        str(extracted_bag_workspace.feature_dir),
-        str(extracted_bag_workspace.metadata_csv),
-        "binary_label",
+    dataset = artifact_bag_dataset(
+        extracted_bag_workspace,
+        name="smoke_heatmap",
+        target_column="binary_label",
     )
     native_model, _result = fit_smoke_model(
         tmp_path / "heatmap_train",
@@ -363,8 +353,10 @@ def test_heatmap_overlays_from_benchmark_models(
 
     slide_id = extracted_bag_workspace.slide_ids[0]
     artifact_path = extracted_wsi_workspace.artifact_paths[slide_id]
-    bag_path = extracted_bag_workspace.feature_dir / f"{slide_id}.pt"
-    bag_tensor = torch.load(bag_path, weights_only=True).unsqueeze(0)
+    sample_index = next(
+        index for index, sample in enumerate(dataset.samples) if sample.sample_id == slide_id
+    )
+    bag_tensor = dataset[sample_index]["X"].unsqueeze(0)
     num_tiles = int(bag_tensor.shape[1])
 
     attention_scores = (

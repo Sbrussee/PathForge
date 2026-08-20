@@ -12,6 +12,7 @@ from pathforge.core.tasks.registry import build_task
 from pathforge.core.tasks.registry import import_task_modules
 from pathforge.config.config import Config
 from pathforge.config.config import DatasetEntry
+from pathforge.core.datasets.factory import build_bag_dataset
 from pathforge.core.datasets.factory import build_bag_datasets
 from pathforge.core.datasets.factory import build_wsi_dataset
 from pathforge.core.datasets.utils import group_datasets_by_use
@@ -24,14 +25,13 @@ from pathforge.core.features.utils import find_slides_with_missing_features
 from pathforge.policy.base import PolicyBase
 from pathforge.policy.feature_extraction import FeatureExtractionPolicy
 from pathforge.policy.utils import apply_search_params
+from pathforge.policy.utils import active_bag_combo
 from pathforge.policy.utils import benchmark_search_space
-from pathforge.policy.utils import build_bag_dataset_for_task
 from pathforge.policy.utils import build_mil_model_for_config
 from pathforge.policy.utils import collect_run_summary_row
 from pathforge.policy.utils import experiment_output_root
 from pathforge.policy.utils import infer_model_dimensions
 from pathforge.policy.utils import metric_should_minimize
-from pathforge.policy.utils import resolve_dataset_feature_dir
 from pathforge.policy.utils import save_benchmark_visualizations
 from pathforge.policy.utils import write_experiment_summary_csv
 from pathforge.training.base import TrainerBase
@@ -197,7 +197,9 @@ class BenchmarkingPolicy(PolicyBase):
         self._summary_rows = rows
         self._summary_objective_metric = objective_metric
         self._summary_minimize = minimize
-        self._summary_output_path = Path(self.experiment.project_root) / "benchmark_results.csv"
+        self._summary_output_path = (
+            Path(self.experiment.project_root) / "benchmark_results.csv"
+        )
         self._save_report()
         logger.info("[Benchmark] Benchmarking complete. Total runs: %d", num_runs)
         return {"status": "benchmark_done", "num_runs": num_runs}
@@ -216,6 +218,7 @@ class BenchmarkingPolicy(PolicyBase):
         rows: list[dict[str, Any]] = []
 
         train_entry, val_entry = self._resolve_legacy_train_val_entries()
+        annotations_df = pd.read_csv(self.cfg.experiment.annotation_file)
         for run_index, run_cfg in enumerate(configs):
             model_name = getattr(
                 run_cfg,
@@ -228,15 +231,22 @@ class BenchmarkingPolicy(PolicyBase):
                 run_cfg.benchmark_parameters.loss[0],
             )
             try:
-                ds_train = build_bag_dataset_for_task(
-                    run_cfg,
-                    feature_dir=resolve_dataset_feature_dir(train_entry),
-                    name="train",
+                combo_cfg = active_bag_combo(run_cfg)
+                ds_train = build_bag_dataset(
+                    ds_cfg=train_entry,
+                    annotations_df=annotations_df,
+                    combo_cfg=combo_cfg,
+                    aggregation_level=run_cfg.experiment.aggregation_level,
+                    task=str(run_cfg.experiment.task),
+                    target_column=run_cfg.experiment.label_column,
                 )
-                ds_val = build_bag_dataset_for_task(
-                    run_cfg,
-                    feature_dir=resolve_dataset_feature_dir(val_entry),
-                    name="val",
+                ds_val = build_bag_dataset(
+                    ds_cfg=val_entry,
+                    annotations_df=annotations_df,
+                    combo_cfg=combo_cfg,
+                    aggregation_level=run_cfg.experiment.aggregation_level,
+                    task=str(run_cfg.experiment.task),
+                    target_column=run_cfg.experiment.label_column,
                 )
                 input_dim, output_dim = infer_model_dimensions(ds_train)
                 model = build_mil_model_for_config(
@@ -266,7 +276,9 @@ class BenchmarkingPolicy(PolicyBase):
                     )
                 )
             except Exception as error:
-                logger.exception("[Benchmark] Legacy benchmark run %d failed.", run_index)
+                logger.exception(
+                    "[Benchmark] Legacy benchmark run %d failed.", run_index
+                )
                 rows.append(
                     collect_run_summary_row(
                         run_cfg,
@@ -280,7 +292,9 @@ class BenchmarkingPolicy(PolicyBase):
         self._summary_rows = rows
         self._summary_objective_metric = objective_metric
         self._summary_minimize = minimize
-        self._summary_output_path = experiment_output_root(self.cfg) / "benchmark_results.csv"
+        self._summary_output_path = (
+            experiment_output_root(self.cfg) / "benchmark_results.csv"
+        )
         self._save_report()
         return {"status": "benchmark_done", "num_runs": len(configs)}
 
@@ -300,7 +314,9 @@ class BenchmarkingPolicy(PolicyBase):
             for dataset in self.cfg.datasets
             if str(dataset.used_for) in {"validation", "testing", "all"}
         ]
-        train_entry = training_candidates[0] if training_candidates else self.cfg.datasets[0]
+        train_entry = (
+            training_candidates[0] if training_candidates else self.cfg.datasets[0]
+        )
         val_entry = validation_candidates[0] if validation_candidates else train_entry
         return train_entry, val_entry
 
@@ -419,8 +435,12 @@ class BenchmarkingPolicy(PolicyBase):
                 combo_cfg=combo_cfg,
             )
             if self.feature_policy is None:
-                raise RuntimeError("FeatureExtractionPolicy is not available in legacy config mode.")
-            self.feature_policy.execute_dataset(dataset=subset_dataset, combo_cfg=combo_cfg)
+                raise RuntimeError(
+                    "FeatureExtractionPolicy is not available in legacy config mode."
+                )
+            self.feature_policy.execute_dataset(
+                dataset=subset_dataset, combo_cfg=combo_cfg
+            )
 
     def build_bag_datasets_for_combo(
         self,

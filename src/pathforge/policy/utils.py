@@ -13,7 +13,6 @@ import pandas as pd
 from pathforge.config.config import Config, SearchSpaceParameter
 from pathforge.core.datasets.bag_dataset import BagDataset
 from pathforge.core.experiments.base import ComboConfig
-from pathforge.utils.constants import DATASET_COL
 from pathforge.utils.registries import MODELS
 
 
@@ -78,6 +77,28 @@ def apply_search_params(config: Config, params: dict[str, Any]) -> Config:
     return config
 
 
+def active_bag_combo(config: Config) -> ComboConfig:
+    """Return the single active tile/extractor selection for native H5 loading."""
+
+    def only_value(name: str, *, optional: bool = False) -> object:
+        values = config.benchmark_parameters.get_values(name)
+        if not values and optional:
+            return None
+        if len(values) != 1:
+            raise ValueError(
+                f"Expected one active benchmark_parameters.{name} value; "
+                f"got {values!r}."
+            )
+        return values[0]
+
+    return ComboConfig(
+        tile_px=only_value("tile_px"),
+        tile_mpp=only_value("tile_mpp"),
+        feature_extraction=only_value("feature_extraction"),
+        color_norm=only_value("color_norm", optional=True),
+    )
+
+
 def _apply_active_component_overrides(config: Config, params: dict[str, Any]) -> None:
     """Store active pipeline-component choices on the runtime config."""
 
@@ -98,7 +119,9 @@ def _apply_active_component_overrides(config: Config, params: dict[str, Any]) ->
     if "loss" in params:
         setattr(config, "_active_loss_name", str(params["loss"]))
     if "feature_extraction" in params:
-        setattr(config, "_active_feature_extractor_name", str(params["feature_extraction"]))
+        setattr(
+            config, "_active_feature_extractor_name", str(params["feature_extraction"])
+        )
 
 
 def _apply_benchmark_parameter_overrides(
@@ -142,47 +165,6 @@ def _apply_mil_parameter_overrides(config: Config, params: dict[str, Any]) -> No
             config.mil.encoder_layers = int(value)
         elif key == "k":
             config.mil.k = int(value)
-
-
-def build_bag_dataset_for_task(
-    config: Config,
-    *,
-    feature_dir: str | Path,
-    name: str,
-    dataset_entry: Any | None = None,
-) -> BagDataset:
-    """Construct a task-aware bag dataset from config and a feature directory."""
-
-    task = str(config.experiment.task or "classification")
-    annotations_df = pd.read_csv(config.experiment.annotation_file)
-    dataset_name = None
-    if dataset_entry is not None and DATASET_COL in annotations_df.columns:
-        dataset_name = str(dataset_entry.name)
-    slide_column = config.experiment.slide_column
-    if slide_column not in annotations_df.columns and "slide_id" in annotations_df.columns:
-        slide_column = None
-    return BagDataset(
-        name,
-        str(feature_dir),
-        str(config.experiment.annotation_file),
-        config.experiment.label_column,
-        annotations_df=annotations_df,
-        dataset_name=dataset_name,
-        task=task,
-        slide_column=slide_column,
-        time_column=config.experiment.survival_time_column,
-        event_column=config.experiment.survival_event_column,
-        bag_size=config.mil.bag_size,
-    )
-
-
-def resolve_dataset_feature_dir(dataset_entry: Any) -> Path:
-    """Resolve the directory containing bag feature files for one dataset."""
-
-    feature_dir = (
-        getattr(dataset_entry, "features_dir", None) or dataset_entry.artifacts_dir
-    )
-    return Path(feature_dir)
 
 
 def infer_model_dimensions(dataset: BagDataset) -> tuple[int, int]:
@@ -372,9 +354,7 @@ def metric_should_minimize(metric_name: str) -> bool:
     """Return whether lower values should rank higher for one metric name."""
 
     normalized = metric_name.lower()
-    return any(
-        token in normalized for token in ("loss", "error", "mae", "mse", "rmse")
-    )
+    return any(token in normalized for token in ("loss", "error", "mae", "mse", "rmse"))
 
 
 def collect_run_summary_row(
@@ -470,9 +450,10 @@ def write_experiment_summary_csv(
         if "status" in df.columns
         else pd.Series("", index=df.index, dtype="object")
     )
-    success_mask = status_series.isin({"success", "complete", "completed"}) & df[
-        "objective_value"
-    ].notna()
+    success_mask = (
+        status_series.isin({"success", "complete", "completed"})
+        & df["objective_value"].notna()
+    )
     success_df = df.loc[success_mask].sort_values(
         by=["objective_value", "run_index"],
         ascending=[minimize, True],
@@ -553,7 +534,9 @@ def save_benchmark_visualizations(
         success_df,
         x="run_label",
         y="objective_value",
-        color="model" if "model" in success_df.columns and success_df["model"].notna().any() else None,
+        color="model"
+        if "model" in success_df.columns and success_df["model"].notna().any()
+        else None,
         hover_data=hover_columns,
         title=f"Benchmark Performance Ranked by {objective_metric}",
     )
@@ -569,7 +552,9 @@ def save_benchmark_visualizations(
         success_df,
         x="rank",
         y="objective_value",
-        color="model" if "model" in success_df.columns and success_df["model"].notna().any() else None,
+        color="model"
+        if "model" in success_df.columns and success_df["model"].notna().any()
+        else None,
         hover_name="run_label",
         hover_data=hover_columns,
         title=f"Benchmark Rank vs {objective_metric}",
@@ -619,12 +604,10 @@ def save_global_summary_visualizations(
     required = {"status", "objective_metric", "objective_value"}
     missing = sorted(required - set(df.columns))
     if missing:
-        raise ValueError(
-            f"Global results CSV is missing required columns: {missing}."
-        )
+        raise ValueError(f"Global results CSV is missing required columns: {missing}.")
     values = pd.to_numeric(df["objective_value"], errors="coerce")
-    successful = df["status"].astype(str).str.lower().isin(
-        {"success", "complete", "completed"}
+    successful = (
+        df["status"].astype(str).str.lower().isin({"success", "complete", "completed"})
     )
     plot_df = df.loc[successful & values.notna()].copy()
     if plot_df.empty:
@@ -672,7 +655,9 @@ def save_global_summary_visualizations(
         plot_df,
         x="run_label",
         y="objective_value",
-        color="model" if "model" in plot_df and plot_df["model"].notna().any() else None,
+        color="model"
+        if "model" in plot_df and plot_df["model"].notna().any()
+        else None,
         hover_data=hover_columns,
         title=f"{title_prefix} Ranked by {metric}",
     ).write_html(str(ranked_path))
@@ -680,7 +665,9 @@ def save_global_summary_visualizations(
         plot_df,
         x="rank",
         y="objective_value",
-        color="model" if "model" in plot_df and plot_df["model"].notna().any() else None,
+        color="model"
+        if "model" in plot_df and plot_df["model"].notna().any()
+        else None,
         hover_data=hover_columns,
         title=f"{title_prefix}: Rank vs {metric}",
     ).write_html(str(rank_path))
@@ -715,8 +702,16 @@ def save_optuna_visualizations(
 
     exported: list[Path] = []
     figure_builders: list[tuple[str, Any, dict[str, Any]]] = [
-        ("plot_optimization_history", getattr(visualization, "plot_optimization_history", None), {}),
-        ("plot_param_importances", getattr(visualization, "plot_param_importances", None), {}),
+        (
+            "plot_optimization_history",
+            getattr(visualization, "plot_optimization_history", None),
+            {},
+        ),
+        (
+            "plot_param_importances",
+            getattr(visualization, "plot_param_importances", None),
+            {},
+        ),
         ("plot_rank", getattr(visualization, "plot_rank", None), {}),
         ("plot_timeline", getattr(visualization, "plot_timeline", None), {}),
     ]
@@ -888,17 +883,16 @@ def _hypervolume_reference_point(study: Any) -> list[float] | None:
 
 __all__ = [
     "ComboConfig",
+    "active_bag_combo",
     "apply_search_params",
     "benchmark_search_space",
     "build_mil_model_for_config",
-    "build_bag_dataset_for_task",
     "calculate_combinations",
     "infer_model_dimensions",
     "collect_run_summary_row",
     "experiment_output_root",
     "metric_should_minimize",
     "optimization_search_space",
-    "resolve_dataset_feature_dir",
     "save_benchmark_visualizations",
     "save_global_summary_visualizations",
     "save_optuna_visualizations",
