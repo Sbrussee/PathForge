@@ -18,9 +18,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-import torch
 
-from ._smoke_dataset import PreparedBagWorkspace, attach_smoke_outputs, capture_smoke_metrics
+from ._smoke_dataset import (
+    PreparedBagWorkspace,
+    attach_smoke_outputs,
+    capture_smoke_metrics,
+    read_h5_feature_matrix,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -29,14 +33,18 @@ from ._smoke_dataset import PreparedBagWorkspace, attach_smoke_outputs, capture_
 
 
 def _load_slide_features(
-    feature_dir: Path,
+    workspace: PreparedBagWorkspace,
     slide_ids: list[str],
 ) -> np.ndarray:
-    """Mean-pool each bag tensor to a slide-level feature vector."""
+    """Mean-pool each H5-backed bag to a slide-level feature vector."""
     rows: list[np.ndarray] = []
     for sid in slide_ids:
-        bag = torch.load(feature_dir / f"{sid}.pt", weights_only=True).float()
-        rows.append(bag.mean(dim=0).numpy())
+        bag = read_h5_feature_matrix(
+            workspace.artifacts_dir / f"{sid}.h5",
+            bag_id=f"{workspace.tile_px}px_{workspace.tile_mpp:g}mpp",
+            extractor_name=workspace.extractor_name,
+        )
+        rows.append(bag.mean(axis=0))
     return np.stack(rows, axis=0).astype(np.float32)
 
 
@@ -56,7 +64,7 @@ def test_sklearn_logistic_regression_classification_smoke(
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
-    X = _load_slide_features(extracted_bag_workspace.feature_dir, slide_ids)
+    X = _load_slide_features(extracted_bag_workspace, slide_ids)
     y = metadata_df["binary_label"].to_numpy(dtype=np.int64)
 
     model = SklearnLogisticRegressionClassifier(max_iter=200)
@@ -100,7 +108,7 @@ def test_sklearn_random_forest_classification_smoke(
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
-    X = _load_slide_features(extracted_bag_workspace.feature_dir, slide_ids)
+    X = _load_slide_features(extracted_bag_workspace, slide_ids)
     y = metadata_df["binary_label"].to_numpy(dtype=np.int64)
 
     model = SklearnRandomForestClassifier(n_estimators=10)
@@ -130,7 +138,7 @@ def test_sklearn_multiclass_classification_heatmap_smoke(
         pytest.skip("Fewer than 3 multiclass labels.")
 
     slide_ids = metadata_df["slide_id"].tolist()
-    X = _load_slide_features(extracted_bag_workspace.feature_dir, slide_ids)
+    X = _load_slide_features(extracted_bag_workspace, slide_ids)
     y = metadata_df["multiclass_label"].to_numpy(dtype=np.int64)
 
     model = SklearnLogisticRegressionClassifier(max_iter=200)
@@ -163,7 +171,7 @@ def test_sklearn_ridge_regression_smoke(
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
-    X = _load_slide_features(extracted_bag_workspace.feature_dir, slide_ids)
+    X = _load_slide_features(extracted_bag_workspace, slide_ids)
     y = metadata_df["multiclass_label"].to_numpy(dtype=np.float32)
 
     model = SklearnRidgeRegressor(alpha=1.0)
@@ -189,7 +197,7 @@ def test_sklearn_gradient_boosting_regression_smoke(
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
-    X = _load_slide_features(extracted_bag_workspace.feature_dir, slide_ids)
+    X = _load_slide_features(extracted_bag_workspace, slide_ids)
     y = metadata_df["multiclass_label"].to_numpy(dtype=np.float32)
 
     model = SklearnGradientBoostingRegressor(n_estimators=10)
@@ -214,7 +222,7 @@ def test_sklearn_factory_gradient_boosting_classification_smoke(
 
     metadata_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
-    X = _load_slide_features(extracted_bag_workspace.feature_dir, slide_ids)
+    X = _load_slide_features(extracted_bag_workspace, slide_ids)
     y = metadata_df["binary_label"].to_numpy(dtype=np.int64)
 
     model = make_sklearn_slide_model("SklearnGradientBoostingClassifier", n_estimators=10)
@@ -246,7 +254,7 @@ def test_sklearn_cox_ph_survival_smoke(
 
     metadata_df = pd.read_csv(survival_bag_workspace.metadata_csv)
     slide_ids = metadata_df["slide_id"].tolist()
-    X = _load_slide_features(survival_bag_workspace.feature_dir, slide_ids)
+    X = _load_slide_features(survival_bag_workspace, slide_ids)
     time = metadata_df["os_months"].to_numpy(dtype=np.float64)
     event = metadata_df["status"].to_numpy(dtype=np.float64)
     y = {"time": time, "event": event}

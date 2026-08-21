@@ -42,6 +42,7 @@ COMBINED_SMOKE_REPORT_DIR="${LOG_DIR}/combined_smoke_report"
 # Optional override:
 #   PATHFORGE_ENABLE_CUDA=1 enables the cu128 extra during uv sync.
 PATHFORGE_ENABLE_CUDA="${PATHFORGE_ENABLE_CUDA:-0}"
+PATHFORGE_COMBINED_ONLY="${PATHFORGE_COMBINED_ONLY:-0}"
 export PATHFORGE_SMOKE_CACHE="${SMOKE_CACHE_DEFAULT}"
 export UV_CACHE_DIR="${CACHE_ROOT}/uv"
 export XDG_CACHE_HOME="${CACHE_ROOT}/full-test-suite/${SLURM_JOB_ID:-manual}/xdg-cache"
@@ -80,6 +81,7 @@ echo "Smoke cache: ${PATHFORGE_SMOKE_CACHE}"
 echo "Node: ${SLURMD_NODENAME:-unknown}"
 echo "Partition: ${CURRENT_PARTITION}"
 echo "CUDA extra enabled: ${PATHFORGE_ENABLE_CUDA}"
+echo "Combined-only test pass: ${PATHFORGE_COMBINED_ONLY}"
 
 FAILED_SUITES=()
 
@@ -114,19 +116,21 @@ fi
 echo "[$(date --iso-8601=seconds)] Syncing environment"
 "${UV_SYNC_CMD[@]}" 2>&1 | tee "${LOG_DIR}/uv-sync.log"
 
-echo "[$(date --iso-8601=seconds)] Running unit tests"
-run_pytest unit tests/unit
+if [[ "${PATHFORGE_COMBINED_ONLY}" != "1" ]]; then
+  echo "[$(date --iso-8601=seconds)] Running unit tests"
+  run_pytest unit tests/unit
 
-echo "[$(date --iso-8601=seconds)] Running interface tests"
-run_pytest interface tests/interface
+  echo "[$(date --iso-8601=seconds)] Running interface tests"
+  run_pytest interface tests/interface
 
-echo "[$(date --iso-8601=seconds)] Running integration tests"
-run_pytest integration tests/integration
+  echo "[$(date --iso-8601=seconds)] Running integration tests"
+  run_pytest integration tests/integration
 
-echo "[$(date --iso-8601=seconds)] Running full smoke suite"
-export PATHFORGE_SMOKE_REPORT_DIR="${SMOKE_REPORT_DIR}"
-run_pytest smoke -m smoke tests/smoke
-echo "Smoke report directory: ${SMOKE_REPORT_DIR}"
+  echo "[$(date --iso-8601=seconds)] Running full smoke suite"
+  export PATHFORGE_SMOKE_REPORT_DIR="${SMOKE_REPORT_DIR}"
+  run_pytest smoke -m smoke tests/smoke
+  echo "Smoke report directory: ${SMOKE_REPORT_DIR}"
+fi
 
 echo "[$(date --iso-8601=seconds)] Running combined repository test pass"
 export PATHFORGE_SMOKE_REPORT_DIR="${COMBINED_SMOKE_REPORT_DIR}"

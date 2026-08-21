@@ -20,6 +20,7 @@ from ._smoke_dataset import PreparedBagWorkspace, attach_smoke_outputs, capture_
 from ._smoke_training import (
     DEFAULT_SMOKE_EPOCHS,
     SmokeTrainingResult,
+    artifact_bag_dataset,
     fit_smoke_model,
     make_training_config,
     training_artifact_outputs,
@@ -27,11 +28,10 @@ from ._smoke_training import (
 
 
 def _make_dataset(workspace: PreparedBagWorkspace) -> BagDataset:
-    return BagDataset(
-        "backend_visualization_smoke",
-        str(workspace.feature_dir),
-        str(workspace.metadata_csv),
-        "binary_label",
+    return artifact_bag_dataset(
+        workspace,
+        name="backend_visualization_smoke",
+        target_column="binary_label",
     )
 
 
@@ -108,11 +108,10 @@ def test_multiclass_classification_heatmap_smoke(
     if num_classes < 3:
         pytest.skip("Fewer than 3 multiclass labels; skipping multiclass smoke test.")
 
-    dataset = BagDataset(
-        "multiclass_heatmap_smoke",
-        str(extracted_bag_workspace.feature_dir),
-        str(extracted_bag_workspace.metadata_csv),
-        "multiclass_label",
+    dataset = artifact_bag_dataset(
+        extracted_bag_workspace,
+        name="multiclass_heatmap_smoke",
+        target_column="multiclass_label",
     )
 
     with capture_smoke_metrics(

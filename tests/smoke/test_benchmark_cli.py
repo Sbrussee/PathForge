@@ -51,16 +51,14 @@ def test_benchmark_cli_writes_summary_and_visualizations(
     Uses real VarMIL training on extracted GTEx bags and real plotly for visualizations.
     """
     from pathforge.cli.benchmark_run import main
-    from pathforge.cli.base import load_config
-    from pathforge.core.datasets.bag_dataset import BagDataset
+    from ._smoke_training import artifact_bag_dataset
     from types import SimpleNamespace
     import pathforge.policy.benchmarking as bench_mod
 
-    real_dataset = BagDataset(
-        "smoke_cli_ds",
-        str(extracted_bag_workspace.feature_dir),
-        str(extracted_bag_workspace.metadata_csv),
-        "binary_label",
+    real_dataset = artifact_bag_dataset(
+        extracted_bag_workspace,
+        name="smoke_cli_ds",
+        target_column="binary_label",
     )
 
     cfg_path = tmp_path / "benchmark.yaml"
@@ -68,12 +66,16 @@ def test_benchmark_cli_writes_summary_and_visualizations(
     slides_dir = tmp_path / "slides"
     slides_dir.mkdir()
     artifacts_dir = tmp_path / "artifacts"
+    annotations_csv = tmp_path / "annotations.csv"
+    annotations_df = pd.read_csv(extracted_bag_workspace.metadata_csv)
+    annotations_df["dataset"] = "smoke_cli_ds"
+    annotations_df.to_csv(annotations_csv, index=False)
     cfg_path.write_text(
         "\n".join(
             [
                 "experiment:",
                 "  project_name: smoke_benchmark_cli",
-                "  annotation_file: x",
+                f"  annotation_file: {annotations_csv}",
                 f"  project_root: {project_root}",
                 "  mode: benchmark",
                 "  task: classification",
@@ -113,7 +115,7 @@ def test_benchmark_cli_writes_summary_and_visualizations(
     )
     monkeypatch.setattr(
         bench_mod,
-        "build_bag_dataset_for_task",
+        "build_bag_dataset",
         lambda *args, **kwargs: real_dataset,
     )
     monkeypatch.setattr(

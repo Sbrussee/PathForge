@@ -23,6 +23,7 @@ from ._smoke_dataset import PreparedBagWorkspace, attach_smoke_outputs, capture_
 from ._smoke_training import (
     DEFAULT_SMOKE_EPOCHS,
     SurvivalBagDataset,
+    artifact_bag_dataset,
     fit_smoke_model,
     register_smoke_components,
 )
@@ -46,14 +47,11 @@ def test_slide_mlp_binary_classification_smoke(
     tmp_path: Path,
 ) -> None:
     """SlideVectorMLP binary classification through LightningTrainer."""
-    from pathforge.core.datasets.bag_dataset import BagDataset
-
     register_smoke_components()
-    dataset = BagDataset(
-        "mlp_binary_smoke",
-        str(extracted_bag_workspace.feature_dir),
-        str(extracted_bag_workspace.metadata_csv),
-        "binary_label",
+    dataset = artifact_bag_dataset(
+        extracted_bag_workspace,
+        name="mlp_binary_smoke",
+        target_column="binary_label",
     )
 
     with capture_smoke_metrics(
@@ -111,7 +109,9 @@ def test_slide_mlp_continuous_survival_smoke(
     metadata_df = pd.read_csv(survival_bag_workspace.metadata_csv)
     dataset = SurvivalBagDataset(
         metadata_df,
-        feature_dir=survival_bag_workspace.feature_dir,
+        artifacts_dir=survival_bag_workspace.artifacts_dir,
+        bag_id=f"{survival_bag_workspace.tile_px}px_{survival_bag_workspace.tile_mpp:g}mpp",
+        extractor_name=survival_bag_workspace.extractor_name,
         time_column="os_months",
         event_column="status",
         discrete_time=False,
@@ -161,7 +161,9 @@ def test_slide_mlp_discrete_survival_smoke(
     metadata_df = pd.read_csv(survival_bag_workspace.metadata_csv)
     dataset = SurvivalBagDataset(
         metadata_df,
-        feature_dir=survival_bag_workspace.feature_dir,
+        artifacts_dir=survival_bag_workspace.artifacts_dir,
+        bag_id=f"{survival_bag_workspace.tile_px}px_{survival_bag_workspace.tile_mpp:g}mpp",
+        extractor_name=survival_bag_workspace.extractor_name,
         time_column="time_bin",
         event_column="status",
         discrete_time=True,

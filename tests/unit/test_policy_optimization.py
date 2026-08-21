@@ -13,7 +13,7 @@ import pathforge.policy.optimization as opt_mod
 import pathforge.policy.utils as policy_utils
 from pathforge.config.config import Config
 from pathforge.policy.optimization import OptimizationPolicy
-from pathforge.policy.utils import build_bag_dataset_for_task, optimization_search_space
+from pathforge.policy.utils import optimization_search_space
 from tests.conftest import DUMMY_FE
 
 
@@ -173,8 +173,7 @@ def test_optimization_objective_uses_mil_lab_user_config_and_inferred_dims(
         lambda trial, monitor: object()
     )
     monkeypatch.setitem(sys.modules, "optuna_integration", fake_integration)
-    monkeypatch.setattr(opt_mod, "build_bag_dataset_for_task", lambda *args, **kwargs: _FakeDataset())
-    monkeypatch.setattr(opt_mod, "resolve_dataset_feature_dir", lambda dataset_entry: tmp_path)
+    monkeypatch.setattr(opt_mod, "build_bag_dataset", lambda *args, **kwargs: _FakeDataset())
     monkeypatch.setattr(
         opt_mod,
         "infer_model_dimensions",
@@ -195,84 +194,11 @@ def test_optimization_objective_uses_mil_lab_user_config_and_inferred_dims(
     }
 
 
-def test_build_bag_dataset_for_task_filters_to_dataset_entry_rows(
-    tmp_path: Path,
-) -> None:
-    annotation_path = tmp_path / "annotations.csv"
-    annotation_path.write_text(
-        "dataset,slide_id,category\ntrain_ds,S1,0\nval_ds,S2,1\n",
-        encoding="utf-8",
-    )
-    feature_dir = tmp_path / "features"
-    feature_dir.mkdir()
-    (tmp_path / "slides").mkdir()
-
-    import torch
-
-    torch.save(torch.zeros(2, 3), feature_dir / "S1.pt")
-    torch.save(torch.ones(2, 3), feature_dir / "S2.pt")
-
-    cfg = Config.model_validate(
-        {
-            "experiment": {
-                "project_name": "opt_filter",
-                "annotation_file": str(annotation_path),
-                "project_root": str((tmp_path / "project").resolve()),
-                "mode": "optimization",
-                "task": "classification",
-            },
-            "slide_processing": {"backend": "lazyslide"},
-            "mil": {"backend": "native"},
-            "metrics": {"classification_backend": "native"},
-            "optimization": {
-                "study_name": "study",
-                "sampler": "TPESampler",
-                "pruner": "MedianPruner",
-                "objective_mode": "max",
-                "objective_metric": "balanced_accuracy",
-                "trials": 1,
-            },
-            "datasets": [
-                {
-                    "name": "train_ds",
-                    "slides_dir": str(tmp_path / "slides"),
-                    "artifacts_dir": str(feature_dir),
-                    "used_for": "training",
-                },
-                {
-                    "name": "val_ds",
-                    "slides_dir": str(tmp_path / "slides"),
-                    "artifacts_dir": str(feature_dir),
-                    "used_for": "validation",
-                },
-            ],
-            "benchmark_parameters": {
-                "tile_px": [256],
-                "tile_mpp": [0.5],
-                "feature_extraction": [DUMMY_FE],
-                "mil": ["DummyMIL"],
-                "loss": ["CrossEntropyLoss"],
-            },
-        }
-    )
-
-    dataset = build_bag_dataset_for_task(
-        cfg,
-        feature_dir=feature_dir,
-        name="train",
-        dataset_entry=cfg.datasets[0],
-    )
-
-    assert dataset.num_bags == 1
-    assert dataset.annotations["dataset"].tolist() == ["train_ds"]
-    assert dataset.annotations["slide_id"].tolist() == ["S1"]
-
-
 def test_optimization_objective_uses_dataset_use_semantics_and_does_not_mutate_base_config(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    captured_calls: list[tuple[str, str]] = []
+    captured_calls: list[tuple[str, str, str]] = []
 
     class _FakeDataset:
         feature_dim = 11
@@ -306,13 +232,14 @@ def test_optimization_objective_uses_dataset_use_semantics_and_does_not_mutate_b
         "batch_size": {"type": "categorical", "choices": [1, 4]},
     }
 
-    def _fake_build_bag_dataset_for_task(config, *, feature_dir, name, dataset_entry=None):
-        _ = config, feature_dir
-        captured_calls.append((name, dataset_entry.name))
+    def _fake_build_bag_dataset(*, ds_cfg, annotations_df, combo_cfg, **kwargs):
+        _ = annotations_df, kwargs
+        captured_calls.append(
+            (ds_cfg.used_for, ds_cfg.name, combo_cfg.feature_extraction)
+        )
         return _FakeDataset()
 
-    monkeypatch.setattr(opt_mod, "build_bag_dataset_for_task", _fake_build_bag_dataset_for_task)
-    monkeypatch.setattr(opt_mod, "resolve_dataset_feature_dir", lambda dataset_entry: tmp_path)
+    monkeypatch.setattr(opt_mod, "build_bag_dataset", _fake_build_bag_dataset)
     monkeypatch.setattr(
         opt_mod,
         "infer_model_dimensions",
@@ -329,7 +256,10 @@ def test_optimization_objective_uses_dataset_use_semantics_and_does_not_mutate_b
     score = OptimizationPolicy(cfg).objective(trial)
 
     assert score == 0.5
-    assert captured_calls == [("train", "train_ds"), ("val", "val_ds")]
+    assert captured_calls == [
+        ("training", "train_ds", DUMMY_FE),
+        ("validation", "val_ds", DUMMY_FE),
+    ]
     assert cfg.benchmark_parameters.mil == ["DummyMIL", "DummyMIL2"]
     assert cfg.mil.batch_size == 1
 

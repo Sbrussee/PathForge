@@ -195,16 +195,19 @@ class FeatureExtractionPolicy(PolicyBase):
         try:
             slide_processor.load_wsi(wsi)
             _ = slide_processor.get_base_mpp(wsi)
-        except Exception:
-            logger.warning(
-                "[Policy] Skipping slide %s because no valid base MPP is available.",
+        except Exception as error:
+            logger.exception(
+                "[Policy] Cannot process slide %s because it could not be opened "
+                "with valid metadata.",
                 slide_id,
             )
             try:
                 slide_processor.close_wsi(wsi)
             except Exception:
                 pass
-            return
+            raise RuntimeError(
+                f"Cannot process slide '{slide_id}' with valid slide metadata."
+            ) from error
 
         expected_tiling_spec = {
             "tile_px": tile_px,
@@ -273,6 +276,7 @@ class FeatureExtractionPolicy(PolicyBase):
                     )
         except Exception:
             logger.exception("[Policy] Error processing slide %s", slide_id)
+            raise
         finally:
             slide_processor.close_wsi(wsi)
 

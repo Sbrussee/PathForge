@@ -143,14 +143,14 @@ class ExtractedWsiWorkspace:
 
 @dataclass(frozen=True)
 class PreparedBagWorkspace:
-    """Prepared MIL bags backed by ``.pt`` tensors and a metadata CSV.
+    """Prepared MIL bags backed by native slide H5 artifacts and metadata.
 
     Attributes:
-        root_dir: Session-scoped writable workspace for prepared bag files.
-        feature_dir: Directory containing ``{slide_id}.pt`` bags.
+        root_dir: Session-scoped writable workspace for prepared bag metadata.
+        artifacts_dir: Directory containing one PathForge H5 artifact per slide.
         metadata_csv: Metadata table containing at least ``slide_id`` and one or
             more target columns.
-        slide_ids: Ordered slide identifiers with matching bag files.
+        slide_ids: Ordered slide identifiers with matching H5 artifacts.
         input_dim: Feature dimension ``D`` for each bag tensor shaped
             ``[num_instances, D]``.
         bag_lengths: Mapping from slide id to number of instances per bag.
@@ -159,11 +159,14 @@ class PreparedBagWorkspace:
     """
 
     root_dir: Path
-    feature_dir: Path
+    artifacts_dir: Path
     metadata_csv: Path
     slide_ids: list[str]
     input_dim: int
     bag_lengths: dict[str, int]
+    tile_px: int
+    tile_mpp: float
+    extractor_name: str
     metrics_path: Path
 
 
