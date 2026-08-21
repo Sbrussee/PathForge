@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: PathForge
+type: software
+repository: https://github.com/Sbrussee/PathForge
+identifiers:
+- type: other
+  value: pathforge
+  description: bio.tools
+license: MIT
+keywords:
+- term: Pathology
+  uri: http://edamontology.org/topic_0634
+- term: Machine learning
+  uri: http://edamontology.org/topic_3474
+abstract: PathForge is a modular benchmarking framework for multiple instance learning
+  in computational pathology. It supports whole slide image feature extraction, HDF5
+  artifact generation, tile overviews, benchmarking, pipeline optimization, classification,
+  regression, survival and retrieval tasks, and support for model inference and visualization.
+message: If you use this software, please cite it using this CITATION.cff.
