@@ -49,7 +49,7 @@ def _build_single_slide_wsi(
 
     return WSI(
         slide=slide_id,
-        patient=str(row["patient"]),
+        patient=str(row.get("patient", slide_id)),
         category=str(row["category"]),
         path=input_slide_path,
         artifact_path=selected_dataset.slide_artifact_path(slide_id),
@@ -140,6 +140,13 @@ def run_feature_extraction_single_slide(
             f"Expected exactly 1 annotation row for dataset='{dataset}' and slide='{slide_id}', "
             f"but found {len(row_df)}."
         )
+
+    if "patient" not in row_df.columns:
+        logger.info(
+            "No patient ID supplied for slide '%s'; using the slide ID as a placeholder.",
+            slide_id,
+        )
+        row_df["patient"] = slide_id
 
     project_annotations_path = Path(experiment.project_root) / "annotations.csv"
     row_df.to_csv(project_annotations_path, index=False)

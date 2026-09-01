@@ -65,3 +65,20 @@ def test_build_single_slide_wsi_reads_fallback_mpp_when_dataset_sample_missing(t
     )
 
     assert wsi.fallback_mpp == 0.5
+
+
+def test_build_single_slide_wsi_uses_slide_id_when_patient_is_missing(tmp_path: Path) -> None:
+    artifact_path = tmp_path / "artifacts" / "S1.h5"
+    dataset = SimpleNamespace(
+        samples=[],
+        slide_artifact_path=lambda slide_id: artifact_path,
+    )
+
+    wsi = _build_single_slide_wsi(
+        row=pd.Series({"category": "C1"}),
+        selected_dataset=dataset,
+        slide_id="S1",
+        input_slide_path=tmp_path / "S1.tiff",
+    )
+
+    assert wsi.patient == "S1"
