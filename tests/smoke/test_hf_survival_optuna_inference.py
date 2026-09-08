@@ -19,6 +19,7 @@ from ._smoke_dataset import (
 from ._smoke_training import (
     DEFAULT_SMOKE_EPOCHS,
     SurvivalBagDataset,
+    artifact_bag_dataset,
     fit_smoke_model,
     register_smoke_components,
 )
@@ -33,7 +34,9 @@ def test_continuous_survival_mil_smoke(
     metadata_df = pd.read_csv(survival_bag_workspace.metadata_csv)
     dataset = SurvivalBagDataset(
         metadata_df,
-        feature_dir=survival_bag_workspace.feature_dir,
+        artifacts_dir=survival_bag_workspace.artifacts_dir,
+        bag_id=f"{survival_bag_workspace.tile_px}px_{survival_bag_workspace.tile_mpp:g}mpp",
+        extractor_name=survival_bag_workspace.extractor_name,
         time_column="os_months",
         event_column="status",
         discrete_time=False,
@@ -78,7 +81,9 @@ def test_discrete_survival_mil_smoke(
     metadata_df = pd.read_csv(survival_bag_workspace.metadata_csv)
     dataset = SurvivalBagDataset(
         metadata_df,
-        feature_dir=survival_bag_workspace.feature_dir,
+        artifacts_dir=survival_bag_workspace.artifacts_dir,
+        bag_id=f"{survival_bag_workspace.tile_px}px_{survival_bag_workspace.tile_mpp:g}mpp",
+        extractor_name=survival_bag_workspace.extractor_name,
         time_column="time_bin",
         event_column="status",
         discrete_time=True,
@@ -123,14 +128,11 @@ def test_binary_classification_optuna_smoke(
     """Run a very small Optuna study over binary MIL hyperparameters."""
     optuna = pytest.importorskip("optuna")
     pytest.importorskip("torch")
-    from pathforge.core.datasets.bag_dataset import BagDataset
-
     register_smoke_components()
-    dataset = BagDataset(
-        "smoke_optuna_binary",
-        str(extracted_bag_workspace.feature_dir),
-        str(extracted_bag_workspace.metadata_csv),
-        "binary_label",
+    dataset = artifact_bag_dataset(
+        extracted_bag_workspace,
+        name="smoke_optuna_binary",
+        target_column="binary_label",
     )
     objective_root = tmp_path / "optuna_runs"
 
@@ -237,15 +239,13 @@ def test_trained_mil_inference_heatmap_cli(
     torch = pytest.importorskip("torch")
     pytest.importorskip("torchmil")
     from pathforge.cli.inference import main as inference_main
-    from pathforge.core.datasets.bag_dataset import BagDataset
     from pathforge.core.io.h5.base import FileHandleH5
     from pathforge.core.io.h5 import heatmaps as heatmap_io
 
-    dataset = BagDataset(
-        "smoke_inference_binary",
-        str(extracted_bag_workspace.feature_dir),
-        str(extracted_bag_workspace.metadata_csv),
-        "binary_label",
+    dataset = artifact_bag_dataset(
+        extracted_bag_workspace,
+        name="smoke_inference_binary",
+        target_column="binary_label",
     )
 
     with capture_smoke_metrics(
@@ -268,8 +268,12 @@ def test_trained_mil_inference_heatmap_cli(
 
         slide_id = extracted_bag_workspace.slide_ids[0]
         artifact_path = extracted_wsi_workspace.artifact_paths[slide_id]
-        bag_tensor = torch.load(
-            extracted_bag_workspace.feature_dir / f"{slide_id}.pt"
+        bag_tensor = torch.from_numpy(
+            read_h5_feature_matrix(
+                extracted_bag_workspace.artifacts_dir / f"{slide_id}.h5",
+                bag_id=f"{extracted_bag_workspace.tile_px}px_{extracted_bag_workspace.tile_mpp:g}mpp",
+                extractor_name=extracted_bag_workspace.extractor_name,
+            )
         ).unsqueeze(0)
         instance_scores = (
             model.instance_scores(bag_tensor)
@@ -402,7 +406,9 @@ def test_gtex_survival_mil_smoke(
     metadata_df = pd.read_csv(gtex_survival_workspace.metadata_csv)
     dataset = SurvivalBagDataset(
         metadata_df,
-        feature_dir=gtex_survival_workspace.feature_dir,
+        artifacts_dir=gtex_survival_workspace.artifacts_dir,
+        bag_id=f"{gtex_survival_workspace.tile_px}px_{gtex_survival_workspace.tile_mpp:g}mpp",
+        extractor_name=gtex_survival_workspace.extractor_name,
         time_column="os_months",
         event_column="status",
         discrete_time=False,
@@ -530,7 +536,9 @@ def test_gtex_survival_heatmap(
     metadata_df = pd.read_csv(gtex_survival_workspace.metadata_csv)
     dataset = SurvivalBagDataset(
         metadata_df,
-        feature_dir=gtex_survival_workspace.feature_dir,
+        artifacts_dir=gtex_survival_workspace.artifacts_dir,
+        bag_id=f"{gtex_survival_workspace.tile_px}px_{gtex_survival_workspace.tile_mpp:g}mpp",
+        extractor_name=gtex_survival_workspace.extractor_name,
         time_column="os_months",
         event_column="status",
         discrete_time=False,
@@ -550,8 +558,13 @@ def test_gtex_survival_heatmap(
 
     slide_id = gtex_survival_workspace.slide_ids[0]
     artifact_path = extracted_wsi_workspace.artifact_paths[slide_id]
-    bag_path = gtex_survival_workspace.feature_dir / f"{slide_id}.pt"
-    bag_tensor = torch.load(bag_path, weights_only=True).unsqueeze(0)
+    bag_tensor = torch.from_numpy(
+        read_h5_feature_matrix(
+            gtex_survival_workspace.artifacts_dir / f"{slide_id}.h5",
+            bag_id=f"{gtex_survival_workspace.tile_px}px_{gtex_survival_workspace.tile_mpp:g}mpp",
+            extractor_name=gtex_survival_workspace.extractor_name,
+        )
+    ).unsqueeze(0)
     num_tiles = int(bag_tensor.shape[1])
 
     attention_scores = (

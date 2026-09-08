@@ -109,7 +109,9 @@ class LazySlideProcessor(SlideProcessorBase):
     # Conversions: backend -> policy
     # ---------------------------------------------------------------------
 
-    def _backend_tissues_to_policy(self, tissues_table: Any) -> list[list[list[list[float]]]]:
+    def _backend_tissues_to_policy(
+        self, tissues_table: Any
+    ) -> list[list[list[list[float]]]]:
         """
         Convert lazyslide tissues table -> internal nested-rings contract:
 
@@ -150,12 +152,15 @@ class LazySlideProcessor(SlideProcessorBase):
                     polygons.append(_polygon_to_rings(part))
 
             else:
-                raise ValueError(f"[LazySlide] Unsupported tissue geometry type: {geom.geom_type}")
+                raise ValueError(
+                    f"[LazySlide] Unsupported tissue geometry type: {geom.geom_type}"
+                )
 
         return polygons
 
-
-    def _backend_tiles_to_policy_coords(self, tiles_table: Any, tile_spec_obj: dict) -> np.ndarray:
+    def _backend_tiles_to_policy_coords(
+        self, tiles_table: Any, tile_spec_obj: dict
+    ) -> np.ndarray:
         """
         Convert lazyslide tiles table + wsidata tile_spec -> policy coords (N,5) int32:
         [x_level0, y_level0, read_w_at_level, read_h_at_level, read_level]
@@ -180,7 +185,9 @@ class LazySlideProcessor(SlideProcessorBase):
         bounds = df["geometry"].apply(
             lambda g: g.bounds if g is not None else (np.nan, np.nan, np.nan, np.nan)
         )
-        bounds = np.asarray(list(bounds), dtype=np.float32)  # (N,4): (minx,miny,maxx,maxy)
+        bounds = np.asarray(
+            list(bounds), dtype=np.float32
+        )  # (N,4): (minx,miny,maxx,maxy)
 
         tiles_meta = (tile_spec_obj or {}).get("tiles", {})
         tile_px = int(tiles_meta.get("width", 0))  # destined/output tile size
@@ -189,13 +196,19 @@ class LazySlideProcessor(SlideProcessorBase):
         ops_downsample = float(tiles_meta.get("ops_downsample", 1.0))
 
         if tile_px <= 0:
-            raise ValueError("[LazySlide] tile_spec_obj['tiles']['width'] must be positive.")
+            raise ValueError(
+                "[LazySlide] tile_spec_obj['tiles']['width'] must be positive."
+            )
         if tile_mpp is None:
             raise ValueError("[LazySlide] tile_spec_obj['tiles']['mpp'] is missing.")
         if ops_level < 0:
-            raise ValueError("[LazySlide] tile_spec_obj['tiles']['ops_level'] is missing/invalid.")
+            raise ValueError(
+                "[LazySlide] tile_spec_obj['tiles']['ops_level'] is missing/invalid."
+            )
         if ops_downsample <= 0:
-            raise ValueError("[LazySlide] tile_spec_obj['tiles']['ops_downsample'] must be > 0.")
+            raise ValueError(
+                "[LazySlide] tile_spec_obj['tiles']['ops_downsample'] must be > 0."
+            )
 
         x0 = np.rint(bounds[:, 0]).astype(np.int32)
         y0 = np.rint(bounds[:, 1]).astype(np.int32)
@@ -216,7 +229,9 @@ class LazySlideProcessor(SlideProcessorBase):
             axis=1,
         ).astype(np.int32)
 
-    def _backend_tile_spec_to_policy_tiling_spec(self, *, config: Dict[str, Any], tile_spec_obj: dict) -> dict:
+    def _backend_tile_spec_to_policy_tiling_spec(
+        self, *, config: Dict[str, Any], tile_spec_obj: dict
+    ) -> dict:
         """
         Build the backend-agnostic tiling_spec we store in H5 for a bag.
 
@@ -234,9 +249,13 @@ class LazySlideProcessor(SlideProcessorBase):
         stride_px = tiles_meta.get("stride_width", tile_px)
 
         if tile_px is None or tile_mpp is None:
-            raise ValueError("[LazySlide] Cannot build H5 tiling_spec: missing tile_px/tile_mpp.")
+            raise ValueError(
+                "[LazySlide] Cannot build H5 tiling_spec: missing tile_px/tile_mpp."
+            )
         if int(tile_px) <= 0 or float(tile_mpp) <= 0:
-            raise ValueError("[LazySlide] Invalid tile_px/tile_mpp when building H5 tiling_spec.")
+            raise ValueError(
+                "[LazySlide] Invalid tile_px/tile_mpp when building H5 tiling_spec."
+            )
 
         return {
             "tile_px": int(tile_px),
@@ -257,15 +276,21 @@ class LazySlideProcessor(SlideProcessorBase):
         arr = np.asarray(ring, dtype=np.float64)
 
         if arr.ndim != 2 or arr.shape[1] < 2:
-            raise ValueError(f"[LazySlide] {context}: expected (N,2)-like ring, got {arr.shape}")
+            raise ValueError(
+                f"[LazySlide] {context}: expected (N,2)-like ring, got {arr.shape}"
+            )
 
         arr = arr[:, :2]
 
         if arr.shape[0] < 4:
-            raise ValueError(f"[LazySlide] {context}: linear ring must have at least 4 points")
+            raise ValueError(
+                f"[LazySlide] {context}: linear ring must have at least 4 points"
+            )
 
         if not np.array_equal(arr[0], arr[-1]):
-            raise ValueError(f"[LazySlide] {context}: linear ring must already be closed")
+            raise ValueError(
+                f"[LazySlide] {context}: linear ring must already be closed"
+            )
 
         return arr
 
@@ -306,7 +331,6 @@ class LazySlideProcessor(SlideProcessorBase):
         gdf = gpd.GeoDataFrame({"tissue_id": rows}, geometry=geoms)
         return ShapesModel.parse(gdf)
 
-
     def _xy_to_backend_tiles_table(
         self,
         x: np.ndarray,
@@ -330,7 +354,9 @@ class LazySlideProcessor(SlideProcessorBase):
         x = np.asarray(x, dtype=np.float32)
         y = np.asarray(y, dtype=np.float32)
         if x.ndim != 1 or y.ndim != 1 or x.shape[0] != y.shape[0]:
-            raise ValueError("[LazySlide] x and y must be 1D arrays with the same length.")
+            raise ValueError(
+                "[LazySlide] x and y must be 1D arrays with the same length."
+            )
         if int(tile_px) <= 0:
             raise ValueError("[LazySlide] tile_px must be > 0.")
 
@@ -361,11 +387,14 @@ class LazySlideProcessor(SlideProcessorBase):
             geometry=geoms,
         )
 
-        if template is not None and hasattr(template, "crs") and template.crs is not None:
+        if (
+            template is not None
+            and hasattr(template, "crs")
+            and template.crs is not None
+        ):
             gdf = gdf.set_crs(template.crs, allow_override=True)
 
         return ShapesModel.parse(gdf)
-
 
     def _reconstruct_tile_spec(self, coords: np.ndarray, tiling_spec: dict) -> dict:
         """
@@ -375,16 +404,22 @@ class LazySlideProcessor(SlideProcessorBase):
         """
         coords = np.asarray(coords, dtype=np.int32)
         if coords.ndim != 2 or coords.shape[1] != 5:
-            raise ValueError(f"[LazySlide] coords must be (N,5) int32, got {coords.shape}")
+            raise ValueError(
+                f"[LazySlide] coords must be (N,5) int32, got {coords.shape}"
+            )
         if coords.shape[0] == 0:
-            raise ValueError("[LazySlide] Cannot reconstruct tile_spec from empty coords.")
+            raise ValueError(
+                "[LazySlide] Cannot reconstruct tile_spec from empty coords."
+            )
 
         tile_px = int(tiling_spec.get("tile_px", 0))
         tile_mpp = tiling_spec.get("tile_mpp", None)
         stride_px = int(tiling_spec.get("stride_px", tile_px))
 
         if tile_px <= 0 or tile_mpp is None:
-            raise ValueError("[LazySlide] tiling_spec must contain valid tile_px and tile_mpp.")
+            raise ValueError(
+                "[LazySlide] tiling_spec must contain valid tile_px and tile_mpp."
+            )
         if stride_px <= 0:
             raise ValueError("[LazySlide] tiling_spec.stride_px must be positive.")
 
@@ -421,7 +456,6 @@ class LazySlideProcessor(SlideProcessorBase):
             }
         }
 
-
     def _reconstruct_tiles_table(self, coords: np.ndarray, *, tile_px: int):
         """
         Rebuild lazyslide `wsi.obj["tiles"]` table from coords.
@@ -430,14 +464,18 @@ class LazySlideProcessor(SlideProcessorBase):
         """
         coords = np.asarray(coords, dtype=np.int32)
         if coords.ndim != 2 or coords.shape[1] != 5:
-            raise ValueError(f"[LazySlide] coords must be (N,5) int32, got {coords.shape}")
+            raise ValueError(
+                f"[LazySlide] coords must be (N,5) int32, got {coords.shape}"
+            )
 
         x = coords[:, 0].astype(np.float32)
         y = coords[:, 1].astype(np.float32)
         tile_id = np.arange(coords.shape[0]).astype(str)
 
-        return self._xy_to_backend_tiles_table(x, y, tile_px=int(tile_px), tile_id=tile_id)
-    
+        return self._xy_to_backend_tiles_table(
+            x, y, tile_px=int(tile_px), tile_id=tile_id
+        )
+
     # ---------------------------------------------------------------------
     # Thumnail helpers
     # ---------------------------------------------------------------------
@@ -450,7 +488,9 @@ class LazySlideProcessor(SlideProcessorBase):
         """
         props = getattr(wsi_obj, "properties", None)
         if props is None or not hasattr(props, "shape"):
-            raise RuntimeError("[LazySlide] Could not determine level-0 shape: missing wsi.obj.properties.shape.")
+            raise RuntimeError(
+                "[LazySlide] Could not determine level-0 shape: missing wsi.obj.properties.shape."
+            )
 
         shape = getattr(props, "shape")
         try:
@@ -465,7 +505,6 @@ class LazySlideProcessor(SlideProcessorBase):
             raise RuntimeError(f"[LazySlide] Invalid level-0 shape values: {shape!r}")
 
         return h0, w0
-
 
     def _thumbnail_to_rgb_uint8_numpy(self, thumb_obj: Any) -> np.ndarray:
         """
@@ -535,6 +574,7 @@ class LazySlideProcessor(SlideProcessorBase):
             selected_reader = None if reader == "auto" else reader
             try:
                 wsi._obj = open_wsi(wsi.path, reader=selected_reader)
+                self._normalize_loaded_mpp(wsi)
                 if index:
                     logger.warning(
                         "[LazySlide] Opened %s with fallback reader '%s' after %s failed.",
@@ -544,11 +584,53 @@ class LazySlideProcessor(SlideProcessorBase):
                     )
                 return
             except Exception as exc:
+                if getattr(wsi, "_obj", None) is not None:
+                    try:
+                        wsi._obj.close()
+                    finally:
+                        wsi._obj = None
                 failures.append(f"{reader}: {exc}")
         raise RuntimeError(
             f"[LazySlide] No configured reader could open {wsi.path}. "
             + " | ".join(failures)
         )
+
+    @staticmethod
+    def _normalize_loaded_mpp(wsi: WSI) -> float:
+        """Normalize reader MPP metadata to the scalar float LazySlide expects.
+
+        Some WSIData readers expose otherwise valid numeric metadata as strings.
+        LazySlide consumes ``wsi.properties.mpp`` directly, so merely converting
+        it in :meth:`get_base_mpp` is insufficient. This method updates the
+        loaded reader properties once, before any LazySlide preprocessing runs.
+        """
+
+        properties = getattr(wsi._obj, "properties", None)
+        if properties is None:
+            raise RuntimeError("Loaded slide does not expose reader properties.")
+
+        raw_mpp = getattr(properties, "mpp", None)
+        candidates = [raw_mpp, wsi.fallback_mpp]
+        failures: list[str] = []
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            if isinstance(candidate, (tuple, list, np.ndarray)):
+                failures.append(f"non-scalar value {candidate!r}")
+                continue
+            try:
+                normalized_mpp = float(candidate)
+            except (TypeError, ValueError):
+                failures.append(f"non-numeric value {candidate!r}")
+                continue
+            if not np.isfinite(normalized_mpp) or normalized_mpp <= 0:
+                failures.append(f"invalid value {candidate!r}")
+                continue
+            properties.mpp = normalized_mpp
+            return normalized_mpp
+
+        detail = "; ".join(failures) or "no MPP metadata was provided"
+        raise RuntimeError(f"Cannot determine a valid scalar base MPP: {detail}.")
 
     def close_wsi(self, wsi: WSI) -> None:
         obj = getattr(wsi, "_obj", None)
@@ -558,7 +640,7 @@ class LazySlideProcessor(SlideProcessorBase):
             obj.close()
         finally:
             wsi._obj = None
-    
+
     def get_base_mpp(self, wsi: WSI) -> float:
         """
         Return the base MPP for this slide.
@@ -594,7 +676,9 @@ class LazySlideProcessor(SlideProcessorBase):
         try:
             slide_mpp = float(slide_mpp)
         except Exception as e:
-            raise RuntimeError(f"[LazySlide] Invalid base MPP value: {slide_mpp!r}") from e
+            raise RuntimeError(
+                f"[LazySlide] Invalid base MPP value: {slide_mpp!r}"
+            ) from e
 
         if slide_mpp <= 0:
             raise RuntimeError(f"[LazySlide] Base MPP must be > 0, got {slide_mpp}.")
@@ -603,7 +687,7 @@ class LazySlideProcessor(SlideProcessorBase):
 
     # ---------------------------------------------------------------------
     # Policy methods
-    # --------------------------------------------------------------------- 
+    # ---------------------------------------------------------------------
 
     def get_thumbnail(self, wsi: WSI, level: int = -1) -> Tuple[Any, float, float]:
         """
@@ -642,23 +726,33 @@ class LazySlideProcessor(SlideProcessorBase):
 
         return thumb, downscale_x, downscale_y
 
-    def segment_tissue(self, wsi: WSI, config: Dict[str, Any]) -> list[list[list[list[float]]]]:
+    def segment_tissue(
+        self, wsi: WSI, config: Dict[str, Any]
+    ) -> list[list[list[list[float]]]]:
         method = config.get("method", "otsu")
         params = dict(config.get("params", {}))
 
-        logger.info("[LazySlide] Tissue segmentation: method='%s', params=%s", method, params)
+        logger.info(
+            "[LazySlide] Tissue segmentation: method='%s', params=%s", method, params
+        )
 
         if method == "otsu":
             zs.pp.find_tissues(wsi=wsi.obj, **params)
         else:
-            raise NotImplementedError(f"[LazySlide] Tissue segmentation method '{method}' not implemented.")
+            raise NotImplementedError(
+                f"[LazySlide] Tissue segmentation method '{method}' not implemented."
+            )
 
         if "tissues" not in wsi.obj:
-            raise RuntimeError("[LazySlide] Segmentation ran but no 'tissues' table found on WSI.")
+            raise RuntimeError(
+                "[LazySlide] Segmentation ran but no 'tissues' table found on WSI."
+            )
 
         return self._backend_tissues_to_policy(wsi.obj["tissues"])
 
-    def extract_patches(self, wsi: WSI, tissues: list[list[list[list[float]]]], config: Dict[str, Any]) -> Tuple[np.ndarray, dict]:
+    def extract_patches(
+        self, wsi: WSI, tissues: list[list[list[list[float]]]], config: Dict[str, Any]
+    ) -> Tuple[np.ndarray, dict]:
         """
         Produce:
         - coords: (N,5) int32 [x0,y0,read_w,read_h,level]
@@ -711,10 +805,14 @@ class LazySlideProcessor(SlideProcessorBase):
         zs.pp.tile_tissues(wsi=wsi.obj, **params)
 
         if "tiles" not in wsi.obj:
-            raise RuntimeError("[LazySlide] Tiling ran but no 'tiles' table found on WSI.")
+            raise RuntimeError(
+                "[LazySlide] Tiling ran but no 'tiles' table found on WSI."
+            )
 
         if not hasattr(wsi.obj, "attrs") or "tile_spec" not in wsi.obj.attrs:
-            raise RuntimeError("[LazySlide] Tiling finished but wsi.obj.attrs['tile_spec'] is missing.")
+            raise RuntimeError(
+                "[LazySlide] Tiling finished but wsi.obj.attrs['tile_spec'] is missing."
+            )
 
         tile_spec_obj = wsi.obj.attrs["tile_spec"]
         coords = self._backend_tiles_to_policy_coords(
@@ -729,7 +827,9 @@ class LazySlideProcessor(SlideProcessorBase):
 
         return coords, tiling_spec_h5
 
-    def validate_tile_spec(self, tiling_spec: Optional[dict], config: Optional[Dict[str, Any]] = None) -> bool:
+    def validate_tile_spec(
+        self, tiling_spec: Optional[dict], config: Optional[Dict[str, Any]] = None
+    ) -> bool:
         if tiling_spec is None or not isinstance(tiling_spec, dict):
             return False
 
@@ -746,7 +846,8 @@ class LazySlideProcessor(SlideProcessorBase):
             # Validate the "intent" fields against the run config (cache identity)
             return (
                 int(tiling_spec["tile_px"]) == int(config.get("tile_px"))
-                and abs(float(tiling_spec["tile_mpp"]) - float(config.get("tile_mpp"))) < 1e-6
+                and abs(float(tiling_spec["tile_mpp"]) - float(config.get("tile_mpp")))
+                < 1e-6
             )
         except Exception:
             return False
@@ -763,7 +864,9 @@ class LazySlideProcessor(SlideProcessorBase):
 
         coords = np.asarray(coords, dtype=np.int32)
         if coords.ndim != 2 or coords.shape[1] != 5:
-            raise ValueError(f"[LazySlide] coords must be (N,5) int32, got {coords.shape}")
+            raise ValueError(
+                f"[LazySlide] coords must be (N,5) int32, got {coords.shape}"
+            )
 
         # Warn (do not block) if features are extracted with a backend different than the tiling backend.
         spec_backend = tiling_spec.get("backend")
@@ -797,7 +900,9 @@ class LazySlideProcessor(SlideProcessorBase):
 
         key = f"{model_name}_tiles"
         if key not in wsi.obj:
-            raise RuntimeError(f"[LazySlide] Feature extraction finished but '{key}' not found on WSI.")
+            raise RuntimeError(
+                f"[LazySlide] Feature extraction finished but '{key}' not found on WSI."
+            )
 
         feats = wsi.obj[key]  # AnnData
         X = feats.X
@@ -808,7 +913,9 @@ class LazySlideProcessor(SlideProcessorBase):
 
         features_matrix = np.asarray(X, dtype=np.float32)
         if features_matrix.ndim != 2:
-            raise ValueError(f"[LazySlide] Expected 2D feature matrix, got shape {features_matrix.shape}.")
+            raise ValueError(
+                f"[LazySlide] Expected 2D feature matrix, got shape {features_matrix.shape}."
+            )
 
         if features_matrix.shape[0] != coords.shape[0]:
             raise ValueError(
@@ -857,15 +964,20 @@ class LazySlideProcessor(SlideProcessorBase):
         )
         return self._region_to_rgb_uint8_numpy(region)
 
-
     def extract_cells(self, wsi: WSI, config: Dict[str, Any]) -> Any:
         cell_cfg = config.get("cell_segmentation", None)
         if cell_cfg is None:
-            raise ValueError("[LazySlide] extract_cells requires config['cell_segmentation'].")
+            raise ValueError(
+                "[LazySlide] extract_cells requires config['cell_segmentation']."
+            )
 
         cell_seg_model = cell_cfg.get("model", "instanseg")
         cell_type_classification = cell_cfg.get("cell_type_classification", False)
-        cell_class_model = cell_cfg.get("cell_type_model", "histoplus") if cell_type_classification else None
+        cell_class_model = (
+            cell_cfg.get("cell_type_model", "histoplus")
+            if cell_type_classification
+            else None
+        )
         params = dict(cell_cfg.get("params", {}))
 
         logger.info(
@@ -876,7 +988,9 @@ class LazySlideProcessor(SlideProcessorBase):
         )
 
         cells_key = f"{cell_seg_model}_cells"
-        cell_types_key = f"{cell_class_model}_cell_types" if cell_type_classification else None
+        cell_types_key = (
+            f"{cell_class_model}_cell_types" if cell_type_classification else None
+        )
 
         zs.pp.find_tissues(wsi=wsi.obj)
         zs.pp.tile_tissues(
@@ -902,7 +1016,9 @@ class LazySlideProcessor(SlideProcessorBase):
         )
 
         if len(wsi.obj[cells_key]) == 0:
-            raise RuntimeError("[LazySlide] No cells were segmented, cannot proceed to cell type classification.")
+            raise RuntimeError(
+                "[LazySlide] No cells were segmented, cannot proceed to cell type classification."
+            )
 
         if cell_type_classification:
             zs.seg.cell_types(
@@ -921,7 +1037,9 @@ class LazySlideProcessor(SlideProcessorBase):
             )
 
             if len(wsi.obj[cell_types_key]) == 0:
-                raise RuntimeError("[LazySlide] No cell types were classified, something went wrong.")
+                raise RuntimeError(
+                    "[LazySlide] No cell types were classified, something went wrong."
+                )
 
     def inspect_slide(self, wsi: WSI) -> None:
         logger.info("[LazySlide] Inspecting slide object:")

@@ -109,10 +109,10 @@ def test_extracted_h5_bags_are_reused_for_downstream_mil_tasks(
     extracted_bag_workspace: PreparedBagWorkspace,
     extracted_wsi_workspace: ExtractedWsiWorkspace,
 ) -> None:
-    """Check that the smoke suite prepared reusable MIL bag tensors."""
+    """Check that downstream MIL tasks reuse the extracted H5 artifacts."""
     assert extracted_bag_workspace.metrics_path.exists()
     for slide_id in extracted_bag_workspace.slide_ids:
-        bag_path = extracted_bag_workspace.feature_dir / f"{slide_id}.pt"
-        assert bag_path.exists()
+        artifact_path = extracted_bag_workspace.artifacts_dir / f"{slide_id}.h5"
+        assert artifact_path.exists()
         assert slide_id in extracted_wsi_workspace.artifact_paths
         assert extracted_bag_workspace.bag_lengths[slide_id] > 0

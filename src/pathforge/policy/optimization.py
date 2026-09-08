@@ -14,16 +14,16 @@ from pathforge.utils.registries import LOSSES, TRAINERS
 from pathforge.training.base import TrainerBase
 from pathforge.policy.utils import (
     apply_search_params,
-    build_bag_dataset_for_task,
+    active_bag_combo,
     build_mil_model_for_config,
     experiment_output_root,
     infer_model_dimensions,
     optimization_search_space,
-    resolve_dataset_feature_dir,
     save_optuna_visualizations,
     suggest_parameter,
     write_experiment_summary_csv,
 )
+from pathforge.core.datasets.factory import build_bag_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class OptimizationPolicy(PolicyBase):
         elif name == "CmaEsSampler":
             return optuna.samplers.CmaEsSampler(seed=seed)
         elif name == "GridSampler":
-            #TODO: Specify a default grid here if not in config
+            # TODO: Specify a default grid here if not in config
             # GridSampler requires search space to be known at init,
             # which is complex for this dynamic setup. defaulting to TPE.
             logger.warning(
@@ -121,17 +121,23 @@ class OptimizationPolicy(PolicyBase):
         LossClass = LOSSES.get(loss_name)
 
         train_entry, val_entry = self._resolve_train_val_entries(trial_cfg)
-        ds_train = build_bag_dataset_for_task(
-            trial_cfg,
-            feature_dir=resolve_dataset_feature_dir(train_entry),
-            name="train",
-            dataset_entry=train_entry,
+        annotations_df = pd.read_csv(trial_cfg.experiment.annotation_file)
+        bag_combo = active_bag_combo(trial_cfg)
+        ds_train = build_bag_dataset(
+            ds_cfg=train_entry,
+            annotations_df=annotations_df,
+            combo_cfg=bag_combo,
+            aggregation_level=trial_cfg.experiment.aggregation_level,
+            task=str(trial_cfg.experiment.task),
+            target_column=trial_cfg.experiment.label_column,
         )
-        ds_val = build_bag_dataset_for_task(
-            trial_cfg,
-            feature_dir=resolve_dataset_feature_dir(val_entry),
-            name="val",
-            dataset_entry=val_entry,
+        ds_val = build_bag_dataset(
+            ds_cfg=val_entry,
+            annotations_df=annotations_df,
+            combo_cfg=bag_combo,
+            aggregation_level=trial_cfg.experiment.aggregation_level,
+            task=str(trial_cfg.experiment.task),
+            target_column=trial_cfg.experiment.label_column,
         )
         input_dim, output_dim = infer_model_dimensions(ds_train)
         model = build_mil_model_for_config(
@@ -210,7 +216,9 @@ class OptimizationPolicy(PolicyBase):
 
         study.optimize(
             self.objective,
-            n_trials=n_trials if n_trials is not None else self.config.optimization.trials,
+            n_trials=n_trials
+            if n_trials is not None
+            else self.config.optimization.trials,
         )
 
         logger.info("Best Params: %s", study.best_params)
@@ -241,13 +249,17 @@ class OptimizationPolicy(PolicyBase):
             for dataset in config.datasets
             if str(dataset.used_for) in {"validation", "testing", "all"}
         ]
-        train_entry = training_candidates[0] if training_candidates else config.datasets[0]
+        train_entry = (
+            training_candidates[0] if training_candidates else config.datasets[0]
+        )
         val_entry = validation_candidates[0] if validation_candidates else train_entry
         return train_entry, val_entry
 
     def _save_study_outputs(self, study: optuna.Study) -> None:
         output_root = experiment_output_root(self.config)
-        raw_results_path = output_root / f"{self.config.optimization.study_name}_results.csv"
+        raw_results_path = (
+            output_root / f"{self.config.optimization.study_name}_results.csv"
+        )
         summary_path = output_root / "optimization_results.csv"
         raw_df = study.trials_dataframe()
         raw_df.to_csv(raw_results_path, index=False)
