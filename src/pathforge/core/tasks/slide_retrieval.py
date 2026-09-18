@@ -4,7 +4,7 @@ import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
@@ -22,6 +22,7 @@ from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.tasks.base import TaskBase
 from pathforge.core.tasks.registry import register_task
 from pathforge.slide_retrieval.aggregation import aggregate_slide_representations
+from pathforge.slide_retrieval.input_inspection import inspect_retrieval_inputs
 from pathforge.slide_retrieval.io import (
     build_slide_retrieval_inference_output_root,
     build_slide_retrieval_output_root,
@@ -34,6 +35,7 @@ from pathforge.slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
     get_representation_strategy_output_kind,
     get_representation_strategy_supported_feature_levels,
+    get_representation_strategy_values,
 )
 from pathforge.slide_retrieval.representation_strategies.storage import (
     build_retrieval_representation_artifact_path,
@@ -68,7 +70,7 @@ def _retrieval_batch_collate(
 class SlideRetrievalTask(TaskBase):
     """Run slide retrieval from bag-level features."""
 
-    grid_keys = [
+    grid_keys: ClassVar[list[str]] = [
         "tile_px",
         "tile_mpp",
         "feature_extraction",
@@ -130,7 +132,6 @@ class SlideRetrievalTask(TaskBase):
         exclusion_level = self._resolve_exclusion_level()
         representation_name = str(combo_cfg.get("retrieval_representation"))
         search_strategy_name = str(combo_cfg.get("search_strategy"))
-        num_workers = int(getattr(self.cfg.experiment, "num_workers", 0) or 0)
         logger.info(
             "[SlideRetrieval] Starting execute | tiling_id=%s, aggregation=%s, "
             "representation=%s, search=%s",
@@ -140,65 +141,69 @@ class SlideRetrievalTask(TaskBase):
             search_strategy_name,
         )
 
-        # Fail fast when the selected strategies and dataset feature levels cannot match.
-        combination_is_valid, reason = self._validate_combination_compatibility(
-            datasets_by_use=datasets_by_use,
+        representation_cache_params = self._representation_cache_params_from_config(
             representation_name=representation_name,
-            search_strategy_name=search_strategy_name,
-            aggregation_level=aggregation_level,
-            exclusion_level=exclusion_level,
-        )
-        if not combination_is_valid:
-            logger.warning("[SlideRetrieval] Skipping combo: %s", reason)
-            return {
-                "status": "skipped_incompatible_combo",
-                "reason": reason,
-            }
-
-        # ------------------------------------------------------------------
-        # Build and run the representation stage
-        # ------------------------------------------------------------------
-        logger.info(
-            "[SlideRetrieval] Stage 1/3: preparing retrieval representation strategy"
-        )
-        representation_strategy = build_representation_strategy(
-            representation_name,
-            params=combo_cfg.get_hyperparams("retrieval_representation"),
-            bag_id=tiling_id,
-            config=getattr(self.experiment, "cfg", None),
-        )
-        prepare_for_combo = getattr(representation_strategy, "prepare_for_combo", None)
-        if callable(prepare_for_combo):
-            prepare_for_combo(
-                combo_cfg=combo_cfg,
-                feature_name=feature_name,
-                tiling_id=tiling_id,
-            )
-        representation_cache_params = self._representation_cache_params(
-            representation_strategy
+            combo_cfg=combo_cfg,
         )
         representation_id = build_retrieval_representation_id(
             feature_extraction=feature_name,
             retrieval_representation=representation_name,
             params=representation_cache_params,
         )
-        logger.info(
-            "[SlideRetrieval] Representation strategy ready | representation_id=%s",
-            representation_id,
-        )
-
-        logger.info(
-            "[SlideRetrieval] Stage 2/3: materializing physical-slide representations"
-        )
-        representations_by_use = self._materialize_and_aggregate_representations(
+        cached_by_use, cache_is_complete = self._collect_patch_cache(
             datasets_by_use=datasets_by_use,
-            representation_strategy=representation_strategy,
             representation_id=representation_id,
-            combo_cfg=combo_cfg,
             aggregation_level=aggregation_level,
             exclusion_level=exclusion_level,
-            representation_cache_params=representation_cache_params,
         )
+        representation_strategy: Any | None = None
+        if cache_is_complete:
+            feature_level = "patch"
+            representations_by_use = cached_by_use
+        else:
+            inspection = inspect_retrieval_inputs(
+                self._physical_artifact_paths(datasets_by_use),
+                tiling_id=tiling_id,
+                extractor_name=feature_name,
+            )
+            feature_level = inspection.feature_level
+            if feature_level == "slide":
+                return {
+                    "status": "skipped_incompatible_combo",
+                    "reason": (
+                        "Slide-level feature input was detected. "
+                        "Slide-vector retrieval is not implemented yet."
+                    ),
+                }
+            else:
+                representation_strategy = build_representation_strategy(
+                    representation_name,
+                    params=combo_cfg.get_hyperparams("retrieval_representation"),
+                    bag_id=tiling_id,
+                    config=getattr(self.experiment, "cfg", None),
+                )
+                prepare_for_combo = getattr(representation_strategy, "prepare_for_combo", None)
+                if callable(prepare_for_combo):
+                    prepare_for_combo(combo_cfg=combo_cfg, feature_name=feature_name, tiling_id=tiling_id)
+                representations_by_use = self._materialize_and_aggregate_representations(
+                    datasets_by_use=datasets_by_use,
+                    representation_strategy=representation_strategy,
+                    representation_id=representation_id,
+                    combo_cfg=combo_cfg,
+                    aggregation_level=aggregation_level,
+                    exclusion_level=exclusion_level,
+                    representation_cache_params=representation_cache_params,
+                )
+
+        combination_is_valid, reason = self._validate_combination_compatibility(
+            feature_level=feature_level,
+            representation_name=representation_name,
+            search_strategy_name=search_strategy_name,
+            aggregation_level=aggregation_level,
+            exclusion_level=exclusion_level,
+        )
+        if not combination_is_valid:
+            raise ValueError(reason)
 
         # Convert per-use buckets into final search roles.
         logger.info("[SlideRetrieval] Stage 3/3: running search strategy")
@@ -315,6 +320,64 @@ class SlideRetrievalTask(TaskBase):
             params["_kmeans_n_init"] = 10
             params["_random_state"] = getattr(self.cfg.experiment, "random_state", None)
         return params
+
+    def _representation_cache_params_from_config(
+        self, *, representation_name: str, combo_cfg: ComboConfig
+    ) -> dict[str, Any]:
+        """Build a patch-cache key without constructing a representation strategy."""
+        params = get_representation_strategy_values(
+            representation_name,
+            combo_cfg.get_hyperparams("retrieval_representation"),
+        )
+        params["_schema_version"] = 2
+        if representation_name.startswith("yottixel"):
+            params["_kmeans_n_init"] = 10
+            params["_random_state"] = getattr(self.cfg.experiment, "random_state", None)
+        return params
+
+    @staticmethod
+    def _physical_artifact_paths(
+        datasets_by_use: dict[str, list[BagDataset]],
+    ) -> list[Path]:
+        """Return each physical source artifact used by this retrieval run."""
+        return [
+            artifact_path
+            for datasets in datasets_by_use.values()
+            for dataset in datasets
+            for index in range(dataset.num_bags)
+            for sample in [dataset.get_sample(index)]
+            for artifact_path in sample.artifact_paths
+        ]
+
+    def _collect_patch_cache(
+        self,
+        *,
+        datasets_by_use: dict[str, list[BagDataset]],
+        representation_id: str,
+        aggregation_level: str,
+        exclusion_level: ExclusionLevel,
+    ) -> tuple[dict[str, list[RetrievalRepresentation]], bool]:
+        """Probe the patch cache before inspecting original feature artifacts."""
+        cached_by_use: dict[str, list[RetrievalRepresentation]] = {}
+        complete = True
+        for use, datasets in datasets_by_use.items():
+            representations: list[RetrievalRepresentation] = []
+            for dataset in datasets:
+                if not isinstance(dataset, SlideRetrievalBagDataset):
+                    raise TypeError(
+                        "slide_retrieval requires SlideRetrievalBagDataset instances. "
+                        f"Got {type(dataset).__name__}."
+                    )
+                cached, missing = self._collect_existing_representations(
+                    bag_dataset=dataset,
+                    representation_id=representation_id,
+                    aggregation_level=aggregation_level,
+                    exclusion_level=exclusion_level,
+                )
+                representations.extend(cached)
+                complete = complete and missing is None
+            cached_by_use[use] = representations
+        return cached_by_use, complete
 
     def _resolve_representation_loader_workers(
         self,
@@ -465,7 +528,7 @@ class SlideRetrievalTask(TaskBase):
     ) -> dict[str, list[RetrievalRepresentation]]:
         """Build each physical slide once, then aggregate logical retrieval items.
 
-        The H5 cache belongs to the physical slide artifact.  Grouped case and
+        Each physical slide has a dedicated retrieval cache. Grouped case and
         patient items are assembled only after those slide-local selections
         have been loaded, so selectors can never see a concatenated raw bag.
         """
@@ -584,15 +647,21 @@ class SlideRetrievalTask(TaskBase):
         combo_cfg: ComboConfig,
         representation_cache_params: dict[str, Any],
     ) -> RetrievalRepresentation:
-        """Load or create one slide-local representation in its source artifact."""
-        artifact_path = sample.artifact_paths[0]
-        with FileHandleH5(artifact_path, mode="r") as artifact:
-            cached = load_slide_retrieval_representation(
-                retrieval_artifact=artifact,
-                tile_id=dataset.tiling_id,
-                representation_id=representation_id,
-                entry_id=None,
-            )
+        """Load or create one slide-local representation in its retrieval artifact."""
+        artifact_path = build_retrieval_representation_artifact_path(
+            artifacts_dir=dataset.artifacts_dir,
+            slide_id=sample.sample_id,
+        )
+        source_artifact_path = sample.artifact_paths[0]
+        cached = None
+        if artifact_path.is_file():
+            with FileHandleH5(artifact_path, mode="r") as artifact:
+                cached = load_slide_retrieval_representation(
+                    retrieval_artifact=artifact,
+                    tile_id=dataset.tiling_id,
+                    representation_id=representation_id,
+                    entry_id=None,
+                )
         if cached is not None:
             return cached
 
@@ -603,7 +672,7 @@ class SlideRetrievalTask(TaskBase):
             extractor_name = dataset.extractor_name
 
             def load_bag(self, _: int) -> Any:
-                return dataset._load_slide_bag(artifact_path)
+                return dataset._load_slide_bag(source_artifact_path)
 
         inputs = representation_strategy.load_sample(
             index=0, sample=sample, base_dataset=_SingleSlideDataset()
@@ -658,8 +727,7 @@ class SlideRetrievalTask(TaskBase):
             # Build the per-sample cache address in the retrieval artifact store.
             artifact_path = build_retrieval_representation_artifact_path(
                 artifacts_dir=bag_dataset.artifacts_dir,
-                aggregation_level=bag_dataset.aggregation_level,
-                sample_id=sample.sample_id,
+                slide_id=sample.sample_id,
             )
             entry_id = build_retrieval_representation_entry_id(
                 sorted(sample.slide_ids),
@@ -712,6 +780,7 @@ class SlideRetrievalTask(TaskBase):
         representation_id: str,
         aggregation_level: str,
         exclusion_level: ExclusionLevel,
+        input_contract: Any | None = None,
     ) -> tuple[list[RetrievalRepresentation], dict[str, str]]:
         """
         Create and persist retrieval representations for one retrieval dataset.
@@ -730,6 +799,7 @@ class SlideRetrievalTask(TaskBase):
             Created representations and failure details keyed by sample ID.
         """
         created_retrieval_representations: list[RetrievalRepresentation] = []
+        _ = input_contract
         creation_errors_by_sample: dict[str, str] = {}
 
         def _materialize_one(
@@ -738,8 +808,7 @@ class SlideRetrievalTask(TaskBase):
             # Build the target artifact location for the current sample.
             artifact_path = build_retrieval_representation_artifact_path(
                 artifacts_dir=bag_dataset.artifacts_dir,
-                aggregation_level=bag_dataset.aggregation_level,
-                sample_id=dataset_item.sample.sample_id,
+                slide_id=dataset_item.sample.sample_id,
             )
             artifact_path.parent.mkdir(parents=True, exist_ok=True)
             entry_id = build_retrieval_representation_entry_id(
@@ -807,7 +876,7 @@ class SlideRetrievalTask(TaskBase):
                     index, sample_id = future_to_item[future]
                     try:
                         results_by_index[index] = future.result()
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001
                         # Continue processing remaining items while collecting failures.
                         tb_text = "".join(
                             traceback.format_exception(
@@ -918,7 +987,7 @@ class SlideRetrievalTask(TaskBase):
         aggregation_level: str,
         feature_name: str,
         combo_cfg: ComboConfig,
-        representation_strategy: Any,
+        representation_strategy: Any | None,
         search_strategy: Any,
         representation_id: str,
         exclusion_level: ExclusionLevel,
@@ -934,6 +1003,8 @@ class SlideRetrievalTask(TaskBase):
             slide_representation=str(combo_cfg.get("retrieval_representation")),
             slide_representation_params=dict(
                 representation_strategy.hyperparam_values()
+                if representation_strategy is not None
+                else {}
             ),
             search_method=str(combo_cfg.get("search_strategy")),
             search_params=dict(search_strategy.hyperparam_values()),
@@ -956,90 +1027,55 @@ class SlideRetrievalTask(TaskBase):
     def _validate_combination_compatibility(
         self,
         *,
-        datasets_by_use: dict[str, list[BagDataset]],
+        feature_level: str | None = None,
+        datasets_by_use: dict[str, list[BagDataset]] | None = None,
+        input_contract: Any | None = None,
         representation_name: str,
         search_strategy_name: str,
         aggregation_level: str,
         exclusion_level: ExclusionLevel,
     ) -> tuple[bool, str]:
-        # Determine one shared feature level across all dataset uses.
-        all_bag_datasets = [
-            bag_dataset
-            for bag_datasets in datasets_by_use.values()
-            for bag_dataset in bag_datasets
-        ]
-        feature_levels = {
-            bag_dataset.get_feature_level() for bag_dataset in all_bag_datasets
-        }
-
-        # Stop early when dataset feature structure cannot be interpreted reliably.
-        if "invalid" in feature_levels:
-            details = " | ".join(
-                bag_dataset.get_feature_level_reason()
-                for bag_dataset in all_bag_datasets
-                if bag_dataset.get_feature_level() == "invalid"
-            )
-            return False, (
-                "Invalid feature structure detected in one or more bag datasets."
-                + (f" Details: {details}" if details else "")
-            )
-
-        if "unknown" in feature_levels:
-            details = " | ".join(
-                bag_dataset.get_feature_level_reason()
-                for bag_dataset in all_bag_datasets
-                if bag_dataset.get_feature_level() == "unknown"
-            )
-            return False, (
-                "Could not determine feature level for one or more bag datasets."
-                + (f" Details: {details}" if details else "")
-            )
-
-        if len(feature_levels) != 1:
-            return (
-                False,
-                f"Inconsistent feature levels across datasets: {sorted(feature_levels)}",
-            )
-
-        # The single shared level is used for all downstream compatibility checks.
-        feature_level = next(iter(feature_levels))
-
+        _ = datasets_by_use
+        if feature_level is None:
+            feature_level = str(getattr(input_contract, "feature_level", ""))
         # Resolve class-level compatibility metadata from registries by strategy name.
         try:
-            supported_feature_levels = (
-                get_representation_strategy_supported_feature_levels(
-                    representation_name
-                )
-            )
-            representation_kind = get_representation_strategy_output_kind(
-                representation_name
-            )
             supported_representation_kinds = (
                 get_search_strategy_supported_representation_kinds(search_strategy_name)
             )
         except ValueError as exc:
             return False, str(exc)
 
+        supported_feature_levels = get_representation_strategy_supported_feature_levels(
+            representation_name
+        )
+        representation_kind = get_representation_strategy_output_kind(representation_name)
         if feature_level not in supported_feature_levels:
             return (
                 False,
-                f"Representation strategy '{representation_name}' "
-                f"does not support feature level '{feature_level}'.",
+                (
+                    f"Representation strategy '{representation_name}' "
+                    f"does not support feature level '{feature_level}'."
+                ),
             )
 
         if exclusion_level == "slide" and aggregation_level != "slide":
             return (
                 False,
-                "slide_retrieval.exclusion_level='slide' is only supported when "
-                "experiment.aggregation_level='slide'.",
+                (
+                    "slide_retrieval.exclusion_level='slide' is only supported when "
+                    "experiment.aggregation_level='slide'."
+                ),
             )
 
         # Ensure representation output kind can be consumed by the search strategy.
         if representation_kind not in supported_representation_kinds:
             return (
                 False,
-                f"Search strategy '{search_strategy_name}' does not support "
-                f"representation kind '{representation_kind}'.",
+                (
+                    f"Search strategy '{search_strategy_name}' does not support "
+                    f"representation kind '{representation_kind}'."
+                ),
             )
 
         return True, ""
