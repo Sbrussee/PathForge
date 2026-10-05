@@ -62,7 +62,10 @@ def test_aggregate_rejects_incompatible_feature_dimensions() -> None:
         )
 
 
-def test_aggregate_rejects_single_vector_without_reducer() -> None:
+@pytest.mark.parametrize("representation_type", ["single_vector", "slide_vector"])
+def test_aggregate_rejects_vector_kinds_without_reducer(
+    representation_type: str,
+) -> None:
     with pytest.raises(ValueError, match="no declared aggregation policy"):
         aggregate_slide_representations(
             sample_id="case-1",
@@ -71,7 +74,7 @@ def test_aggregate_rejects_single_vector_without_reducer() -> None:
                 RetrievalRepresentation(
                     sample_id="slide-a",
                     data=np.ones(4),
-                    representation_type="single_vector",
+                    representation_type=representation_type,
                 )
             ],
         )

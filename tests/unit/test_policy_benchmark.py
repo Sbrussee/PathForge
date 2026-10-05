@@ -333,6 +333,132 @@ def test_experiment_benchmark_writes_tutorial_summary(
     assert summary.loc[0, "objective_value"] == pytest.approx(0.25)
 
 
+def test_experiment_benchmark_records_skipped_combo_and_continues(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A skipped retrieval combo must not abort the remaining grid."""
+    annotation_path = tmp_path / "annotations.csv"
+    annotation_path.write_text("dataset,slide,category\nS1,S1,tumor\n", encoding="utf-8")
+    config = Config.model_validate(
+        {
+            "experiment": {
+                "project_name": "retrieval_skip_grid",
+                "annotation_file": str(annotation_path),
+                "project_root": str(tmp_path),
+                "mode": "benchmark",
+                "task": "slide_retrieval",
+                "aggregation_level": "slide",
+            },
+            "datasets": [
+                {
+                    "name": "cohort",
+                    "slides_dir": str(tmp_path / "slides"),
+                    "artifacts_dir": str(tmp_path / "artifacts"),
+                    "used_for": "query_reference",
+                }
+            ],
+            "benchmark_parameters": {
+                "tile_px": [256],
+                "tile_mpp": [0.5],
+                "feature_extraction": ["uni"],
+                "retrieval_representation": ["yottixel-features", "slide_features"],
+                "search_strategy": ["yottixel"],
+                "mil": [],
+            },
+        }
+    )
+    skipped_combo = ComboConfig(
+        feature_extraction="uni",
+        tile_px=256,
+        tile_mpp=0.5,
+        retrieval_representation="slide_features",
+        search_strategy="yottixel",
+    )
+    valid_combo = ComboConfig(
+        feature_extraction="uni",
+        tile_px=256,
+        tile_mpp=0.5,
+        retrieval_representation="yottixel-features",
+        search_strategy="yottixel",
+    )
+
+    class RoutingTask:
+        def __init__(self) -> None:
+            self.calls: list[ComboConfig] = []
+
+        @classmethod
+        def get_grid_keys(cls) -> list[str]:
+            return [
+                "tile_px",
+                "tile_mpp",
+                "feature_extraction",
+                "color_norm",
+                "retrieval_representation",
+                "search_strategy",
+            ]
+
+        def execute(self, combo_cfg: ComboConfig, **_: object) -> dict[str, object]:
+            self.calls.append(combo_cfg)
+            representation = str(combo_cfg.get("retrieval_representation"))
+            if representation == "slide_features":
+                return {
+                    "status": "skipped_incompatible_combo",
+                    "reason": (
+                        "Representation strategy 'slide_features' does not "
+                        "support feature level 'patch'."
+                    ),
+                }
+            return {"status": "success", "objective_value": 0.4}
+
+    routing_task = RoutingTask()
+    experiment = SimpleNamespace(
+        cfg=config,
+        project_root=str(tmp_path / "retrieval_skip_grid"),
+        load_annotations=lambda: pd.DataFrame({"slide": ["S1"]}),
+    )
+    monkeypatch.setattr(benchmark_mod, "import_task_modules", lambda: None)
+    monkeypatch.setattr(
+        benchmark_mod,
+        "build_task",
+        lambda task_name, experiment: routing_task,
+    )
+    monkeypatch.setattr(
+        benchmark_mod,
+        "build_combinations",
+        lambda **kwargs: [skipped_combo, valid_combo],
+    )
+    policy = BenchmarkingPolicy(experiment)
+    monkeypatch.setattr(policy, "ensure_bag_features_exist", lambda **kwargs: None)
+    monkeypatch.setattr(policy, "build_bag_datasets_for_combo", lambda **kwargs: [])
+    monkeypatch.setattr(
+        policy, "group_bag_datasets_by_use", lambda datasets: {"query_reference": []}
+    )
+    monkeypatch.setattr(policy, "_validate_dataset_uses", lambda **kwargs: None)
+
+    def write_only_summary() -> None:
+        write_experiment_summary_csv(
+            policy._summary_rows,
+            output_path=policy._summary_output_path,
+            objective_metric=policy._summary_objective_metric,
+            minimize=policy._summary_minimize,
+        )
+
+    monkeypatch.setattr(policy, "_save_report", write_only_summary)
+
+    result = policy.execute()
+    summary = pd.read_csv(tmp_path / "retrieval_skip_grid" / "benchmark_results.csv")
+
+    assert result == {"status": "benchmark_done", "num_runs": 2}
+    assert [combo.retrieval_representation for combo in routing_task.calls] == [
+        "slide_features",
+        "yottixel-features",
+    ]
+    assert set(summary["status"]) == {"skipped_incompatible_combo", "success"}
+    skipped = summary.loc[summary["status"] == "skipped_incompatible_combo"].iloc[0]
+    assert "does not support feature level" in str(skipped["reason"])
+
+
 def test_build_feature_extraction_dataset_raises_runtime_error_for_missing_slides(
     benchmark_policy: BenchmarkingPolicy,
     monkeypatch: pytest.MonkeyPatch,

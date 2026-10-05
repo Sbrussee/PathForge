@@ -18,7 +18,9 @@ if TYPE_CHECKING:
 
 
 FeatureLevel = Literal["patch", "slide"]
-RepresentationKind = Literal["single_vector", "multi_vector", "patch_vector"]
+RepresentationKind = Literal[
+    "single_vector", "multi_vector", "patch_vector", "slide_vector"
+]
 
 
 class BaseRetrievalRepresentationStrategy:

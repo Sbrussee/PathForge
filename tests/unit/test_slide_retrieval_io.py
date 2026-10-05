@@ -3,11 +3,82 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import numpy as np
+import pytest
+
+from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.slide_retrieval.io import (
     build_slide_retrieval_representation_root,
     build_slide_retrieval_output_root,
+    load_slide_retrieval_representation,
+    save_slide_retrieval_representation,
     write_metrics_csv,
 )
+from pathforge.slide_retrieval.representation_strategies.storage import (
+    build_retrieval_representation_artifact_path,
+)
+from pathforge.slide_retrieval.representation_strategies.types import (
+    RetrievalRepresentation,
+)
+
+
+def test_retrieval_artifact_path_is_one_file_per_physical_slide(
+    tmp_path: Path,
+) -> None:
+    assert build_retrieval_representation_artifact_path(
+        artifacts_dir=tmp_path,
+        slide_id="HMC-T16_00166-1Ca-HE-000",
+    ) == (
+        tmp_path / "slide_retrieval" / "HMC-T16_00166-1Ca-HE-000.h5"
+    )
+
+
+def test_cached_retrieval_representation_round_trips_feature_level(
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "slide_retrieval" / "slide-1.h5"
+    representation = RetrievalRepresentation(
+        sample_id="slide-1",
+        data=np.asarray([[1.0, 2.0]], dtype=np.float32),
+        feature_level="patch",
+    )
+
+    with FileHandleH5(artifact_path, mode="a") as artifact:
+        save_slide_retrieval_representation(
+            retrieval_artifact=artifact,
+            tile_id="256px_0.5mpp",
+            representation_id="uni__splice__abc123",
+            entry_id=None,
+            representation=representation,
+        )
+
+    with FileHandleH5(artifact_path, mode="r") as artifact:
+        loaded = load_slide_retrieval_representation(
+            retrieval_artifact=artifact,
+            tile_id="256px_0.5mpp",
+            representation_id="uni__splice__abc123",
+            entry_id=None,
+        )
+
+    assert loaded is not None
+    assert loaded.feature_level == "patch"
+
+
+def test_save_cached_retrieval_representation_rejects_missing_feature_level(
+    tmp_path: Path,
+) -> None:
+    with FileHandleH5(tmp_path / "slide_retrieval" / "slide-1.h5", mode="a") as artifact:
+        with pytest.raises(ValueError, match="feature_level"):
+            save_slide_retrieval_representation(
+                retrieval_artifact=artifact,
+                tile_id="256px_0.5mpp",
+                representation_id="uni__splice__abc123",
+                entry_id=None,
+                representation=RetrievalRepresentation(
+                    sample_id="slide-1",
+                    data=np.asarray([[1.0, 2.0]], dtype=np.float32),
+                ),
+            )
 
 
 def test_write_metrics_csv_writes_flat_metric_rows(tmp_path: Path) -> None:

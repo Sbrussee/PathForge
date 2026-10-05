@@ -97,6 +97,7 @@ class SlideRetrievalManifest:
     tiling_id: str
     aggregation_level: str
     feature_extraction: str
+    feature_level: str
     slide_representation: str
     search_method: str
     representation_id: str
@@ -115,6 +116,7 @@ class SlideRetrievalManifest:
             "tiling_id": self.tiling_id,
             "aggregation_level": self.aggregation_level,
             "feature_extraction": self.feature_extraction,
+            "feature_level": self.feature_level,
             "slide_representation": self.slide_representation,
             "slide_representation_params": dict(self.slide_representation_params),
             "search_method": self.search_method,

@@ -64,6 +64,42 @@ Save as ``retrieval.yaml``:
    slide_retrieval:
      exclusion_level: patient
 
+That recipe is patch retrieval. For a slide-level extractor (one embedding per
+WSI), use this pair instead. ``tile_px`` and ``tile_mpp`` still identify the
+feature artifacts; PathForge decides the family from those artifacts, not from
+the extractor name.
+
+.. code-block:: yaml
+
+   experiment:
+     project_name: tcga_slide_vector_retrieval
+     annotation_file: /data/annotations.csv
+     project_root: /data/pathforge_projects
+     mode: benchmark
+     task: slide_retrieval
+     aggregation_level: slide
+     num_workers: 4
+
+   datasets:
+     - name: ReferenceSet
+       slides_dir: /data/slides/reference
+       artifacts_dir: /data/artifacts/reference
+       used_for: reference
+     - name: QuerySet
+       slides_dir: /data/slides/query
+       artifacts_dir: /data/artifacts/query
+       used_for: query
+
+   benchmark_parameters:
+     tile_px: [256]
+     tile_mpp: [0.5]
+     feature_extraction: [uni]
+     retrieval_representation: [slide_features]
+     search_strategy: [slide-barcode-faiss]
+
+   slide_retrieval:
+     exclusion_level: patient
+
 For a leave-one-out setup where every slide is both a reference and a query:
 
 .. code-block:: yaml
@@ -146,6 +182,10 @@ run:
 This generates ``2 × 1 × 2 × 2 × 2 = 32`` combinations. Representations are
 cached per ``(feature_extraction, tile_px, tile_mpp, retrieval_representation)``
 key, so repeated runs only recompute what is missing.
+
+A grid may also mix patch and slide-vector methods. Combinations that do not
+match the loaded artifacts are skipped with ``skipped_incompatible_combo``;
+valid combinations still run. Prefer separate configs when comparing families.
 
 Outputs
 -------

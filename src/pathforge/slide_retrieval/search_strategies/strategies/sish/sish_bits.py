@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from pathforge.slide_retrieval.representations.minmax import encode_minmax
+
 
 def pack_adjacent_feature_bits(features: np.ndarray) -> np.ndarray:
     """Pack SISH/Yottixel adjacent-value bits for each patch feature row.
@@ -19,18 +21,7 @@ def pack_adjacent_feature_bits(features: np.ndarray) -> np.ndarray:
     Example:
         ``pack_adjacent_feature_bits(np.asarray([[2.0, 1.0, 3.0]]))``.
     """
-    feature_array = np.asarray(features, dtype=np.float32)
-    if feature_array.ndim != 2:
-        raise ValueError(
-            f"SISH bit encoding expects a 2D feature matrix. Got {feature_array.shape}."
-        )
-
-    bits = np.zeros(feature_array.shape, dtype=np.uint8)
-    if feature_array.shape[1] > 1:
-        bits[:, 1:] = (feature_array[:, 1:] >= feature_array[:, :-1]).astype(
-            np.uint8, copy=False
-        )
-    return np.packbits(bits, axis=1)
+    return encode_minmax(np.asarray(features, dtype=np.float32)).packed
 
 
 def pack_adjacent_feature_row_bits(feature_row: np.ndarray) -> bytes:

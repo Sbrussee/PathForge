@@ -13,6 +13,7 @@ class RetrievalRepresentation:
     sample_id: str
     data: Any
     representation_type: str = "patch_vector"
+    feature_level: str | None = None
     metadata: RetrievalItemMetadata = field(default_factory=RetrievalItemMetadata)
     exclusion_key: str | None = None
     additional_data: dict[str, Any] = field(default_factory=dict)

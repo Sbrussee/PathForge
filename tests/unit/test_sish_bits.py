@@ -15,5 +15,5 @@ def test_sish_bits_use_adjacent_value_encoding() -> None:
 
 
 def test_sish_bits_reject_non_matrix_input() -> None:
-    with pytest.raises(ValueError, match="2D feature matrix"):
+    with pytest.raises(ValueError, match="two-dimensional array"):
         pack_adjacent_feature_bits(np.asarray([1.0, 2.0]))

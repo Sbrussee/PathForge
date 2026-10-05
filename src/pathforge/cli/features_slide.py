@@ -148,6 +148,10 @@ def run_feature_extraction_single_slide(
         )
         row_df["patient"] = slide_id
 
+    # Tell WSIDataset to use the staging file supplied to this CLI instead of
+    # searching the dataset's regular slides_dir.
+    row_df["wsi_path"] = str(input_slide_path.resolve())
+
     project_annotations_path = Path(experiment.project_root) / "annotations.csv"
     row_df.to_csv(project_annotations_path, index=False)
     logger.info("Wrote single-slide annotations to: %s", project_annotations_path)

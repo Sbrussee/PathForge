@@ -34,6 +34,7 @@ def _dataset(
     time_column=None,
     event_column=None,
     slide_column=None,
+    coord_row_counts: dict[str, int] | None = None,
 ):
     artifacts_dir, slides_dir = tmp_path / "artifacts", tmp_path / "slides"
     artifacts_dir.mkdir(exist_ok=True)
@@ -41,7 +42,8 @@ def _dataset(
     annotations = pd.DataFrame(rows)
     annotations["dataset"] = name
     for slide_id, bag in bags.items():
-        coords = np.zeros((bag.shape[0], 5), dtype=np.int32)
+        coord_rows = (coord_row_counts or {}).get(slide_id, bag.shape[0])
+        coords = np.zeros((coord_rows, 5), dtype=np.int32)
         with FileHandleH5(artifacts_dir / f"{slide_id}.h5", mode="a") as artifact:
             tiles_io.write_coords(artifact, BAG_ID, coords)
             tiles_io.write_tiling_spec(
@@ -87,6 +89,71 @@ def test_bag_dataset_infers_feature_and_output_dimensions(tmp_path: Path) -> Non
     assert sample["Y"].dtype == torch.long
     assert dataset.feature_dim == 8
     assert dataset.output_dim() == 3
+
+
+def test_bag_dataset_resolves_all_one_feature_artifacts_as_slide_input(
+    tmp_path: Path,
+) -> None:
+    dataset = _dataset(
+        tmp_path,
+        [{"slide": "S1", "category": 0}, {"slide": "S2", "category": 1}],
+        {"S1": torch.ones(1, 8), "S2": torch.ones(1, 8)},
+    )
+
+    assert dataset.get_feature_level() == "slide"
+
+
+def test_bag_dataset_resolves_one_feature_artifacts_as_slide_despite_coords(
+    tmp_path: Path,
+) -> None:
+    dataset = _dataset(
+        tmp_path,
+        [{"slide": "S1", "category": 0}, {"slide": "S2", "category": 1}],
+        {"S1": torch.ones(1, 8), "S2": torch.ones(1, 8)},
+        coord_row_counts={"S1": 4, "S2": 1},
+    )
+
+    assert dataset.get_feature_level() == "slide"
+
+
+def test_bag_dataset_inspects_all_artifacts_before_resolving_patch_input(
+    tmp_path: Path,
+) -> None:
+    slide_ids = [f"S{index}" for index in range(11)]
+    dataset = _dataset(
+        tmp_path,
+        [{"slide": slide_id, "category": 0} for slide_id in slide_ids],
+        {
+            slide_id: torch.ones((2, 8)) if slide_id == "S10" else torch.ones((1, 8))
+            for slide_id in slide_ids
+        },
+    )
+
+    assert dataset.get_feature_level() == "patch"
+
+
+def test_bag_dataset_rejects_multiple_unaligned_feature_rows(tmp_path: Path) -> None:
+    dataset = _dataset(
+        tmp_path,
+        [{"slide": "S1", "category": 0}],
+        {"S1": torch.ones(2, 8)},
+        coord_row_counts={"S1": 3},
+    )
+
+    assert dataset.get_feature_level() == "invalid"
+    assert "do not align" in dataset.get_feature_level_reason()
+
+
+def test_bag_dataset_reports_dimensions_from_all_physical_slide_artifacts(
+    tmp_path: Path,
+) -> None:
+    dataset = _dataset(
+        tmp_path,
+        [{"slide": "S1", "category": 0}, {"slide": "S2", "category": 1}],
+        {"S1": torch.ones(1, 8), "S2": torch.ones(2, 16)},
+    )
+
+    assert dataset.get_feature_dimensions() == frozenset({8, 16})
 
 
 def test_bag_dataset_uses_variable_bag_size_by_default(tmp_path: Path) -> None:

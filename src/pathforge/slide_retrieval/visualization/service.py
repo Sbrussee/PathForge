@@ -541,15 +541,14 @@ class SlideRetrievalVisualizationService:
     def _load_representation_payload(self, asset: SlideVisualizationAsset) -> Any | None:
         retrieval_artifact_path = build_retrieval_representation_artifact_path(
             artifacts_dir=asset.artifact_path.parent,
-            aggregation_level=str(self.manifest["aggregation_level"]),
-            sample_id=asset.slide_id,
+            slide_id=asset.slide_id,
         )
         if not retrieval_artifact_path.is_file():
             return None
 
         entry_id = build_retrieval_representation_entry_id(
             [asset.slide_id],
-            aggregation_level=str(self.manifest["aggregation_level"]),
+            aggregation_level="slide",
         )
         with FileHandleH5(retrieval_artifact_path, mode="r") as retrieval_artifact:
             return load_slide_retrieval_representation(

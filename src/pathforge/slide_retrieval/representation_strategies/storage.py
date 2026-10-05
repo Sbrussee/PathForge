@@ -8,26 +8,27 @@ from typing import Any
 
 def build_retrieval_representation_artifact_path(
     artifacts_dir: str | Path,
-    aggregation_level: str,
-    sample_id: str,
+    slide_id: str,
 ) -> Path:
-    """Build the H5 artifact path for one retrieval representation sample."""
+    """Build the dedicated retrieval-artifact path for one physical slide.
+
+    Retrieval representations are cached per physical slide and combined in
+    memory for case- and patient-level retrieval. They are never stored in the
+    source feature artifact or as case/patient cache files.
+
+    Example:
+        ``build_retrieval_representation_artifact_path("artifacts", "slide-1")``
+        returns ``artifacts/slide_retrieval/slide-1.h5``.
+    """
     root = Path(artifacts_dir).expanduser().resolve()
-    sample_id = str(sample_id).strip()
-    aggregation_level = str(aggregation_level).strip()
+    slide_id = str(slide_id).strip()
 
-    if not sample_id:
-        raise ValueError("sample_id must be a non-empty string.")
-    if "/" in sample_id or "\\" in sample_id:
-        raise ValueError(f"sample_id may not contain path separators: {sample_id!r}")
-    if not aggregation_level:
-        raise ValueError("aggregation_level must be a non-empty string.")
-    if "/" in aggregation_level or "\\" in aggregation_level:
-        raise ValueError(
-            f"aggregation_level may not contain path separators: {aggregation_level!r}"
-        )
+    if not slide_id:
+        raise ValueError("slide_id must be a non-empty string.")
+    if "/" in slide_id or "\\" in slide_id:
+        raise ValueError(f"slide_id may not contain path separators: {slide_id!r}")
 
-    return root / "slide_retrieval" / aggregation_level / f"{sample_id}.h5"
+    return root / "slide_retrieval" / f"{slide_id}.h5"
 
 
 def build_retrieval_representation_id(

@@ -16,7 +16,9 @@ from pathforge.slide_retrieval.representation_strategies.types import (
 )
 
 
-RepresentationKind = Literal["single_vector", "multi_vector", "patch_vector"]
+RepresentationKind = Literal[
+    "single_vector", "multi_vector", "patch_vector", "slide_vector"
+]
 
 
 class BaseSearchStrategy:

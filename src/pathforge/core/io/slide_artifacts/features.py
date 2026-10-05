@@ -13,6 +13,7 @@ from pathforge.core.io.slide_artifacts.base import (
 from pathforge.core.io.slide_artifacts.layout import DEFAULT_LAYOUT, H5Layout
 from pathforge.core.io.slide_artifacts import tiles as tiles_io
 
+
 def features_exist(
     slide_artifact: FileHandleH5,
     bag_id: str,

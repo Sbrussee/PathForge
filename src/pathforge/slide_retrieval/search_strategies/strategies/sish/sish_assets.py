@@ -17,7 +17,7 @@ from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_vqvae impo
     LargeVectorQuantizedVAE_Encode,
 )
 
-SISH_VQVAE_CHECKPOINT_FILENAME = "sish_vqvae_checkpoint.pth"
+SISH_VQVAE_CHECKPOINT_FILENAME = "sish_vqvae_checkpoint.pt"
 SISH_CODEBOOK_FILENAME = "sish_codebook.pt"
 SISH_TRASH_CLASSIFIER_FILENAME = "sish_trash_classifier.pkl"
 DEFAULT_SLIDE_RETRIEVAL_WEIGHTS_DIR = Path("model_weights/slide_retrieval")

@@ -11,13 +11,16 @@ It is derived from:
 
 ## 1. Artifact File Location
 
-One retrieval artifact file lives at:
+One retrieval artifact file lives per physical slide at:
 
-`artifacts_dir/slide_retrieval/{aggregation_level}/{sample_id}.h5`
+`artifacts_dir/slide_retrieval/{slide_id}.h5`
 
 The canonical builder is:
-- `build_retrieval_representation_artifact_path(artifacts_dir, aggregation_level, sample_id)`
+- `build_retrieval_representation_artifact_path(artifacts_dir, slide_id)`
   in `src/pathforge/slide_retrieval/representation_strategies/storage.py`
+
+Case and patient retrieval items are assembled in memory from their member
+slide files; they never produce a case- or patient-level retrieval H5 file.
 
 ---
 
@@ -31,28 +34,19 @@ bags/{tile_id}/
 
   retrieval_representations/
     {representation_id}/
-      (for case/patient aggregation)
-        {entry_id}/
-          representation_type
-          metadata
-          params
-          embedding
-          additional_data/
-            {name}
-      (for slide aggregation)
-        representation_type
-        metadata
-        params
-        embedding
-        additional_data/
-          {name}
+      representation_type
+      metadata
+      params
+      embedding
+      additional_data/
+        {name}
 ```
 
 Notes:
 - `tile_id` is the retrieval-layout field name and should receive the canonical `tiling_id` value.
 - `descriptors/` and `retrieval_representations/` are independent subtrees under the same tile group.
-- `entry_id` is only present for multi-slide aggregations (`case`/`patient`).
-  For `slide` aggregation, the stored entry root is the `{representation_id}` group itself.
+- Slide retrieval caches store data directly below `{representation_id}`; no
+  `entry_id` is written.
 
 ---
 
@@ -69,21 +63,10 @@ Notes:
 - Format:
   `{feature_extraction}_{retrieval_representation}_{params_hash16}`
 
-### 3.3 `entry_id`
-- Built with:
-  `build_retrieval_representation_entry_id(slide_ids, aggregation_level=...)`
-- Format:
-  `members_{sha1_16}` for `case`/`patient`
-- For `slide` aggregation this function returns `None`, so no `{entry_id}` group is used.
-- The hash is computed from sorted member slide IDs.
-- `entry_id` identifies the member set, but does not store the member slide IDs in reversible form.
-
-### 3.4 Aggregation membership source
-- The member slides used to build an aggregated retrieval entry come from `sample.slide_ids`.
-- For `slide` aggregation this is exactly one slide ID.
-- For `case` and `patient` aggregation this is the full grouped slide list for that sample.
-- Grouped samples are built from the bag dataset annotations and the grouped slide list is
-  sorted by `SLIDE_ID_COL` before artifact addressing.
+### 3.3 Aggregation membership source
+- Each cache file is addressed by exactly one physical `slide_id`.
+- Case and patient items use `sample.slide_ids` only while combining already
+  cached slide representations in memory.
 
 ---
 
@@ -112,8 +95,7 @@ Intended semantics:
 ## 5. Retrieval Representation Entry Section
 
 Entry root:
-- `bags/{tile_id}/retrieval_representations/{representation_id}/{entry_id}` for `case`/`patient`
-- `bags/{tile_id}/retrieval_representations/{representation_id}` for `slide`
+- `bags/{tile_id}/retrieval_representations/{representation_id}`
 
 ### 5.1 Required-for-existence fields
 `retrieval_representation_entry_exists(...)` currently requires:
@@ -178,11 +160,9 @@ Notes:
 - On full entry rewrite, existing `additional_data/` is removed and re-created from provided values.
 
 Current retrieval-task usage:
-- `additional_data/source_slide_ids` stores the explicit ordered list of slide IDs that
-  were used to build the retrieval representation for this sample.
+- `additional_data/source_slide_ids` contains the one physical slide ID used to
+  build the cached representation.
 - `additional_data/dataset_name` stores the source dataset name.
-- Because `entry_id` is hash-based, `additional_data/source_slide_ids` is the canonical
-  stored place to recover which slide IDs contributed to an aggregated entry.
 
 ---
 
@@ -216,5 +196,5 @@ Available granular deletion:
 - `bag_id` in feature/benchmark grouping may represent a broader combo identity
   (`tiling_id__feature_name`), which is distinct from retrieval `tile_id`.
 - New readers should treat `representation_type` as optional unless/until promoted to required.
-- For aggregated (`case`/`patient`) entries, consumers should not attempt to infer member
-  slide IDs from `entry_id`; use `additional_data/source_slide_ids` when available.
+- Case and patient retrieval entries are not persisted; consumers combine the
+  relevant slide-level cache entries at runtime.

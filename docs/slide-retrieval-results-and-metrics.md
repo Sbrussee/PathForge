@@ -371,10 +371,13 @@ The final run results live in the project folder, but PathForge also caches retr
 Those cached files are stored at:
 
 ```text
-<artifacts_dir>/slide_retrieval/<aggregation_level>/<sample_id>.h5
+<artifacts_dir>/slide_retrieval/<slide_id>.h5
 ```
 
-These HDF5 files are not the final benchmark result files. They are intermediate cached retrieval representations used to avoid recomputing representations for every run.
+There is one cache file per physical slide. Case and patient retrieval items are
+combined from these slide caches in memory and do not create their own HDF5
+files. These HDF5 files are not the final benchmark result files; they avoid
+recomputing slide representations for every run.
 
 ## Notes
 

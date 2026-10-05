@@ -1,8 +1,15 @@
 # Slide retrieval
 
-PathForge slide retrieval ranks reference slides for each query slide. It
-reuses the patch features produced by the normal WSI pipeline; no retrieval
-model is trained.
+PathForge slide retrieval ranks reference slides for each query slide. No
+retrieval model is trained.
+
+There are two input families. **Patch-level** extractors yield one feature row
+per tile; a representation strategy selects or transforms those rows, then a
+patch-set search method ranks slides. **Slide-level** extractors yield one
+global embedding per WSI; ``slide_features`` keeps that vector unchanged and
+``slide-barcode-faiss`` ranks slides by exact MinMax-barcode Hamming distance.
+The families are not interchangeable: a mixed representation/search pair is
+skipped rather than coerced.
 
 ## Setup
 
@@ -22,13 +29,16 @@ The benchmark prepares missing feature artifacts when it runs. Pre-running
 feature extraction is therefore optional, but is useful when the same feature
 bags will be used for several retrieval experiments. In either case, the
 ``tile_px``, ``tile_mpp``, and feature extractor selected for retrieval must
-identify the feature artifacts that should be used.
+identify the feature artifacts that should be used. PathForge decides whether
+those artifacts are patch-level or slide-level by inspecting them; the
+extractor name alone is not a family.
 
-## Minimal baseline
+## Minimal patch baseline
 
 The following configuration uses the RGB Yottixel representation and Yottixel
 search, the closest general-purpose starting point to the original Yottixel
-workflow.
+workflow. Prefer a separate config per family. A mixed grid is allowed, and
+incompatible cells are skipped rather than aborting the run.
 
 ```yaml
 experiment:
@@ -71,15 +81,51 @@ pathforge retrieval representations --config retrieval.yaml
 See :doc:`data_preparation` for annotation requirements and
 :doc:`slide-retrieval-results-and-metrics` for result files and metric output.
 
+## Minimal slide-vector baseline
+
+Use this configuration when every physical slide has exactly one feature row.
+``aggregation_level`` must be ``slide``; case or patient pooling is not
+supported. Scores are Hamming distances, so lower is nearer.
+
+```yaml
+experiment:
+  project_name: retrieval_slide_vector
+  annotation_file: /data/annotations.csv
+  mode: benchmark
+  task: slide_retrieval
+  aggregation_level: slide
+
+datasets:
+  - name: Cohort
+    slides_dir: /data/slides
+    artifacts_dir: /data/artifacts
+    used_for: query_reference
+
+benchmark_parameters:
+  tile_px: [256]
+  tile_mpp: [0.5]
+  feature_extraction: [uni]
+  retrieval_representation: [slide_features]
+  search_strategy: [slide-barcode-faiss]
+
+slide_retrieval:
+  exclusion_level: patient
+```
+
+Run this configuration with the same ``pathforge-benchmark`` command as the
+patch baseline.
+
 ## How a retrieval run works
 
 Each benchmark combination moves through four stages:
 
-1. **Feature extraction** creates the patch feature bags when the requested
-   artifacts are missing, or reuses compatible artifacts when they exist.
-2. A **representation strategy** selects or transforms the patch feature rows
-   that will stand for a slide. The result is cached in the dataset artifact
-   store.
+1. **Feature extraction** creates the requested feature artifacts when they are
+   missing, or reuses compatible artifacts when they exist. The task then
+   resolves one dataset-wide input family (``patch`` or ``slide``) from
+   feature-row cardinality.
+2. A **representation strategy** builds the cached retrieval representation.
+   For patch input this selects or transforms patch rows. For slide input,
+   ``slide_features`` validates and stores the single ``(1, D)`` vector.
 3. A **search strategy** builds a database from reference representations and
    prepares each query representation. It applies the configured self-retrieval
    exclusion (``none``, ``slide``, ``case``, or ``patient``) and any
@@ -87,10 +133,17 @@ Each benchmark combination moves through four stages:
 4. The search strategy scores the remaining candidates and returns the ranked
    reference slides.
 
+If the resolved family is incompatible with the configured representation or
+search method, that combination is skipped with status
+``skipped_incompatible_combo`` and a reason. Other combinations in the same
+benchmark grid still run. Config load does not reject an extractor name for
+being the "wrong" family, because that is only known after the artifacts are
+inspected.
+
 Representation and search are configured separately. A cached representation
-can be reused with another compatible search strategy, but compatibility only
-means the data shape is accepted; it does not mean the methods make the same
-scientific assumptions.
+can be reused with another compatible search strategy, but compatibility is
+declared by representation kind: ``slide_vector`` is accepted only by
+``slide-barcode-faiss``.
 
 ## Choosing a method
 
@@ -101,10 +154,14 @@ scientific assumptions.
 | Patch-similarity retrieval | Any patch-vector representation | ``retccl`` | Filter patch matches by cosine similarity and aggregate accepted matches to slide scores. |
 | SISH-style retrieval | ``sish_rgb`` | ``sish`` | Select a SISH-style mosaic, index VQ-VAE keys, and verify candidates with Hamming distance. |
 | Alternative patch selectors | ``splice-features``, ``splice-rgb``, ``sdm-features``, or ``hshr-features`` | ``yottixel`` or ``retccl`` | Select a smaller or more diverse patch set before the chosen search method runs. |
+| Slide-vector retrieval | ``slide_features`` | ``slide-barcode-faiss`` | Keep one global embedding per WSI and rank by exact MinMax-barcode Hamming distance. Requires ``aggregation_level: slide``. |
 
 Start with one representation/search pair. Add combinations to the benchmark
 grid only when comparing a clear selection or search hypothesis; changing both
-at once makes metric differences difficult to interpret.
+at once makes metric differences difficult to interpret. A grid may list both
+families; incompatible cells are skipped rather than aborting the run. Use
+separate configs when the intent is to compare families cleanly. Do not mix patch and
+slide families in one grid unless skipped cells are the intended outcome.
 
 ## Representations and search methods
 
@@ -181,7 +238,7 @@ slide_retrieval:
 The directory must contain:
 
 ```text
-sish_vqvae_checkpoint.pth
+sish_vqvae_checkpoint.pt
 sish_codebook.pt
 sish_trash_classifier.pkl
 ```
@@ -196,6 +253,24 @@ pathforge retrieval sish-vqvae \
 ```
 
 The normal retrieval run also creates missing descriptors on demand.
+
+### Slide features and barcode FAISS
+
+``slide_features`` is the pass-through representation for a slide-level
+extractor. It accepts only a finite real matrix of shape ``(1, D)``, stores
+that matrix unchanged as ``slide_vector``, and does not L2-normalize.
+
+``slide-barcode-faiss`` is the matching search method. It encodes those raw
+vectors in memory with the shared SISH/SalvDataset-CBIR MinMax barcode
+convention, then runs exact FAISS ``IndexBinaryFlat`` Hamming KNN. Returned
+scores are Hamming distances: lower is nearer. Barcodes are not written to the
+representation cache.
+
+This pair requires ``experiment.aggregation_level: slide``. Case- or
+patient-level vector pooling is not supported. Patch representations and
+patch-set search methods remain incompatible with ``slide_vector``. If a grid
+mixes both families, incompatible combinations are skipped with
+``skipped_incompatible_combo`` after the artifacts are inspected.
 
 ### Alternative patch selectors
 

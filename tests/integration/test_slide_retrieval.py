@@ -29,13 +29,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-from pathforge.core.datasets.bag_dataset import BagSample, SlideRetrievalBagDataset, SlideRetrievalDatasetItem
+from pathforge.core.datasets.bag_dataset import SlideRetrievalBagDataset, SlideRetrievalDatasetItem
 from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.core.io.h5.base import FileHandleH5
 from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
 from pathforge.slide_retrieval.representation_strategies.types import RetrievalRepresentation
 from pathforge.slide_retrieval.search_strategies.types import SearchHit, SearchResult
@@ -77,13 +77,16 @@ class _FakeSlideRetrievalBagDataset(SlideRetrievalBagDataset):
         artifacts_dir: Path,
         samples: list[_FakeSample],
         feature_level: str = "patch",
+        feature_dimension: int = 2,
     ) -> None:
         self._name = name
         self.tiling_id = tiling_id
         self.aggregation_level = aggregation_level
         self.artifacts_dir = artifacts_dir
+        self.extractor_name = "uni"
         self._samples = samples
         self._feature_level = feature_level
+        self._feature_dimensions = frozenset({feature_dimension})
         self._sample_loader = None
 
     @property
@@ -98,6 +101,9 @@ class _FakeSlideRetrievalBagDataset(SlideRetrievalBagDataset):
 
     def get_feature_level_reason(self) -> str:
         return f"feature_level={self._feature_level}"
+
+    def get_feature_dimensions(self) -> frozenset[int]:
+        return self._feature_dimensions
 
     def bind_sample_loader(self, loader) -> None:
         self._sample_loader = loader
@@ -206,6 +212,7 @@ def _make_dataset(
     aggregation_level: str = "slide",
     patient_ids: list[str] | None = None,
     feature_level: str = "patch",
+    feature_dimension: int = 2,
 ) -> _FakeSlideRetrievalBagDataset:
     samples = [
         _FakeSample(
@@ -221,6 +228,7 @@ def _make_dataset(
         artifacts_dir=tmp_path / "artifacts",
         samples=samples,
         feature_level=feature_level,
+        feature_dimension=feature_dimension,
     )
 
 
@@ -478,6 +486,83 @@ def test_missing_representations_are_materialized(
     assert set(compute_calls) == {"r-1", "q-1"}
 
 
+def test_execute_caches_physical_slides_outside_feature_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A patient retrieval run caches each member slide in a dedicated H5 file."""
+    import pathforge.core.tasks.slide_retrieval as mod
+
+    artifacts_dir = tmp_path / "artifacts"
+    reference = _make_dataset(
+        tmp_path,
+        name="reference",
+        sample_ids=["patient-1"],
+        aggregation_level="patient",
+        patient_ids=["patient-1"],
+    )
+    reference_sample = reference.get_sample(0)
+    reference_sample.slide_ids = ["ref-slide-1", "ref-slide-2"]
+    reference_sample.artifact_paths = [
+        artifacts_dir / "ref-slide-1.h5",
+        artifacts_dir / "ref-slide-2.h5",
+    ]
+    query = _make_dataset(
+        tmp_path,
+        name="query",
+        sample_ids=["query-slide-1"],
+        aggregation_level="patient",
+        patient_ids=["query-patient-1"],
+    )
+    query_sample = query.get_sample(0)
+    query_sample.artifact_paths = [artifacts_dir / "query-slide-1.h5"]
+
+    source_artifacts = [
+        *reference_sample.artifact_paths,
+        *query_sample.artifact_paths,
+    ]
+    for source_artifact in source_artifacts:
+        with FileHandleH5(source_artifact, mode="a"):
+            pass
+
+    class _PhysicalSlideStrategy(_FakeRepresentationStrategy):
+        def load_sample(self, **_) -> dict[str, object]:
+            return {}
+
+    monkeypatch.setattr(mod, "SlideRetrievalBagDataset", _FakeSlideRetrievalBagDataset)
+    monkeypatch.setattr(
+        mod, "build_representation_strategy", lambda _name, **_: _PhysicalSlideStrategy()
+    )
+    monkeypatch.setattr(mod, "build_search_strategy", lambda _name, **_: _FakeSearchStrategy())
+    monkeypatch.setattr(
+        mod,
+        "get_representation_strategy_supported_feature_levels",
+        lambda _: frozenset({"patch"}),
+    )
+    monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _: "patch_vector")
+    monkeypatch.setattr(
+        mod,
+        "get_search_strategy_supported_representation_kinds",
+        lambda _: frozenset({"patch_vector"}),
+    )
+
+    task = _make_task(tmp_path)
+    task.cfg.experiment.aggregation_level = "patient"
+    task.execute(
+        combo_cfg=_make_combo(),
+        datasets_by_use={"reference": [reference], "query": [query]},
+    )
+
+    for source_artifact in source_artifacts:
+        with FileHandleH5(source_artifact, mode="r") as artifact:
+            assert "bags/256px_0.5mpp/retrieval_representations" not in artifact.h5
+
+    for slide_id in ["ref-slide-1", "ref-slide-2", "query-slide-1"]:
+        retrieval_artifact = artifacts_dir / "slide_retrieval" / f"{slide_id}.h5"
+        assert retrieval_artifact.is_file()
+        with FileHandleH5(retrieval_artifact, mode="r") as artifact:
+            assert "bags/256px_0.5mpp/retrieval_representations" in artifact.h5
+
+
 def test_missing_representation_wraps_creation_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -556,6 +641,49 @@ def test_incompatible_feature_level_returns_skipped_status(
 
     assert result["status"] == "skipped_incompatible_combo"
     assert "reason" in result
+
+
+@pytest.mark.parametrize(
+    ("reference_level", "query_level"),
+    [("patch", "slide"), ("slide", "patch")],
+)
+def test_mixed_input_families_skip_before_strategy_materialization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reference_level: str,
+    query_level: str,
+) -> None:
+    import pathforge.core.tasks.slide_retrieval as mod
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("strategy construction must follow contract resolution")
+
+    monkeypatch.setattr(mod, "build_representation_strategy", fail_if_called)
+
+    result = _make_task(tmp_path).execute(
+        combo_cfg=_make_combo(),
+        datasets_by_use={
+            "reference": [
+                _make_dataset(
+                    tmp_path,
+                    name="reference",
+                    sample_ids=["reference-1"],
+                    feature_level=reference_level,
+                )
+            ],
+            "query": [
+                _make_dataset(
+                    tmp_path,
+                    name="query",
+                    sample_ids=["query-1"],
+                    feature_level=query_level,
+                )
+            ],
+        },
+    )
+
+    assert result["status"] == "skipped_incompatible_combo"
+    assert "Inconsistent feature levels" in result["reason"]
 
 
 # ---------------------------------------------------------------------------
@@ -663,15 +791,20 @@ def test_multiple_reference_datasets_are_merged(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("feature_level", ["patch", "slide"])
 def test_manifest_contains_required_fields(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, feature_level: str
 ) -> None:
     import json
     import pathforge.core.tasks.slide_retrieval as mod
 
     monkeypatch.setattr(mod, "build_representation_strategy", lambda _n, **kw: _FakeRepresentationStrategy())
     monkeypatch.setattr(mod, "build_search_strategy", lambda _n, **kw: _FakeSearchStrategy())
-    monkeypatch.setattr(mod, "get_representation_strategy_supported_feature_levels", lambda _n: frozenset({"patch"}))
+    monkeypatch.setattr(
+        mod,
+        "get_representation_strategy_supported_feature_levels",
+        lambda _n: frozenset({"patch", "slide"}),
+    )
     monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
     monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
     monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _full_cache)
@@ -680,20 +813,36 @@ def test_manifest_contains_required_fields(
     result = task.execute(
         combo_cfg=_make_combo(),
         datasets_by_use={
-            "reference": [_make_dataset(tmp_path, name="ref", sample_ids=["r-1"])],
-            "query": [_make_dataset(tmp_path, name="qry", sample_ids=["q-1"])],
+            "reference": [
+                _make_dataset(
+                    tmp_path,
+                    name="ref",
+                    sample_ids=["r-1"],
+                    feature_level=feature_level,
+                )
+            ],
+            "query": [
+                _make_dataset(
+                    tmp_path,
+                    name="qry",
+                    sample_ids=["q-1"],
+                    feature_level=feature_level,
+                )
+            ],
         },
     )
 
     manifest = json.loads((Path(result["output_dir"]) / "manifest.json").read_text())
     required_keys = {
         "tiling_id", "aggregation_level", "feature_extraction",
+        "feature_level",
         "slide_representation", "search_method", "representation_id",
         "exclusion_level", "num_queries", "num_reference_items", "top_k_saved",
     }
     assert required_keys <= set(manifest.keys()), (
         f"Missing manifest keys: {required_keys - set(manifest.keys())}"
     )
+    assert manifest["feature_level"] == feature_level
 
 
 def test_results_xlsx_has_correct_schema(

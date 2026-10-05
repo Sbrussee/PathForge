@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+import time
 from contextlib import contextmanager
 from pathlib import Path
-import time
 from types import SimpleNamespace
 
 import pytest
 
 import pathforge.core.tasks.slide_retrieval as slide_retrieval_task_module
-from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
-from pathforge.core.experiments.combinations import ComboConfig
 from pathforge.core.datasets.bag_dataset import BagSample, SlideRetrievalDatasetItem
+from pathforge.core.experiments.combinations import ComboConfig
+from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
 from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
@@ -37,6 +37,9 @@ class _FakeSlideRetrievalBagDataset:
 
     def get_feature_level_reason(self) -> str:
         return ""
+
+    def get_feature_dimensions(self) -> frozenset[int]:
+        return frozenset({2})
 
 
 def _make_task(
@@ -224,28 +227,58 @@ def test_compute_retrieval_representations_preserves_loader_order_with_threads(
     ]
 
 
-def test_validate_combination_compatibility_accepts_supported_registered_pair(
+@pytest.mark.parametrize(
+    ("feature_level", "representation_name", "search_strategy_name", "expect_valid"),
+    [
+        ("patch", "splice-features", "sish", True),
+        ("slide", "slide_features", "slide-barcode-faiss", True),
+        ("patch", "slide_features", "slide-barcode-faiss", False),
+        ("slide", "splice-features", "sish", False),
+        ("slide", "slide_features", "yottixel", False),
+        ("patch", "splice-features", "slide-barcode-faiss", False),
+    ],
+)
+def test_validate_combination_compatibility_for_registered_pairs(
     tmp_path: Path,
+    feature_level: str,
+    representation_name: str,
+    search_strategy_name: str,
+    expect_valid: bool,
 ) -> None:
     task = _make_task(tmp_path)
 
     is_valid, reason = task._validate_combination_compatibility(
-        datasets_by_use={
-            "reference": [
-                _FakeSlideRetrievalBagDataset(
-                    tiling_id="256px_0.5mpp",
-                    aggregation_level="slide",
-                )
-            ]
-        },
-        representation_name="splice-features",
-        search_strategy_name="sish",
+        feature_level=feature_level,
+        representation_name=representation_name,
+        search_strategy_name=search_strategy_name,
         aggregation_level="slide",
         exclusion_level="patient",
     )
 
-    assert is_valid
-    assert reason == ""
+    assert is_valid is expect_valid
+    if expect_valid:
+        assert reason == ""
+    else:
+        assert reason
+
+
+@pytest.mark.parametrize("aggregation_level", ["case", "patient"])
+def test_slide_vector_retrieval_requires_slide_aggregation(
+    tmp_path: Path,
+    aggregation_level: str,
+) -> None:
+    task = _make_task(tmp_path)
+
+    is_valid, reason = task._validate_combination_compatibility(
+        feature_level="slide",
+        representation_name="slide_features",
+        search_strategy_name="slide-barcode-faiss",
+        aggregation_level=aggregation_level,
+        exclusion_level="patient",
+    )
+
+    assert not is_valid
+    assert "aggregation_level='slide'" in reason
 
 
 def test_validate_combination_compatibility_rejects_mismatched_representation_kind(
@@ -265,14 +298,7 @@ def test_validate_combination_compatibility_rejects_mismatched_representation_ki
     )
 
     is_valid, reason = task._validate_combination_compatibility(
-        datasets_by_use={
-            "reference": [
-                _FakeSlideRetrievalBagDataset(
-                    tiling_id="256px_0.5mpp",
-                    aggregation_level="slide",
-                )
-            ]
-        },
+        feature_level="patch",
         representation_name="splice-features",
         search_strategy_name="sish",
         aggregation_level="slide",
@@ -281,6 +307,139 @@ def test_validate_combination_compatibility_rejects_mismatched_representation_ki
 
     assert not is_valid
     assert "single_vector" in reason
+
+
+def _routing_combo() -> ComboConfig:
+    """Return the smallest valid retrieval combo for routing-only tests."""
+    return ComboConfig(
+        tile_px=256,
+        tile_px_params={},
+        tile_mpp=0.5,
+        tile_mpp_params={},
+        feature_extraction="uni",
+        feature_extraction_params={},
+        retrieval_representation="splice-features",
+        retrieval_representation_params={},
+        search_strategy="sish",
+        search_strategy_params={},
+    )
+
+
+def _execute_with_inspected_feature_level(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    combo_cfg: ComboConfig,
+    feature_level: str,
+) -> dict[str, object]:
+    """Run one retrieval combo after a cache miss with a resolved input family."""
+    task = _make_task(tmp_path)
+    task._validate_dataset_context = lambda **_: None  # type: ignore[method-assign]
+    task._representation_cache_params_from_config = lambda **_: {}  # type: ignore[method-assign]
+    task._collect_patch_cache = lambda **_: ({}, False)  # type: ignore[method-assign]
+    task._physical_artifact_paths = lambda _: []  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        slide_retrieval_task_module,
+        "inspect_retrieval_inputs",
+        lambda *_args, **_kwargs: SimpleNamespace(feature_level=feature_level),
+    )
+    monkeypatch.setattr(
+        slide_retrieval_task_module,
+        "build_representation_strategy",
+        lambda *_args, **_kwargs: pytest.fail(
+            "incompatible combo must not build a representation strategy"
+        ),
+    )
+    return task.execute(combo_cfg=combo_cfg, datasets_by_use={})
+
+
+def test_slide_input_is_skipped_without_constructing_a_patch_strategy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = _make_task(tmp_path)
+    task._validate_dataset_context = lambda **_: None  # type: ignore[method-assign]
+    task._representation_cache_params_from_config = lambda **_: {}  # type: ignore[method-assign]
+    task._collect_patch_cache = lambda **_: ({}, False)  # type: ignore[method-assign]
+    task._physical_artifact_paths = lambda _: []  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        slide_retrieval_task_module,
+        "inspect_retrieval_inputs",
+        lambda *_args, **_kwargs: SimpleNamespace(feature_level="slide"),
+    )
+    monkeypatch.setattr(
+        slide_retrieval_task_module,
+        "build_representation_strategy",
+        lambda *_args, **_kwargs: pytest.fail("slide input must not build a patch strategy"),
+    )
+
+    result = task.execute(combo_cfg=_routing_combo(), datasets_by_use={})
+
+    assert result["status"] == "skipped_incompatible_combo"
+    assert "Slide-level" in result["reason"]
+
+
+@pytest.mark.parametrize(
+    ("representation_name", "search_strategy_name", "feature_level"),
+    [
+        ("slide_features", "slide-barcode-faiss", "patch"),
+        ("yottixel-features", "yottixel", "slide"),
+    ],
+)
+def test_registered_family_mismatch_skips_without_building_a_strategy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    representation_name: str,
+    search_strategy_name: str,
+    feature_level: str,
+) -> None:
+    combo_cfg = ComboConfig(
+        tile_px=256,
+        tile_px_params={},
+        tile_mpp=0.5,
+        tile_mpp_params={},
+        feature_extraction="uni",
+        feature_extraction_params={},
+        retrieval_representation=representation_name,
+        retrieval_representation_params={},
+        search_strategy=search_strategy_name,
+        search_strategy_params={},
+    )
+
+    result = _execute_with_inspected_feature_level(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        combo_cfg=combo_cfg,
+        feature_level=feature_level,
+    )
+
+    assert result["status"] == "skipped_incompatible_combo"
+    assert result["reason"]
+
+
+def test_patch_cache_probe_does_not_load_original_feature_bags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = _make_task(tmp_path)
+    dataset = _FakeSlideRetrievalBagDataset(
+        tiling_id="256px_0.5mpp", aggregation_level="slide", num_bags=1
+    )
+    monkeypatch.setattr(
+        slide_retrieval_task_module, "SlideRetrievalBagDataset", _FakeSlideRetrievalBagDataset
+    )
+    task._collect_existing_representations = lambda **_: (  # type: ignore[method-assign]
+        [RetrievalRepresentation(sample_id="cached", data=[1.0])],
+        None,
+    )
+
+    cached, complete = task._collect_patch_cache(
+        datasets_by_use={"reference": [dataset]},
+        representation_id="rep",
+        aggregation_level="slide",
+        exclusion_level="none",
+    )
+
+    assert complete
+    assert [item.sample_id for item in cached["reference"]] == ["cached"]
 
 
 def test_execute_requires_retrieval_dataset_type(
@@ -303,7 +462,7 @@ def test_execute_requires_retrieval_dataset_type(
     monkeypatch.setattr(
         "pathforge.core.tasks.slide_retrieval.build_representation_strategy",
         lambda *_, **__: SimpleNamespace(
-            hyperparam_values=lambda: {},
+            hyperparam_values=dict,
             output_representation_kind="patch_vector",
             name="dummy_representation",
             supported_feature_levels=frozenset({"patch"}),
@@ -347,7 +506,7 @@ def test_execute_raises_when_representation_creation_failed(
     monkeypatch.setattr(
         "pathforge.core.tasks.slide_retrieval.build_representation_strategy",
         lambda *_, **__: SimpleNamespace(
-            hyperparam_values=lambda: {},
+            hyperparam_values=dict,
             output_representation_kind="patch_vector",
             name="dummy_representation",
             supported_feature_levels=frozenset({"patch"}),
@@ -357,6 +516,11 @@ def test_execute_raises_when_representation_creation_failed(
 
     task._validate_dataset_context = lambda **_: None  # type: ignore[method-assign]
     task._validate_combination_compatibility = lambda **_: (True, "")  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        slide_retrieval_task_module,
+        "inspect_retrieval_inputs",
+        lambda *_args, **_kwargs: SimpleNamespace(feature_level="patch"),
+    )
     monkeypatch.setattr(
         "pathforge.core.tasks.slide_retrieval.SlideRetrievalBagDataset",
         _FakeSlideRetrievalBagDataset,

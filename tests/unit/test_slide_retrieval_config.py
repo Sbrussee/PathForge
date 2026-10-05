@@ -200,3 +200,92 @@ def test_slide_retrieval_config_rejects_unknown_strategy_hyperparam(
                 },
             }
         )
+
+
+def test_slide_vector_recipe_validates_registered_pair(tmp_path: Path) -> None:
+    annotation_path = tmp_path / "annotations.csv"
+    annotation_path.write_text(
+        "dataset,slide,category\ntrain,S1,tumor\n", encoding="utf-8"
+    )
+
+    cfg = Config.model_validate(
+        {
+            "experiment": {
+                "project_name": "retrieval_slide_vector",
+                "annotation_file": str(annotation_path),
+                "task": "slide_retrieval",
+                "mode": "benchmark",
+                "aggregation_level": "slide",
+            },
+            "datasets": [
+                {
+                    "name": "cohort",
+                    "slides_dir": str(tmp_path),
+                    "artifacts_dir": str(tmp_path),
+                    "used_for": "query_reference",
+                }
+            ],
+            "benchmark_parameters": {
+                "tile_px": [256],
+                "tile_mpp": [0.5],
+                "feature_extraction": ["uni"],
+                "retrieval_representation": ["slide_features"],
+                "search_strategy": ["slide-barcode-faiss"],
+                "mil": [],
+            },
+        }
+    )
+
+    assert cfg.benchmark_parameters.get_entries("retrieval_representation")[0].value == (
+        "slide_features"
+    )
+    assert cfg.benchmark_parameters.get_entries("search_strategy")[0].value == (
+        "slide-barcode-faiss"
+    )
+
+
+def test_mixed_family_grid_validates_without_checking_extractor_family(
+    tmp_path: Path,
+) -> None:
+    annotation_path = tmp_path / "annotations.csv"
+    annotation_path.write_text(
+        "dataset,slide,category\ntrain,S1,tumor\n", encoding="utf-8"
+    )
+
+    cfg = Config.model_validate(
+        {
+            "experiment": {
+                "project_name": "retrieval_mixed_grid",
+                "annotation_file": str(annotation_path),
+                "task": "slide_retrieval",
+                "mode": "benchmark",
+                "aggregation_level": "slide",
+            },
+            "datasets": [
+                {
+                    "name": "cohort",
+                    "slides_dir": str(tmp_path),
+                    "artifacts_dir": str(tmp_path),
+                    "used_for": "query_reference",
+                }
+            ],
+            "benchmark_parameters": {
+                "tile_px": [256],
+                "tile_mpp": [0.5],
+                "feature_extraction": ["uni"],
+                "retrieval_representation": ["yottixel-features", "slide_features"],
+                "search_strategy": ["yottixel", "slide-barcode-faiss"],
+                "mil": [],
+            },
+        }
+    )
+
+    representation_names = [
+        entry.value
+        for entry in cfg.benchmark_parameters.get_entries("retrieval_representation")
+    ]
+    search_names = [
+        entry.value for entry in cfg.benchmark_parameters.get_entries("search_strategy")
+    ]
+    assert representation_names == ["yottixel-features", "slide_features"]
+    assert search_names == ["yottixel", "slide-barcode-faiss"]

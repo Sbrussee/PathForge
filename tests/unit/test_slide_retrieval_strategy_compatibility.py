@@ -5,9 +5,13 @@ import pytest
 from pathforge.slide_retrieval.representation_strategies.registry import (
     get_representation_strategy_output_kind,
     get_representation_strategy_supported_feature_levels,
+    import_representation_strategy_modules,
+    list_representation_strategies,
 )
 from pathforge.slide_retrieval.search_strategies.registry import (
     get_search_strategy_supported_representation_kinds,
+    import_search_strategy_modules,
+    list_search_strategies,
 )
 
 
@@ -44,3 +48,30 @@ def test_get_representation_strategy_supported_feature_levels_returns_metadata()
 def test_get_representation_strategy_supported_feature_levels_rejects_unknown_name() -> None:
     with pytest.raises(ValueError, match="is not registered"):
         get_representation_strategy_supported_feature_levels("missing_representation")
+
+
+def test_patch_and_slide_families_remain_isolated_in_registries() -> None:
+    import_representation_strategy_modules()
+    import_search_strategy_modules()
+
+    representation_names = list_representation_strategies()
+    search_names = list_search_strategies()
+    assert "slide_features" in representation_names
+    assert "slide-barcode-faiss" in search_names
+
+    for name in representation_names:
+        levels = get_representation_strategy_supported_feature_levels(name)
+        kind = get_representation_strategy_output_kind(name)
+        if name == "slide_features":
+            assert levels == {"slide"}
+            assert kind == "slide_vector"
+            continue
+        assert "slide" not in levels
+        assert kind != "slide_vector"
+
+    for name in search_names:
+        kinds = get_search_strategy_supported_representation_kinds(name)
+        if name == "slide-barcode-faiss":
+            assert kinds == {"slide_vector"}
+            continue
+        assert "slide_vector" not in kinds

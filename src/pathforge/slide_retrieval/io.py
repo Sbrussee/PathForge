@@ -216,6 +216,7 @@ def load_slide_retrieval_representation(
         representation_type=str(
             entry["metadata"].get("representation_type", "patch_vector")
         ),
+        feature_level=entry["metadata"].get("feature_level", "patch"),
         additional_data=dict(entry["additional_data"]),
     )
 
@@ -230,6 +231,8 @@ def save_slide_retrieval_representation(
     params: dict[str, Any] | None = None,
 ) -> None:
     """Persist a slide-retrieval representation to disk."""
+    if representation.feature_level not in {"patch", "slide"}:
+        raise ValueError("Retrieval representations require feature_level 'patch' or 'slide'.")
     retrieval_representations_io.write_retrieval_representation_entry(
         retrieval_artifact=retrieval_artifact,
         tile_id=tile_id,
@@ -238,6 +241,7 @@ def save_slide_retrieval_representation(
         metadata={
             **RetrievalItemIdentity(sample_id=representation.sample_id).to_dict(),
             "representation_type": representation.representation_type,
+            "feature_level": representation.feature_level,
             "aggregation_level": "slide",
         },
         embedding=representation.data,

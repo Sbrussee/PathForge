@@ -158,7 +158,16 @@ class SlideRetrievalTask(TaskBase):
         )
         representation_strategy: Any | None = None
         if cache_is_complete:
-            feature_level = "patch"
+            cached_feature_levels = {
+                representation.feature_level
+                for representations in cached_by_use.values()
+                for representation in representations
+            }
+            feature_level = (
+                cached_feature_levels.pop()
+                if len(cached_feature_levels) == 1
+                else "patch"
+            )
             representations_by_use = cached_by_use
         else:
             inspection = inspect_retrieval_inputs(
@@ -167,33 +176,42 @@ class SlideRetrievalTask(TaskBase):
                 extractor_name=feature_name,
             )
             feature_level = inspection.feature_level
-            if feature_level == "slide":
+            combination_is_valid, reason = self._validate_combination_compatibility(
+                feature_level=feature_level,
+                representation_name=representation_name,
+                search_strategy_name=search_strategy_name,
+                aggregation_level=aggregation_level,
+                exclusion_level=exclusion_level,
+            )
+            if not combination_is_valid:
                 return {
                     "status": "skipped_incompatible_combo",
                     "reason": (
-                        "Slide-level feature input was detected. "
-                        "Slide-vector retrieval is not implemented yet."
+                        "Slide-level feature input is incompatible with this "
+                        f"retrieval configuration. {reason}"
+                        if feature_level == "slide"
+                        else reason
                     ),
                 }
-            else:
-                representation_strategy = build_representation_strategy(
-                    representation_name,
-                    params=combo_cfg.get_hyperparams("retrieval_representation"),
-                    bag_id=tiling_id,
-                    config=getattr(self.experiment, "cfg", None),
-                )
-                prepare_for_combo = getattr(representation_strategy, "prepare_for_combo", None)
-                if callable(prepare_for_combo):
-                    prepare_for_combo(combo_cfg=combo_cfg, feature_name=feature_name, tiling_id=tiling_id)
-                representations_by_use = self._materialize_and_aggregate_representations(
-                    datasets_by_use=datasets_by_use,
-                    representation_strategy=representation_strategy,
-                    representation_id=representation_id,
-                    combo_cfg=combo_cfg,
-                    aggregation_level=aggregation_level,
-                    exclusion_level=exclusion_level,
-                    representation_cache_params=representation_cache_params,
-                )
+            representation_strategy = build_representation_strategy(
+                representation_name,
+                params=combo_cfg.get_hyperparams("retrieval_representation"),
+                bag_id=tiling_id,
+                config=getattr(self.experiment, "cfg", None),
+            )
+            prepare_for_combo = getattr(representation_strategy, "prepare_for_combo", None)
+            if callable(prepare_for_combo):
+                prepare_for_combo(combo_cfg=combo_cfg, feature_name=feature_name, tiling_id=tiling_id)
+            representations_by_use = self._materialize_and_aggregate_representations(
+                datasets_by_use=datasets_by_use,
+                representation_strategy=representation_strategy,
+                representation_id=representation_id,
+                combo_cfg=combo_cfg,
+                aggregation_level=aggregation_level,
+                exclusion_level=exclusion_level,
+                representation_cache_params=representation_cache_params,
+                feature_level=feature_level,
+            )
 
         combination_is_valid, reason = self._validate_combination_compatibility(
             feature_level=feature_level,
@@ -265,6 +283,7 @@ class SlideRetrievalTask(TaskBase):
             tiling_id=tiling_id,
             aggregation_level=aggregation_level,
             feature_name=feature_name,
+            feature_level=feature_level,
             combo_cfg=combo_cfg,
             representation_strategy=representation_strategy,
             search_strategy=search_strategy,
@@ -279,6 +298,7 @@ class SlideRetrievalTask(TaskBase):
             inference_run_root=inference_run_root,
             tiling_id=tiling_id,
             feature_name=feature_name,
+            feature_level=feature_level,
             representation_name=representation_name,
             search_strategy_name=search_strategy_name,
             run_hash=manifest.build_run_hash(),
@@ -525,6 +545,7 @@ class SlideRetrievalTask(TaskBase):
         aggregation_level: str,
         exclusion_level: ExclusionLevel,
         representation_cache_params: dict[str, Any],
+        feature_level: str,
     ) -> dict[str, list[RetrievalRepresentation]]:
         """Build each physical slide once, then aggregate logical retrieval items.
 
@@ -595,6 +616,7 @@ class SlideRetrievalTask(TaskBase):
                                     representation_id=representation_id,
                                     combo_cfg=combo_cfg,
                                     representation_cache_params=representation_cache_params,
+                                    feature_level=feature_level,
                                 )
                             except Exception as exc:
                                 raise RuntimeError(
@@ -610,6 +632,7 @@ class SlideRetrievalTask(TaskBase):
                             sample_id=group.sample_id,
                             data=slide_representation.data,
                             representation_type=slide_representation.representation_type,
+                            feature_level=slide_representation.feature_level,
                             additional_data=dict(slide_representation.additional_data),
                         )
                         representation.metadata.category = group.category
@@ -646,6 +669,7 @@ class SlideRetrievalTask(TaskBase):
         representation_id: str,
         combo_cfg: ComboConfig,
         representation_cache_params: dict[str, Any],
+        feature_level: str,
     ) -> RetrievalRepresentation:
         """Load or create one slide-local representation in its retrieval artifact."""
         artifact_path = build_retrieval_representation_artifact_path(
@@ -681,6 +705,7 @@ class SlideRetrievalTask(TaskBase):
             sample=sample, bag_dataset=dataset, combo_cfg=combo_cfg, **inputs
         )
         representation.sample_id = sample.sample_id
+        representation.feature_level = feature_level
         with atomic_slide_artifact_write(artifact_path) as artifact:
             save_slide_retrieval_representation(
                 retrieval_artifact=artifact,
@@ -952,6 +977,7 @@ class SlideRetrievalTask(TaskBase):
         inference_run_root: Path | None,
         tiling_id: str,
         feature_name: str,
+        feature_level: str,
         representation_name: str,
         search_strategy_name: str,
         run_hash: str,
@@ -986,6 +1012,7 @@ class SlideRetrievalTask(TaskBase):
         tiling_id: str,
         aggregation_level: str,
         feature_name: str,
+        feature_level: str,
         combo_cfg: ComboConfig,
         representation_strategy: Any | None,
         search_strategy: Any,
@@ -1000,6 +1027,7 @@ class SlideRetrievalTask(TaskBase):
             tiling_id=tiling_id,
             aggregation_level=aggregation_level,
             feature_extraction=feature_name,
+            feature_level=feature_level,
             slide_representation=str(combo_cfg.get("retrieval_representation")),
             slide_representation_params=dict(
                 representation_strategy.hyperparam_values()
@@ -1066,6 +1094,12 @@ class SlideRetrievalTask(TaskBase):
                     "slide_retrieval.exclusion_level='slide' is only supported when "
                     "experiment.aggregation_level='slide'."
                 ),
+            )
+
+        if feature_level == "slide" and aggregation_level != "slide":
+            return (
+                False,
+                "Slide-vector retrieval requires experiment.aggregation_level='slide'.",
             )
 
         # Ensure representation output kind can be consumed by the search strategy.

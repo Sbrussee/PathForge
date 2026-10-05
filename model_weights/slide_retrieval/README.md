@@ -9,7 +9,7 @@ The SISH semantic notebook and VQ-VAE descriptor precompute resolve these
 filenames by default:
 
 ```text
-sish_vqvae_checkpoint.pth
+sish_vqvae_checkpoint.pt
 sish_codebook.pt
 sish_trash_classifier.pkl
 ```

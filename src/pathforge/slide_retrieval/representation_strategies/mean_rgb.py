@@ -364,8 +364,7 @@ def _slide_retrieval_artifact_path(
 ) -> Path:
     return build_retrieval_representation_artifact_path(
         artifacts_dir=slide_artifact_path.parent,
-        aggregation_level="slide",
-        sample_id=slide_id,
+        slide_id=slide_id,
     )
 
 
