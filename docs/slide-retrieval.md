@@ -194,9 +194,24 @@ colour-driven baseline.
 
 ``retccl`` accepts any patch-vector representation. It flattens the reference
 database to patch level, finds similar database patches for each query patch,
-filters matches below ``cosine_threshold``, and aggregates accepted matches
-back to ranked slides. Its score is the average accepted similarity after the
-method's weighting and pruning steps.
+filters matches below ``cosine_threshold``, and orders query-patch bags by
+descending diagnosis entropy (Wang et al., Section 3.2, Equations 8–10 and
+Algorithm 2). Diagnosis weights are their normalized frequencies among reference
+items. Bags whose top-match mean similarity falls below the mean across query
+bags are pruned. Each retained bag nominates a slide using its modal diagnosis;
+duplicate slides keep their first nomination.
+
+The returned slides preserve this entropy order, with no final similarity sort.
+Each hit's score is its nominating bag's top-match mean cosine similarity,
+including matches from other slides. Scores therefore need not decrease with
+rank. ``topk_per_patch`` defaults to five and ``k`` limits returned slide hits.
+Diagnosis-frequency weights are automatic; there is no ``class_weight_factor``
+parameter. Remove that key from older configurations.
+
+For paper reproduction, supply diagnosis labels in ``category``, use the CCL
+encoder and the feature-based mosaic selector, and configure the appropriate
+reference subset and patient exclusion. Missing labels are treated as one unknown
+category for compatibility, which is outside the paper's labeled setup.
 
 The default cosine threshold is ``0.7``. Similarity distributions depend on the
 feature extractor, so choose and report this setting using a representative

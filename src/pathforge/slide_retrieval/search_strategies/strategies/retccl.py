@@ -2,8 +2,7 @@ from __future__ import annotations
 
 # ------------------------------------------------------------------------------
 # RETCCL Retrieval:
-#   Minimal refactor of the PathForge 1.0 RETCCL-style search strategy.
-#   The ranking procedure is intentionally kept close to the original code path.
+#   WSI search following Wang et al., Section 3.2 and Algorithm 2.
 #
 #   Source Paper:
 #     Wang, X., Du, Y., Yang, S., et al.
@@ -60,10 +59,9 @@ class RetCCLSearchItem:
 
     Inputs:
         slide_id (str): Aggregated retrieval item identifier.
-        patient_id (str | None): Patient identifier used for LOPO-style filtering.
-        label (str | None): Slide category / diagnosis label.
+        exclusion_key (str | None): Identifier used for LOPO-style filtering.
         features (np.ndarray): Feature matrix with shape ``(N, D)``.
-        metadata (dict[str, Any]): Original retrieval metadata.
+        metadata (RetrievalItemMetadata): Slide category and identity metadata.
 
     Outputs:
         None. This dataclass is consumed internally by ``RetCCLSearch``.
@@ -71,10 +69,9 @@ class RetCCLSearchItem:
     Example:
         >>> item = RetCCLSearchItem(
         ...     slide_id="slide-1",
-        ...     patient_id="patient-1",
-        ...     label="a",
+        ...     exclusion_key="patient-1",
         ...     features=np.ones((2, 3), dtype=float),
-        ...     metadata={},
+        ...     metadata=RetrievalItemMetadata(category="a"),
         ... )
         >>> item.features.shape
         (2, 3)
@@ -92,10 +89,10 @@ class RetCCLSearch(BaseSearchStrategy):
     RETCCL-based multi-vector retrieval adapted to the PathForge 2.0 interface.
 
     Semantic goal:
-        Preserve the original PathForge 1.0 RETCCL ranking logic as closely as
-        possible. The database is flattened to patch level, query-patch bags are
-        filtered by cosine threshold, ordered by weighted entropy, pruned by the
-        original eta threshold, and converted back to slide-level ranked hits.
+        Follow Section 3.2, Equations 8–10 and Algorithm 2 of Wang et al.
+        Query-patch bags are filtered by cosine threshold, ordered by descending
+        entropy weighted by database diagnosis frequencies, pruned by eta, and
+        converted to slide nominations without another similarity sort.
 
     Inputs:
         database representations:
@@ -105,8 +102,9 @@ class RetCCLSearch(BaseSearchStrategy):
             One ``RetrievalRepresentation`` with the same shape convention.
 
     Outputs:
-        ``SearchHit`` list ranked by descending average similarity. Each hit
-        score is the original RETCCL ``avg_sim`` value.
+        ``SearchHit`` list in surviving bag entropy order, deduplicated by first
+        slide nomination. Each score is the nominating bag's top-match mean
+        cosine similarity; scores need not decrease with rank.
 
     Example:
         >>> strategy = RetCCLSearch(params={"k": 2})
@@ -123,12 +121,6 @@ class RetCCLSearch(BaseSearchStrategy):
         min=0.0,
         max=1.0,
         help="min cosine similarity to accept a patch match",
-    )
-    class_weight_factor = HyperParam(
-        float,
-        default=10.0,
-        min=0.0,
-        help="inverse-frequency reweighting strength",
     )
     topk_per_patch = HyperParam(
         int,
@@ -148,6 +140,12 @@ class RetCCLSearch(BaseSearchStrategy):
             None. Sets:
             - ``self.slide_index: dict[str, RetCCLSearchItem]``
             - ``self.class_weight: dict[str | None, float]``
+
+        Example:
+            >>> strategy = RetCCLSearch()
+            >>> strategy.build_database([])
+            >>> strategy.slide_index
+            {}
         """
         self.slide_index: dict[str, RetCCLSearchItem] = {}
 
@@ -163,9 +161,7 @@ class RetCCLSearch(BaseSearchStrategy):
                 features=features,
             )
 
-        self.class_weight = self._compute_class_weights(
-            factor=self.class_weight_factor
-        )
+        self.class_weight = self._compute_class_weights()
 
     def build_database_item(
         self,
@@ -180,6 +176,14 @@ class RetCCLSearch(BaseSearchStrategy):
 
         Outputs:
             SearchDatabaseItem: Standard search-database container.
+
+        Example:
+            >>> strategy = RetCCLSearch()
+            >>> representation = RetrievalRepresentation(
+            ...     sample_id="s1", data=np.ones((2, 3)),
+            ... )
+            >>> strategy.build_database_item(representation).data.shape
+            (2, 3)
         """
         features = self._as_feature_matrix(
             representation_data=representation.data,
@@ -209,7 +213,8 @@ class RetCCLSearch(BaseSearchStrategy):
 
         Outputs:
             list[SearchHit]:
-                Ranked hits ordered by descending average similarity.
+                Hits in surviving bag entropy order, with top-match mean
+                similarities as scores (not the ranking criterion).
 
         Example:
             >>> strategy = RetCCLSearch(params={"k": 1})
@@ -254,11 +259,15 @@ class RetCCLSearch(BaseSearchStrategy):
 
         for patch_idx, query_feature in enumerate(query_slide.features):
             query_norm = norm(query_feature) + 1e-12
-            similarities = (flat_feats_array @ query_feature) / (flat_norms * query_norm)
+            similarities = (flat_feats_array @ query_feature) / (
+                flat_norms * query_norm
+            )
 
             mask = similarities >= self.cosine_threshold
             matched_indices = np.where(mask)[0]
-            bag = [(int(index), float(similarities[index])) for index in matched_indices]
+            bag = [
+                (int(index), float(similarities[index])) for index in matched_indices
+            ]
             bag.sort(key=lambda value: value[1], reverse=True)
             bag_matches[patch_idx] = bag
 
@@ -337,15 +346,13 @@ class RetCCLSearch(BaseSearchStrategy):
                     mean(similarities),
                 )
 
-        sorted_hits = sorted(
-            wsi_retrieval.values(),
-            key=lambda value: value[2],
-            reverse=True,
-        )
+        # Algorithm 2 projects the entropy-ordered bags to WSIs. Preserve that
+        # order and the first nomination of each slide; similarity only prunes.
+        ordered_hits = list(wsi_retrieval.values())
 
         hits: list[SearchHit] = []
         for rank, (slide_id, _score, avg_similarity) in enumerate(
-            sorted_hits[: self.k],
+            ordered_hits[: self.k],
             start=1,
         ):
             hits.append(
@@ -359,40 +366,33 @@ class RetCCLSearch(BaseSearchStrategy):
 
         return hits
 
-    def _compute_class_weights(
-        self,
-        factor: float = 10.0,
-    ) -> dict[str | None, float]:
+    def _compute_class_weights(self) -> dict[str | None, float]:
         """
-        Mirror the original RETCCL inverse-frequency class reweighting.
+        Calculate database diagnosis probabilities for Equation 9.
 
         Inputs:
-            factor (float): Normalization factor for the weight sum.
+            None. Uses categories from ``self.slide_index`` (one per item).
 
         Outputs:
             dict[str | None, float]:
-                Mapping ``label -> normalized inverse-frequency weight``.
+                Category counts divided by the number of reference items. The
+                weights sum to one for a nonempty database; empty databases
+                return ``{}``. Missing labels form one unknown category for
+                compatibility; paper reproduction requires diagnosis labels.
+
+        Example:
+            >>> strategy = RetCCLSearch()
+            >>> strategy.build_database([])
+            >>> strategy.class_weight
+            {}
         """
-        _ = factor
+        # Count reference items rather than their patches: diagnoses are WSI
+        # metadata. Include None as an unknown category to avoid zero weights.
         label_counts = Counter(
-            slide.metadata.category
-            for slide in self.slide_index.values()
-            if slide.metadata.category is not None
+            slide.metadata.category for slide in self.slide_index.values()
         )
-        if not label_counts:
-            return {None: 1.0}
-        inv = {
-            label: 1.0 / float(count)
-            for label, count in label_counts.items()
-            if count > 0
-        }
-        total = sum(inv.values())
-        if total <= 0:
-            return {None: 1.0}
-        return {
-            label: (factor * value / total)
-            for label, value in inv.items()
-        }
+        total = sum(label_counts.values())
+        return {label: count / total for label, count in label_counts.items()}
 
     def _as_feature_matrix(
         self,
