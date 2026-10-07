@@ -65,6 +65,26 @@ def test_selection_prefers_processor_native_without_constructing_an_extractor(
     assert selection.name == "shared"
     assert selection.source == "processor-native"
     assert selection.requires_pathforge_adapter is False
+    assert selection.output_level == "patch"
+
+
+def test_selection_resolves_pathforge_output_level(monkeypatch):
+    """A validated slide request keeps its storage name and expected row level."""
+    class Processor:
+        def native_feature_extractor_names(self):
+            return {"example-slide"}
+
+    monkeypatch.setattr(
+        "pathforge.core.slide_processing.factory.build_slide_processor",
+        lambda name: Processor(),
+    )
+    monkeypatch.setattr(
+        "pathforge.utils.registries.populate_pathforge_feature_extractors", lambda: None,
+    )
+    selection = resolve_feature_extractor_selection("lazyslide", "example-slide")
+    assert selection.name == "example-slide"
+    assert selection.output_level == "slide"
+    assert selection.model_name == "example"
 
 
 def test_selection_uses_pathforge_native_extractor_when_backend_supports_adapters(

@@ -191,6 +191,45 @@ def test_backend_constraint_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.slide_processing.backend == "lazyslide"
 
 
+@pytest.mark.parametrize(
+    ("name", "valid"),
+    [("embedding", True), ("embedding-slide", True), ("mask", False), ("mask-slide", False)],
+)
+def test_config_only_accepts_embedding_models(monkeypatch, minimal_fe_config, name, valid):
+    """Config validates filtered catalog roles without constructing model weights."""
+    import lazyslide_models
+    from pathforge.core.slide_processing.lazyslide import catalog
+
+    class Embedding:
+        task = ["multimodal", "slide_encoder"]
+        vision_encoder = "embedding"
+
+        def __init__(self):
+            pytest.fail("Config validation must not load model weights")
+
+        def encode_image(self, images):
+            return images
+
+        def encode_slide(self, features, coords=None, **kwargs):
+            return {"embeddings": features}
+
+    class Mask:
+        task = "segmentation"
+
+    monkeypatch.setattr(lazyslide_models, "MODEL_REGISTRY", {"embedding": Embedding, "mask": Mask})
+    monkeypatch.setattr(catalog, "timm_model_names", lambda: set())
+    catalog.lazyslide_model_names.cache_clear()
+    minimal_fe_config["benchmark_parameters"]["feature_extraction"] = [name]
+    try:
+        if valid:
+            Config.model_validate(minimal_fe_config)
+        else:
+            with pytest.raises(ValidationError, match="not available"):
+                Config.model_validate(minimal_fe_config)
+    finally:
+        catalog.lazyslide_model_names.cache_clear()
+
+
 def test_num_workers_within_available_cpu_limit(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("pathforge.config.config.os.cpu_count", lambda: 4)
     cfg_data = {
