@@ -20,6 +20,7 @@ from pathforge.core.datasets.bag_dataset import BagDataset, BagSample
 from pathforge.core.io.slide_artifacts import features as features_io
 from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.slide_retrieval.annotations import resolve_sample_annotations
 from pathforge.slide_retrieval.hyperparams import HyperParam
 from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
     _build_slide_processor,
@@ -312,6 +313,9 @@ class SPLICERGB(_BaseSPLICEStrategy):
             config=self.extra.get("config"),
         )
         slide_processor = _build_slide_processor(config=self.extra.get("config"))
+        annotation_rows = resolve_sample_annotations(
+            sample=sample, config=self.extra.get("config")
+        )
         coord_parts: list[np.ndarray] = []
         mean_rgb_parts: list[np.ndarray] = []
 
@@ -332,6 +336,7 @@ class SPLICERGB(_BaseSPLICEStrategy):
                         bag_id=tiling_id,
                         slide_processor=slide_processor,
                         slide_id=str(slide_id),
+                        annotation_row=annotation_rows[str(slide_id)],
                     )
                 coord_parts.append(np.asarray(coords[:, :2], dtype=np.int64))
                 mean_rgb_parts.append(np.asarray(mean_rgb, dtype=np.float32))

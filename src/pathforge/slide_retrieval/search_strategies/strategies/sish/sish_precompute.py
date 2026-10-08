@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,7 @@ from pathforge.core.datasets.wsi_dataset import WSI
 from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.io.slide_retrieval import descriptors as descriptors_io
+from pathforge.slide_retrieval.annotations import resolve_sample_annotations
 from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
     _build_slide_processor,
     _resolve_sample_slide_paths,
@@ -103,6 +104,7 @@ class _SelectedPatchSpec:
     y: int
     source_tile_px: int
     source_tile_mpp: float
+    annotation_row: dict[str, Any] | None = field(default=None, kw_only=True)
 
 
 class SISHPrecompute:
@@ -583,6 +585,7 @@ class SISHPrecompute:
             Path(path) for path in list(getattr(sample, "artifact_paths", []) or [])
         ]
         slide_paths = _resolve_sample_slide_paths(sample=sample, config=self.config)
+        annotation_rows = resolve_sample_annotations(sample=sample, config=self.config)
 
         specs: list[_SelectedPatchSpec] = []
         start = 0
@@ -632,6 +635,7 @@ class SISHPrecompute:
                     y=int(coord_row[1]),
                     source_tile_px=int(tiling_spec["tile_px"]),
                     source_tile_mpp=float(tiling_spec["tile_mpp"]),
+                    annotation_row=annotation_rows[slide_id],
                 )
             )
 
@@ -672,11 +676,10 @@ class SISHPrecompute:
             artifact_path,
             slide_path,
         ), slide_specs in specs_by_slide.items():
-            wsi = WSI(
-                slide=slide_id,
-                patient="",
-                category="",
-                path=slide_path,
+            annotation_row = slide_specs[0].annotation_row
+            wsi = WSI.from_annotation(
+                annotation_row if annotation_row is not None else {"slide": slide_id},
+                slide_path=slide_path,
                 artifact_path=artifact_path,
             )
             self._slide_processor.load_wsi(wsi)

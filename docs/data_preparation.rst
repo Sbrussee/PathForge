@@ -93,7 +93,16 @@ Optional Columns
      - Fallback microns-per-pixel (MPP) value as a float. Used for slides
        whose metadata does not contain valid MPP information (e.g. scanned
        without calibration). Provide this value so PathForge can still tile
-       at the correct resolution.
+       at the correct resolution. Values must be positive, finite scalars;
+       numeric strings are accepted and invalid values are ignored.
+
+Annotation-based slide construction uses
+``WSI.from_annotation(row, slide_path=source_path, artifact_path=h5_path)``.
+It retains a copy of the row in ``wsi.annotations`` and normalizes the typed
+slide, patient, category, and fallback MPP fields. Those typed fields remain
+authoritative. Explicit paths support staged slides, and direct ``WSI(...)``
+construction remains supported. The slide processor selects native MPP first,
+then ``wsi.fallback_mpp``, without reading annotation files.
 
 Populate optional columns consistently. A missing ``patient`` value prevents
 reliable patient-level grouping or exclusion, and a partially populated

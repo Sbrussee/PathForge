@@ -182,3 +182,19 @@ def test_build_samples_prefers_explicit_wsi_path_from_annotations(
 
     assert len(ds.samples) == 1
     assert ds.samples[0].path == explicit_slide.resolve()
+
+
+def test_dataset_uses_annotation_defaults_and_retains_custom_metadata(tmp_path):
+    slide = tmp_path / "S1.svs"
+    slide.write_bytes(b"")
+    annotations = pd.DataFrame([{
+        "dataset": "ds", "slide": "S1", "wsi_path": str(slide),
+        "fallback_mpp": "0.25", "custom": "value",
+    }])
+    cfg = DatasetEntry(
+        name="ds", slides_dir=str(tmp_path),
+        artifacts_dir=str(tmp_path / "artifacts"), used_for="all",
+    )
+    wsi = WSIDataset(cfg, annotations).samples[0]
+    assert (wsi.patient, wsi.category, wsi.fallback_mpp) == ("S1", "", 0.25)
+    assert wsi.annotations["custom"] == "value"

@@ -16,20 +16,6 @@ from ..policy.feature_extraction import FeatureExtractionPolicy
 from .common import LOG_LEVEL_CHOICES, configure_logging, resolve_config_path
 
 
-def _parse_fallback_mpp(row: pd.Series) -> float | None:
-    if "fallback_mpp" not in row.index or pd.isna(row["fallback_mpp"]):
-        return None
-
-    try:
-        fallback_mpp = float(row["fallback_mpp"])
-    except (TypeError, ValueError):
-        return None
-
-    if fallback_mpp <= 0:
-        return None
-    return fallback_mpp
-
-
 def _build_single_slide_wsi(
     *,
     row: pd.Series,
@@ -37,23 +23,13 @@ def _build_single_slide_wsi(
     slide_id: str,
     input_slide_path: Path,
 ) -> WSI:
-    dataset_wsi = next(
-        (sample for sample in selected_dataset.samples if sample.slide == slide_id),
-        None,
-    )
-    fallback_mpp = (
-        dataset_wsi.fallback_mpp
-        if dataset_wsi is not None
-        else _parse_fallback_mpp(row)
-    )
-
-    return WSI(
-        slide=slide_id,
-        patient=str(row.get("patient", slide_id)),
-        category=str(row["category"]),
-        path=input_slide_path,
+    # Older callers supply the logical ID separately from the annotation row.
+    annotation = dict(row)
+    annotation.setdefault("slide", slide_id)
+    return WSI.from_annotation(
+        annotation,
+        slide_path=input_slide_path,
         artifact_path=selected_dataset.slide_artifact_path(slide_id),
-        fallback_mpp=fallback_mpp,
     )
 
 

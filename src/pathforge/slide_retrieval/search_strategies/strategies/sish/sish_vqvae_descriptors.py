@@ -11,6 +11,7 @@ from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_artifacts.atomic import atomic_slide_artifact_write
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.io.slide_retrieval import descriptors as descriptors_io
+from pathforge.slide_retrieval.annotations import resolve_sample_annotations
 from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
     _build_slide_processor,
     _resolve_sample_slide_paths,
@@ -58,6 +59,7 @@ def resolve_sample_patch_sish_vqvae_latent(
             f"Got {len(slide_ids)} and {len(artifact_paths)}."
         )
 
+    annotation_rows = None
     model = None
     slide_processor = None
     slide_paths_by_id: dict[str, Path | None] | None = None
@@ -97,6 +99,8 @@ def resolve_sample_patch_sish_vqvae_latent(
         if model is None:
             model = _load_sish_vqvae_encoder(config=config)
 
+        if annotation_rows is None:
+            annotation_rows = resolve_sample_annotations(sample=sample, config=config)
         descriptor_parts.append(
             _resolve_slide_patch_sish_vqvae_latent(
                 slide_artifact_path=artifact_path,
@@ -108,6 +112,7 @@ def resolve_sample_patch_sish_vqvae_latent(
                 model=model,
                 descriptor_name=descriptor_name,
                 config=config,
+                annotation_row=annotation_rows[slide_id],
             )
         )
 
@@ -128,6 +133,7 @@ def load_or_create_slide_patch_sish_vqvae_latent(
     config: Any,
     descriptor_name: str = SISH_VQVAE_DESCRIPTOR_NAME,
     batch_size: int = 8,
+    annotation_row: dict[str, Any] | None = None,
 ) -> np.ndarray:
     """Load cached SISH VQ-VAE patch latents for a slide, computing them if absent."""
     expected_rows = int(tiles_io.coords_num_rows(slide_artifact, bag_id=bag_id))
@@ -160,6 +166,7 @@ def load_or_create_slide_patch_sish_vqvae_latent(
         slide_id=slide_id,
         model=model,
         batch_size=batch_size,
+        annotation_row=annotation_row,
     )
     with atomic_slide_artifact_write(retrieval_artifact_path) as retrieval_artifact:
         descriptors_io.write_descriptor(
@@ -183,6 +190,7 @@ def _resolve_slide_patch_sish_vqvae_latent(
     model: torch.nn.Module,
     descriptor_name: str,
     config: Any,
+    annotation_row: dict[str, Any] | None = None,
 ) -> np.ndarray:
     with FileHandleH5(slide_artifact_path, mode="r") as slide_artifact:
         batch_size = int(
@@ -207,6 +215,7 @@ def _resolve_slide_patch_sish_vqvae_latent(
             descriptor_name=descriptor_name,
             batch_size=batch_size,
             config=config,
+            annotation_row=annotation_row,
         )
 
 
@@ -219,17 +228,16 @@ def _create_slide_patch_sish_vqvae_latent(
     slide_id: str,
     model: torch.nn.Module,
     batch_size: int,
+    annotation_row: dict[str, Any] | None = None,
 ) -> np.ndarray:
     coords = np.asarray(
         tiles_io.read_coords(slide_artifact, bag_id=bag_id), dtype=np.int32
     )
     tiling_spec = tiles_io.read_tiling_spec(slide_artifact, bag_id=bag_id)
     expected_rows = int(coords.shape[0])
-    slide_wsi = WSI(
-        slide=slide_id,
-        patient="",
-        category="",
-        path=slide_path,
+    slide_wsi = WSI.from_annotation(
+        annotation_row if annotation_row is not None else {"slide": slide_id},
+        slide_path=slide_path,
         artifact_path=slide_artifact.path,
     )
     slide_processor.load_wsi(slide_wsi)

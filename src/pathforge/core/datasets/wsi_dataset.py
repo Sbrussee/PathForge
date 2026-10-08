@@ -1,15 +1,18 @@
 # src/pathforge/core/datasets/wsi_dataset.py
 from __future__ import annotations
 
+from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
+import logging
+from math import isfinite
 from pathlib import Path
 from typing import Any, Optional
 
-import logging
 import pandas as pd
 
-from pathforge.core.datasets.base import DatasetBase
 from pathforge.config.config import DatasetEntry
+from pathforge.core.datasets.base import DatasetBase
 from pathforge.utils.constants import SLIDE_FILE_FORMATS
 
 logger = logging.getLogger(__name__)
@@ -27,6 +30,66 @@ class WSI:
     fallback_mpp: Optional[float] = None
 
     _obj: Optional[Any] = field(default=None, repr=False)
+    annotations: dict[str, Any] = field(default_factory=dict, kw_only=True)
+
+    @classmethod
+    def from_annotation(
+        cls,
+        row: Mapping[str, Any] | pd.Series,
+        *,
+        slide_path: str | Path,
+        artifact_path: str | Path,
+    ) -> WSI:
+        """Build a WSI from one row without opening or discovering slide files.
+
+        Missing patient/category values default to the slide ID/empty string.
+        Invalid optional MPP values are ignored; typed fields are authoritative
+        over the detached annotation copy.
+
+        Example:
+            ``WSI.from_annotation(row, slide_path=staged, artifact_path=h5_path)``.
+        """
+        annotations = deepcopy(dict(row))
+        values: dict[str, str] = {}
+        for key in ("slide", "patient", "category"):
+            value = annotations.get(key)
+            if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
+                value = ""
+            if not pd.api.types.is_scalar(value):
+                raise ValueError(f"Annotation {key!r} must be a scalar value.")
+            values[key] = str(value).strip()
+        if not values["slide"]:
+            raise ValueError("Annotation 'slide' must be a non-empty ID.")
+
+        raw_mpp = annotations.get("fallback_mpp")
+        fallback_mpp = None
+        if raw_mpp is not None and not (
+            pd.api.types.is_scalar(raw_mpp)
+            and (pd.isna(raw_mpp) or str(raw_mpp).strip() == "")
+        ):
+            try:
+                if not pd.api.types.is_scalar(raw_mpp) or pd.api.types.is_bool(raw_mpp):
+                    raise ValueError("MPP must be a numeric scalar")
+                parsed = float(raw_mpp)
+                if not isfinite(parsed) or parsed <= 0:
+                    raise ValueError("MPP must be positive and finite")
+                fallback_mpp = parsed
+            except (TypeError, ValueError, OverflowError):
+                logger.warning(
+                    "Invalid fallback_mpp for slide '%s': %r. Ignoring it.",
+                    values["slide"],
+                    raw_mpp,
+                )
+
+        return cls(
+            slide=values["slide"],
+            patient=values["patient"] or values["slide"],
+            category=values["category"],
+            path=Path(slide_path),
+            artifact_path=Path(artifact_path),
+            fallback_mpp=fallback_mpp,
+            annotations=annotations,
+        )
 
     @property
     def is_loaded(self) -> bool:
@@ -211,41 +274,8 @@ class WSIDataset(DatasetBase):
 
         samples: list[WSI] = []
 
-        for i, (_, row) in enumerate(df.iterrows(), start=1):
+        for _, row in df.iterrows():
             slide_id = str(row["slide"])
-            patient = str(row["patient"])
-            category = str(row["category"])
-
-            fallback_mpp = None
-            if "fallback_mpp" in df.columns and pd.notna(row["fallback_mpp"]):
-                try:
-                    fallback_mpp = float(row["fallback_mpp"])
-                    if fallback_mpp <= 0:
-                        logger.warning(
-                            "[%s] Invalid fallback_mpp for slide '%s': %r. Ignoring it.",
-                            self.name,
-                            slide_id,
-                            row["fallback_mpp"],
-                        )
-                        fallback_mpp = None
-                except (TypeError, ValueError):
-                    logger.warning(
-                        "[%s] Could not parse fallback_mpp for slide '%s': %r. Ignoring it.",
-                        self.name,
-                        slide_id,
-                        row["fallback_mpp"],
-                    )
-
-            logger.debug(
-                "[%s] (%d/%d) slide_id='%s' (patient=%s, category=%s)",
-                self.name,
-                i,
-                len(df),
-                slide_id,
-                patient,
-                category,
-            )
-
             slide_path = self._resolve_row_wsi_path(row)
             if slide_path is None:
                 slide_path = self._find_wsi_path(slide_id)
@@ -253,13 +283,10 @@ class WSIDataset(DatasetBase):
                 continue
 
             samples.append(
-                WSI(
-                    slide=slide_id,
-                    patient=patient,
-                    category=category,
-                    path=slide_path,
+                WSI.from_annotation(
+                    row,
+                    slide_path=slide_path,
                     artifact_path=self.slide_artifact_path(slide_id),
-                    fallback_mpp=fallback_mpp,
                 )
             )
 

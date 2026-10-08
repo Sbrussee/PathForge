@@ -11,6 +11,7 @@ from pathforge.core.io.slide_artifacts.atomic import atomic_slide_artifact_write
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.io.slide_retrieval import descriptors as descriptors_io
 from pathforge.core.slide_processing.base import SlideProcessorBase
+from pathforge.slide_retrieval.annotations import resolve_sample_annotations
 from pathforge.slide_retrieval.representation_strategies.storage import (
     build_retrieval_representation_artifact_path,
 )
@@ -72,6 +73,7 @@ def resolve_sample_patch_mean_rgb(
 
     mean_rgb_parts: list[np.ndarray] = []
     slide_paths_by_id: dict[str, Path | None] | None = None
+    annotation_rows = None
     slide_processor: SlideProcessorBase | None = None
     for slide_id, artifact_path in zip(slide_ids, artifact_paths):
         with FileHandleH5(artifact_path, mode="r") as slide_artifact:
@@ -104,6 +106,9 @@ def resolve_sample_patch_mean_rgb(
         if slide_processor is None:
             slide_processor = _build_slide_processor(config=config)
 
+        if annotation_rows is None:
+            annotation_rows = resolve_sample_annotations(sample=sample, config=config)
+
         mean_rgb_parts.append(
             _resolve_slide_patch_mean_rgb(
                 slide_artifact_path=artifact_path,
@@ -112,6 +117,7 @@ def resolve_sample_patch_mean_rgb(
                 bag_id=bag_id,
                 slide_processor=slide_processor,
                 slide_id=slide_id,
+                annotation_row=annotation_rows[slide_id],
             )
         )
 
@@ -129,6 +135,7 @@ def load_or_create_slide_patch_mean_rgb(
     bag_id: str,
     slide_processor: SlideProcessorBase,
     slide_id: str,
+    annotation_row: dict[str, Any] | None = None,
 ) -> np.ndarray:
     """
     Resolve one slide-level mean RGB descriptor matrix using an open slide H5 handle.
@@ -140,6 +147,7 @@ def load_or_create_slide_patch_mean_rgb(
     - `bag_id`: canonical tiling identifier.
     - `slide_processor`: backend implementation used to read patch regions.
     - `slide_id`: slide identifier for error messages.
+    - `annotation_row`: matching annotation metadata, including optional fallback MPP.
 
     Returns:
     - `np.ndarray[float32]` with shape `(N, 3)`.
@@ -173,6 +181,7 @@ def load_or_create_slide_patch_mean_rgb(
         bag_id=bag_id,
         slide_processor=slide_processor,
         slide_id=slide_id,
+        annotation_row=annotation_row,
     )
     with atomic_slide_artifact_write(retrieval_artifact_path) as retrieval_artifact:
         descriptors_io.write_descriptor(
@@ -192,6 +201,7 @@ def _resolve_slide_patch_mean_rgb(
     bag_id: str,
     slide_processor: SlideProcessorBase,
     slide_id: str,
+    annotation_row: dict[str, Any] | None = None,
 ) -> np.ndarray:
     """
     Resolve one slide-level mean RGB descriptor matrix from H5 or source slide.
@@ -203,6 +213,7 @@ def _resolve_slide_patch_mean_rgb(
     - `bag_id`: canonical tiling identifier.
     - `slide_processor`: backend implementation used to read patch pixels.
     - `slide_id`: human-readable slide identifier for error messages.
+    - `annotation_row`: matching annotation metadata; omitted by legacy callers.
 
     Returns:
     - `np.ndarray[float32]` with shape `(N, 3)`.
@@ -237,6 +248,7 @@ def _resolve_slide_patch_mean_rgb(
             bag_id=bag_id,
             slide_processor=slide_processor,
             slide_id=slide_id,
+            annotation_row=annotation_row,
         )
         with atomic_slide_artifact_write(retrieval_artifact_path) as retrieval_artifact:
             descriptors_io.write_descriptor(
@@ -255,6 +267,7 @@ def _create_slide_patch_mean_rgb(
     bag_id: str,
     slide_processor: SlideProcessorBase,
     slide_id: str,
+    annotation_row: dict[str, Any] | None = None,
 ) -> np.ndarray:
     """
     Compute one slide-level mean RGB descriptor matrix from the source slide.
@@ -265,17 +278,16 @@ def _create_slide_patch_mean_rgb(
     - `bag_id`: canonical tiling identifier.
     - `slide_processor`: backend implementation used to read patch regions.
     - `slide_id`: human-readable slide identifier for error messages.
+    - `annotation_row`: matching annotation metadata; omitted by legacy callers.
 
     Returns:
     - `np.ndarray[float32]` with shape `(N, 3)`.
     """
     coords = tiles_io.read_coords(slide_artifact, bag_id=bag_id)
     expected_rows = int(coords.shape[0])
-    slide_wsi = WSI(
-        slide=slide_id,
-        patient="",
-        category="",
-        path=slide_path,
+    slide_wsi = WSI.from_annotation(
+        annotation_row if annotation_row is not None else {"slide": slide_id},
+        slide_path=slide_path,
         artifact_path=slide_artifact.path,
     )
     slide_processor.load_wsi(slide_wsi)

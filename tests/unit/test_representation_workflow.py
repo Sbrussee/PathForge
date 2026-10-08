@@ -175,3 +175,25 @@ def test_assembly_rejects_incomplete_or_overlapping_results(tmp_path, overlap):
         workflow.assemble_representations(
             plan, loaded=results, created=results, aggregation_level="slide", exclusion_level="none", build_exclusion_key=lambda **_: None
         )
+
+
+def test_plan_carries_physical_slide_annotation_snapshot(tmp_path):
+    import pandas as pd
+
+    group = sample(tmp_path, "patient", ["S1", "S2"])
+    group.metadata = {"dataset": "dataset"}
+    group.annotations_df = pd.DataFrame([
+        {"dataset": "dataset", "slide": "S1", "fallback_mpp": 0.25},
+        {"dataset": "dataset", "slide": "S2", "fallback_mpp": 0.5},
+    ])
+    plan = workflow.plan_representations(
+        datasets_by_use={"reference": [Dataset(tmp_path, [group])]},
+        representation_id="rep",
+    )
+    from pathforge.slide_retrieval.annotations import resolve_sample_annotations
+
+    for request in plan.missing.values():
+        rows = resolve_sample_annotations(sample=request.sample, config={})
+        assert rows[request.sample.sample_id]["fallback_mpp"] == (
+            0.25 if request.sample.sample_id == "S1" else 0.5
+        )

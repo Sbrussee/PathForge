@@ -43,6 +43,9 @@ class BagSample:
     patient_id: Optional[str] = None
     case_id: Optional[str] = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    annotations_df: pd.DataFrame | None = field(
+        default=None, kw_only=True, repr=False, compare=False
+    )
 
 
 @dataclass(slots=True)
@@ -392,6 +395,7 @@ class BagDataset(BagDatasetBase):
                     ),
                     case_id=self._resolve_single_value(row_df, CASE_ID_COL, cast=str),
                     metadata=self._build_metadata(row_df),
+                    annotations_df=row_df.copy(deep=True),
                 )
             )
         return samples
@@ -425,6 +429,7 @@ class BagDataset(BagDatasetBase):
                     ),
                     case_id=self._resolve_single_value(group_df, CASE_ID_COL, cast=str),
                     metadata=self._build_metadata(group_df),
+                    annotations_df=group_df.copy(deep=True),
                 )
             )
         return samples

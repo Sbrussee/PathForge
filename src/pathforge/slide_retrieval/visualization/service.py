@@ -36,9 +36,7 @@ from pathforge.slide_retrieval.visualization.renderers import (
     render_retrieval_results_image,
 )
 from pathforge.utils.constants import (
-    CATEGORY_COL,
     DATASET_COL,
-    PATIENT_ID_COL,
     SLIDE_FILE_FORMATS,
     SLIDE_ID_COL,
 )
@@ -369,13 +367,24 @@ class SlideRetrievalVisualizationService:
             }
         )
 
-    def _resolve_slide_asset(self, slide_id: str) -> SlideVisualizationAsset | None:
+    def _resolve_slide_asset(
+        self, slide_id: str, *, dataset_name: str | None = None
+    ) -> SlideVisualizationAsset | None:
         normalized_slide_id = str(slide_id).strip()
         matching_rows = self.annotations_df[
             self.annotations_df[SLIDE_ID_COL].astype(str) == normalized_slide_id
         ]
+        if dataset_name is not None:
+            matching_rows = matching_rows[
+                matching_rows[DATASET_COL].astype(str) == str(dataset_name)
+            ]
         if matching_rows.empty:
             return None
+        if len(matching_rows) != 1:
+            raise ValueError(
+                f"Ambiguous visualization annotations for slide '{normalized_slide_id}' "
+                f"and dataset '{dataset_name}': found {len(matching_rows)} rows."
+            )
 
         row = matching_rows.iloc[0]
         dataset_name = str(row.get(DATASET_COL, "")).strip()
@@ -383,12 +392,23 @@ class SlideRetrievalVisualizationService:
         if dataset_cfg is None:
             return None
 
-        slide_path = self._find_slide_path(dataset_cfg, normalized_slide_id)
+        annotated_path = row.get("wsi_path")
+        slide_path = (
+            Path(str(annotated_path)).expanduser().resolve()
+            if annotated_path is not None and pd.notna(annotated_path)
+            else None
+        )
+        if slide_path is None or not slide_path.exists():
+            slide_path = self._find_slide_path(dataset_cfg, normalized_slide_id)
         artifact_path = (
             Path(dataset_cfg.artifacts_dir).expanduser().resolve()
             / f"{normalized_slide_id}.h5"
         )
-        fallback_mpp = self._parse_optional_float(row.get("fallback_mpp"))
+        # Construction normalizes annotation fields without opening the slide.
+        annotation_wsi = WSI.from_annotation(
+            row, slide_path=slide_path or normalized_slide_id,
+            artifact_path=artifact_path,
+        )
         metadata = {
             str(column_name): row.get(column_name)
             for column_name in matching_rows.columns
@@ -398,9 +418,9 @@ class SlideRetrievalVisualizationService:
             dataset_name=dataset_name,
             artifact_path=artifact_path,
             slide_path=slide_path,
-            patient_id=str(row.get(PATIENT_ID_COL, "")),
-            category=str(row.get(CATEGORY_COL, "")),
-            fallback_mpp=fallback_mpp,
+            patient_id=annotation_wsi.patient,
+            category=annotation_wsi.category,
+            fallback_mpp=annotation_wsi.fallback_mpp,
             metadata=metadata,
         )
 
@@ -449,13 +469,10 @@ class SlideRetrievalVisualizationService:
             return None
 
         slide_processor = self._build_processor()
-        wsi = WSI(
-            slide=asset.slide_id,
-            patient=asset.patient_id,
-            category=asset.category,
-            path=asset.slide_path,
+        wsi = WSI.from_annotation(
+            asset.metadata,
+            slide_path=asset.slide_path,
             artifact_path=asset.artifact_path,
-            fallback_mpp=asset.fallback_mpp,
         )
         slide_processor.load_wsi(wsi)
         try:
@@ -518,13 +535,10 @@ class SlideRetrievalVisualizationService:
             return None
 
         slide_processor = self._build_processor()
-        wsi = WSI(
-            slide=asset.slide_id,
-            patient=asset.patient_id,
-            category=asset.category,
-            path=asset.slide_path,
+        wsi = WSI.from_annotation(
+            asset.metadata,
+            slide_path=asset.slide_path,
             artifact_path=asset.artifact_path,
-            fallback_mpp=asset.fallback_mpp,
         )
         slide_processor.load_wsi(wsi)
         try:
@@ -581,13 +595,10 @@ class SlideRetrievalVisualizationService:
         default_level = int(np.median(coords_array[:, 4])) if coords_array.size else 0
 
         slide_processor = self._build_processor()
-        wsi = WSI(
-            slide=asset.slide_id,
-            patient=asset.patient_id,
-            category=asset.category,
-            path=asset.slide_path,
+        wsi = WSI.from_annotation(
+            asset.metadata,
+            slide_path=asset.slide_path,
             artifact_path=asset.artifact_path,
-            fallback_mpp=asset.fallback_mpp,
         )
         slide_processor.load_wsi(wsi)
         patch_images: list[Image.Image] = []
@@ -799,14 +810,6 @@ class SlideRetrievalVisualizationService:
         draw.text((20, 20), str(title), fill=(0, 0, 0), font=font)
         draw.text((20, 52), str(message), fill=(80, 80, 80), font=font)
         return canvas
-
-    def _parse_optional_float(self, value: Any) -> float | None:
-        if value is None or pd.isna(value):
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
 
     def _coerce_optional_array(self, value: Any) -> np.ndarray | None:
         if value is None:

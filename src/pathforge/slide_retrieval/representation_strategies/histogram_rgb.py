@@ -13,6 +13,7 @@ from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_artifacts.atomic import atomic_slide_artifact_write
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.io.slide_retrieval import descriptors as descriptors_io
+from pathforge.slide_retrieval.annotations import resolve_sample_annotations
 from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
     _build_slide_processor,
     _resolve_sample_slide_paths,
@@ -47,6 +48,7 @@ def resolve_sample_patch_histogram_rgb(
             "sample.slide_ids and sample.artifact_paths must be non-empty and aligned."
         )
     paths: dict[str, Path | None] | None = None
+    annotation_rows = None
     processor = None
     parts: list[np.ndarray] = []
     try:
@@ -81,8 +83,15 @@ def resolve_sample_patch_histogram_rgb(
                 )
             if processor is None:
                 processor = _build_slide_processor(config=config)
+            if annotation_rows is None:
+                annotation_rows = resolve_sample_annotations(sample=sample, config=config)
             matrix = _create_slide_histograms(
-                slide_id, slide_path, artifact_path, coords, processor
+                slide_id,
+                slide_path,
+                artifact_path,
+                coords,
+                processor,
+                annotation_row=annotation_rows[slide_id],
             )
             with atomic_slide_artifact_write(target) as retrieval:
                 descriptors_io.write_descriptor(
@@ -110,13 +119,13 @@ def _create_slide_histograms(
     artifact_path: Path,
     coords: np.ndarray,
     processor: Any,
+    *,
+    annotation_row: dict[str, Any] | None = None,
 ) -> np.ndarray:
     """Read one WSI and return its row-aligned ``(N, 768)`` histogram matrix."""
-    wsi = WSI(
-        slide=slide_id,
-        patient="",
-        category="",
-        path=slide_path,
+    wsi = WSI.from_annotation(
+        annotation_row if annotation_row is not None else {"slide": slide_id},
+        slide_path=slide_path,
         artifact_path=artifact_path,
     )
     processor.load_wsi(wsi)

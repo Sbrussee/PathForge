@@ -16,6 +16,7 @@ from pathforge.core.datasets.wsi_dataset import WSI
 from pathforge.core.io.slide_artifacts import features as features_io
 from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.slide_retrieval.annotations import resolve_sample_annotations
 from pathforge.slide_retrieval.hyperparams import HyperParam
 from pathforge.slide_retrieval.representation_strategies.base import (
     BaseRetrievalRepresentationStrategy,
@@ -116,6 +117,9 @@ class SISHRGB(BaseRetrievalRepresentationStrategy):
             sample=sample, config=self.extra.get("config")
         )
         processor = _build_slide_processor(config=self.extra.get("config"))
+        annotation_rows = resolve_sample_annotations(
+            sample=sample, config=self.extra.get("config")
+        )
         selected: list[int] = []
         labels = np.full(len(features), -1, dtype=np.int32)
         offset = 0
@@ -136,6 +140,7 @@ class SISHRGB(BaseRetrievalRepresentationStrategy):
                     coords=coords[indices],
                     processor=processor,
                     classifier=classifier,
+                    annotation_row=annotation_rows[str(slide_id)],
                 )
                 kept = indices[keep]
                 if len(kept):
@@ -170,12 +175,11 @@ class SISHRGB(BaseRetrievalRepresentationStrategy):
         coords: np.ndarray,
         processor: Any,
         classifier: Any,
+        annotation_row: dict[str, Any] | None = None,
     ) -> np.ndarray:
-        wsi = WSI(
-            slide=slide_id,
-            patient="",
-            category="",
-            path=slide_path,
+        wsi = WSI.from_annotation(
+            annotation_row if annotation_row is not None else {"slide": slide_id},
+            slide_path=slide_path,
             artifact_path=artifact_path,
         )
         processor.load_wsi(wsi)

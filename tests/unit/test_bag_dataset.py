@@ -245,3 +245,14 @@ def test_bag_dataset_materializes_fixed_bag_size_deterministically(
 def test_bag_dataset_rejects_removed_prepared_tensor_constructor() -> None:
     with pytest.raises(TypeError):
         BagDataset("dataset", "features", "annotations.csv", "category")
+
+
+def test_bag_sample_preserves_annotation_snapshot(tmp_path):
+    dataset = _dataset(
+        tmp_path,
+        [{"slide": "S1", "patient": "P1", "category": "tumor", "fallback_mpp": 0.25}],
+        {"S1": torch.ones(1, 8)},
+    )
+    sample = dataset.samples[0]
+    dataset.annotations_df.loc[:, "fallback_mpp"] = 9
+    assert sample.annotations_df.iloc[0]["fallback_mpp"] == 0.25
