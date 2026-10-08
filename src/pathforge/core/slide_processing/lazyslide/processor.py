@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from typing import Any, Dict, Optional, Tuple
 
 import anndata as ad  # noqa: F401  # returned by lazyslide (kept for clarity)
 import geopandas as gpd
 import lazyslide as zs
+import lazyslide._api as zs_api
 import numpy as np
 import pandas as pd
 import torch
@@ -40,7 +42,8 @@ class LazySlideProcessor(SlideProcessorBase):
 
     Coordinates are stored as an ``(N, 5)`` ``int32`` array containing
     ``x_level0``, ``y_level0``, read width, read height, and pyramid level.
-    Features are returned as a row-aligned ``(N, D)`` ``float32`` array. The
+    Features are returned as ``float32`` arrays: row-aligned ``(N, D)`` patch
+    embeddings or ``(1, D)`` slide embeddings for ``-slide`` requests. The
     backend-specific tile specification is reconstructed when features are
     extracted rather than persisted as PathForge's source of truth.
     """
@@ -859,14 +862,33 @@ class LazySlideProcessor(SlideProcessorBase):
         tiling_spec: dict,
         request: FeatureExtractionRequest,
     ) -> np.ndarray:
+        """Extract patch or slide embeddings for one configured model request.
+
+        Args:
+            wsi: Loaded slide wrapper.
+            coords: ``(N, 5)`` tile coordinates in level-0 space.
+            tiling_spec: Cached tile dimensions, resolution and backend metadata.
+            request: Validated model name and execution options, including color norm.
+        Returns:
+            A float32 matrix shaped ``(N, D)`` for patch requests or ``(1, D)``
+            for explicit slide requests. Slide encoding consumes normalized
+            patch embeddings and retains their original coordinate ordering.
+        Example:
+            >>> features = processor.extract_features(wsi, coords, spec, request)
+            >>> features.shape[0]  # request selects titan-slide
+            1
+        """
         model_name = request.selection.name
         params = dict(request.execution_params)
+        slide_model = None
 
         coords = np.asarray(coords, dtype=np.int32)
         if coords.ndim != 2 or coords.shape[1] != 5:
             raise ValueError(
                 f"[LazySlide] coords must be (N,5) int32, got {coords.shape}"
             )
+        if len(coords) == 0:
+            raise ValueError("[LazySlide] Cannot extract embeddings from an empty slide.")
 
         # Warn (do not block) if features are extracted with a backend different than the tiling backend.
         spec_backend = tiling_spec.get("backend")
@@ -887,7 +909,26 @@ class LazySlideProcessor(SlideProcessorBase):
         # ---- Device default ----
         if "device" not in params and torch.cuda.is_available():
             params["device"] = "cuda"
-        model = self._materialize_feature_extractor(request)
+        if request.selection.output_level == "slide":
+            from lazyslide_models import MODEL_REGISTRY
+
+            from pathforge.core.slide_processing.lazyslide.catalog import (
+                resolve_lazyslide_embedding,
+            )
+
+            patch_name, slide_name = resolve_lazyslide_embedding(
+                request.selection.model_name,
+                output_level=request.selection.output_level,
+            )
+            slide_model = MODEL_REGISTRY[slide_name]()
+            # A shared wrapper (e.g. TITAN) can encode both stages without reloading.
+            model = (
+                slide_model
+                if MODEL_REGISTRY[patch_name] is MODEL_REGISTRY[slide_name]
+                else patch_name
+            )
+        else:
+            model = self._materialize_feature_extractor(request)
         logger.info(
             "[LazySlide] Feature extraction: model=%s, device=%s, params=%s",
             model_name,
@@ -896,7 +937,9 @@ class LazySlideProcessor(SlideProcessorBase):
         )
 
         # ---- Run feature extraction ----
-        zs.tl.feature_extraction(wsi=wsi.obj, model=model, **params)
+        zs.tl.feature_extraction(
+            wsi=wsi.obj, model=model, model_name=model_name, **params
+        )
 
         key = f"{model_name}_tiles"
         if key not in wsi.obj:
@@ -921,6 +964,43 @@ class LazySlideProcessor(SlideProcessorBase):
             raise ValueError(
                 f"[LazySlide] Features rows ({features_matrix.shape[0]}) != coords rows ({coords.shape[0]})."
             )
+
+        if slide_model is not None:
+            device = torch.device(zs_api.default_value("device", params.get("device")))
+            amp = zs_api.default_value("amp", params.get("amp"))
+            dtype = zs_api.default_value("autocast_dtype", None)
+            slide_model.to(device)
+            embeddings = torch.as_tensor(features_matrix, device=device).unsqueeze(0)
+            positions = torch.as_tensor(
+                coords[:, :2], dtype=torch.long, device=device
+            ).unsqueeze(0)
+            # TileSpec reconstructed from cached coords omits base_downsample;
+            # recover the level-0 extent from the actual read width and pyramid.
+            read_level = int(coords[0, 4])
+            downsample = float(wsi.obj.properties.level_downsample[read_level])
+            base_tile_size = int(round(int(coords[0, 2]) * downsample))
+            amp_context = (
+                torch.autocast(device.type, dtype=dtype) if amp else nullcontext()
+            )
+            with amp_context, torch.inference_mode():
+                result = slide_model.encode_slide(
+                    embeddings, positions, base_tile_size=base_tile_size
+                )["embeddings"]
+            if isinstance(result, torch.Tensor):
+                result = result.detach().cpu().numpy()
+            features_matrix = np.asarray(result, dtype=np.float32)
+            if features_matrix.ndim == 1:
+                features_matrix = features_matrix[None, :]
+            if (
+                features_matrix.ndim != 2
+                or features_matrix.shape[0] != 1
+                or features_matrix.shape[1] == 0
+            ):
+                raise ValueError(
+                    f"[LazySlide] Expected one slide embedding (1,D), got {features_matrix.shape}."
+                )
+            if not np.isfinite(features_matrix).all():
+                raise ValueError("[LazySlide] Slide embedding contains non-finite values.")
 
         return features_matrix
 

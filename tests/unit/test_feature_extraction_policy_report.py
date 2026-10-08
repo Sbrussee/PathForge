@@ -64,7 +64,7 @@ class _FakeSlideProcessor:
         request: FeatureExtractionRequest,
     ) -> np.ndarray:
         self.extract_features_calls += 1
-        n = int(coords.shape[0])
+        n = 1 if request.selection.output_level == "slide" else int(coords.shape[0])
         return np.zeros((n, 8), dtype=np.float32)
 
     def extract_patches(self, wsi: WSI, tissues, config: dict[str, Any] | None = None):
@@ -173,14 +173,17 @@ def _make_wsi(tmp_path: Path) -> WSI:
     )
 
 
-def _run_configs() -> dict[str, Any]:
+def _run_configs(
+    extractor_name: str = "dummy_extractor", output_level: str = "patch",
+) -> dict[str, Any]:
     return {
         "seg_config": {"method": "otsu", "params": {}},
         "tile_config": {"tile_px": 256, "tile_mpp": 0.5, "params": {}},
         "feat_request": FeatureExtractionRequest(
             selection=FeatureExtractorSelection(
-                name="dummy_extractor",
+                name=extractor_name,
                 source="processor-native",
+                output_level=output_level,
             ),
             execution_params={},
         ),
@@ -393,7 +396,8 @@ def _dataset_stub() -> Any:
 
 
 def _execute(
-    policy: FeatureExtractionPolicy, processor: _FakeSlideProcessor, tmp_path: Path
+    policy: FeatureExtractionPolicy, processor: _FakeSlideProcessor, tmp_path: Path,
+    extractor_name: str = "dummy_extractor", output_level: str = "patch",
 ) -> None:
     artifact_path = tmp_path / "S1.h5"
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
@@ -410,13 +414,47 @@ def _execute(
             artifact_path=artifact_path,
         ),
         combo_cfg=ComboConfig(
-            feature_extraction="dummy_extractor",
+            feature_extraction=extractor_name,
             tile_px=256,
             tile_mpp=0.5,
         ),
         slide_processor=processor,
-        run_configs=_run_configs(),
+        run_configs=_run_configs(extractor_name, output_level),
     )
+
+
+def test_slide_feature_policy_writes_one_row_and_reuses_complete_cache(monkeypatch, tmp_path):
+    """Slide results validate/cache against one row rather than the tile count."""
+    policy = _make_policy(report=False)
+    processor = _FakeSlideProcessor()
+    state = _install_common_mocks(
+        monkeypatch, features_exist_sequence=[False, False, True], coords_are_valid=True,
+    )
+    writes = []
+    monkeypatch.setattr(
+        fe_mod.features_io, "write_features",
+        lambda artifact, tiling_id, name, features: writes.append((name, features)),
+    )
+    for _ in range(2):
+        _execute(policy, processor, tmp_path, "dummy_extractor-slide", "slide")
+    assert processor.extract_features_calls == 1
+    assert state["features_exist_calls"] == [1, 1, 1]
+    assert len(writes) == 1
+    assert writes[0][0] == "dummy_extractor-slide"
+    assert writes[0][1].shape == (1, 8)
+
+
+def test_slide_feature_policy_rejects_patch_matrix(monkeypatch, tmp_path):
+    """A backend cannot mark a patch matrix complete for a slide request."""
+    policy = _make_policy(report=False)
+    processor = _FakeSlideProcessor()
+    _install_common_mocks(
+        monkeypatch, features_exist_sequence=[False], coords_are_valid=True,
+    )
+    monkeypatch.setattr(processor, "extract_features", lambda *args: np.zeros((2, 8)))
+    monkeypatch.setattr(fe_mod.logger, "exception", lambda *args, **kwargs: None)
+    with pytest.raises(ValueError, match="expected 1, got 2"):
+        _execute(policy, processor, tmp_path, "dummy_extractor-slide", "slide")
 
 
 def test_report_false_no_overview_generation_attempt(

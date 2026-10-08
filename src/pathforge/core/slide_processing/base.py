@@ -155,7 +155,12 @@ class SlideProcessorBase(ABC):
         Args:
             coords: Tile coordinates with shape ``(N, 5)``.
             tiling_spec: Backend-agnostic persisted tiling specification.
-            request: Selected extractor and backend execution options.
+            request: Selected extractor, explicit output level and execution options.
+                Backends must honor the requested level or reject unsupported
+                requests; model defaults must not override it.
+        Returns:
+            Float32 embeddings shaped ``(N, D)`` for patch selection or
+            ``(1, D)`` for slide selection.
         """
         pass
 

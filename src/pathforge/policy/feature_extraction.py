@@ -307,7 +307,11 @@ class FeatureExtractionPolicy(PolicyBase):
                         slide_artifact,
                         bag_id=tiling_id,
                         extractor_name=extractor_name,
-                        expected_rows=coords_row_count,
+                        expected_rows=(
+                            1
+                            if feature_request.selection.output_level == "slide"
+                            else coords_row_count
+                        ),
                     )
                     thumbnail_ready = (not thumbnail_enabled) or (
                         thumbnail_io.thumbnail_image_exists(slide_artifact)
@@ -365,7 +369,11 @@ class FeatureExtractionPolicy(PolicyBase):
 
         pending_writes.feature_matrix = self._ensure_feature_matrix(
             feature_matrix,
-            expected_rows=int(coords_array.shape[0]),
+            expected_rows=(
+                1
+                if feature_request.selection.output_level == "slide"
+                else int(coords_array.shape[0])
+            ),
         )
         return coords_array, tiling_spec
 

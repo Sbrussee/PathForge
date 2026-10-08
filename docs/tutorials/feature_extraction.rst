@@ -78,6 +78,26 @@ Save as ``features.yaml``:
 
    weights_dir: /data/pretrained_weights
 
+With the LazySlide backend, names without a final ``-slide`` extract one
+embedding per patch, shaped ``(N, D)``. Append ``-slide`` to request one
+embedding per slide, shaped ``(1, D)``::
+
+   feature_extraction: [conch_v1.5, titan-slide, prism-slide]
+
+PathForge resolves the suffix into an explicit requested output level before
+calling the backend; backend defaults do not determine that level.
+
+For slide requests, the backend resolves the required patch encoder from
+LazySlide's model metadata, applies the configured ``color_norm`` during patch
+extraction, and then runs the slide encoder. For example, ``titan`` returns
+patch embeddings while ``titan-slide`` returns the TITAN slide embedding.
+The full requested name is retained in storage, keeping patch and slide caches
+separate. Slide-only models require the suffix; models without a slide encoder
+(such as ``uni-slide``), and segmentation/prediction/generation models, are
+rejected during config validation.
+For separately registered slide encoders, append the suffix to their registry
+key, for example ``gigapath-slide-encoder-slide``.
+
 Step 3 — Run Feature Extraction
 ---------------------------------
 

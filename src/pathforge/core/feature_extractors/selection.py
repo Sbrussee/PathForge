@@ -5,15 +5,68 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+FeatureOutputLevel = Literal["patch", "slide"]
+
+
+def determine_feature_extractor_output_level(name: str) -> FeatureOutputLevel:
+    """Determine the requested embedding level using PathForge's naming policy.
+
+    Args:
+        name: Configured extractor name; a final ``-slide`` requests slide output.
+    Returns:
+        ``"patch"`` for ``(N, D)`` embeddings or ``"slide"`` for ``(1, D)``.
+        Backend model capabilities do not override the requested output level.
+    Example:
+        >>> determine_feature_extractor_output_level("titan-slide")
+        'slide'
+    """
+    # Keep output policy here so callers share one decision mechanism.
+    return "slide" if name.endswith("-slide") else "patch"
+
+
+def parse_feature_extractor_name(name: str) -> str:
+    """Remove PathForge's output-selection suffix to obtain the backend model key.
+
+    Args:
+        name: Configured extractor name, optionally ending in ``-slide``.
+    Returns:
+        The model key with only the final ``-slide`` suffix removed.
+    Example:
+        >>> parse_feature_extractor_name("titan-slide")
+        'titan'
+    """
+    return name.removesuffix("-slide")
+
+
 FeatureExtractorSource = Literal["processor-native", "pathforge-native"]
 
 
 @dataclass(frozen=True, slots=True)
 class FeatureExtractorSelection:
-    """A validated extractor choice for one slide-processing backend."""
+    """A validated extractor choice and expected patch/slide output level.
+
+    ``name`` retains the configured storage identity, including ``-slide``.
+    ``output_level`` describes ``(N, D)`` patch or ``(1, D)`` slide embeddings.
+
+    Example:
+        >>> selection = FeatureExtractorSelection("titan-slide", "processor-native", "slide")
+        >>> selection.output_level
+        'slide'
+    """
 
     name: str
     source: FeatureExtractorSource
+    output_level: FeatureOutputLevel = "patch"
+
+    @property
+    def model_name(self) -> str:
+        """Return the backend key without PathForge's output-selection suffix.
+
+        Example:
+            >>> FeatureExtractorSelection("titan-slide", "processor-native", "slide").model_name
+            'titan'
+        """
+        return parse_feature_extractor_name(self.name)
 
     @property
     def requires_pathforge_adapter(self) -> bool:
@@ -35,10 +88,19 @@ def resolve_feature_extractor_selection(
 
     populate_pathforge_feature_extractors()
     processor = build_slide_processor(backend_name)
+    output_level = determine_feature_extractor_output_level(name)
     native_names = processor.native_feature_extractor_names()
     if name in native_names:
-        return FeatureExtractorSelection(name=name, source="processor-native")
-    if processor.supports_pathforge_feature_extractors() and is_native_feature_extractor_available(name):
+        return FeatureExtractorSelection(
+            name=name,
+            source="processor-native",
+            output_level=output_level,
+        )
+    if (
+        output_level == "patch"
+        and processor.supports_pathforge_feature_extractors()
+        and is_native_feature_extractor_available(name)
+    ):
         return FeatureExtractorSelection(name=name, source="pathforge-native")
 
     available_names = set(native_names)
