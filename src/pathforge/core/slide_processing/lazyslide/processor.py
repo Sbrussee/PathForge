@@ -17,7 +17,12 @@ from spatialdata.models import ShapesModel
 from wsidata import open_wsi
 
 from pathforge.core.datasets.wsi_dataset import WSI
+from pathforge.core.experiments.combo_ids import build_feature_name, build_tiling_id
+from pathforge.core.experiments.combinations import ComboConfig
 from pathforge.core.feature_extractors import build_feature_extractor
+from pathforge.core.io.slide_artifacts import features as features_io
+from pathforge.core.io.slide_artifacts import tiles as tiles_io
+from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.slide_processing.base import (
     FeatureExtractionRequest,
     SlideProcessorBase,
@@ -855,6 +860,72 @@ class LazySlideProcessor(SlideProcessorBase):
         except Exception:
             return False
 
+    def _load_cached_patch_features(
+        self,
+        wsi: WSI,
+        coords: np.ndarray,
+        tiling_spec: dict,
+        patch_name: str,
+        color_norm: str | None,
+    ) -> np.ndarray | None:
+        """Read compatible patch embeddings for slide aggregation, if available.
+
+        Args:
+            wsi: Slide wrapper carrying the per-slide H5 artifact path.
+            coords: Current ``(N, 5)`` coordinates in their encoding order.
+            tiling_spec: Expected tile dimensions, resolution and metadata.
+            patch_name: Resolved LazySlide patch encoder registry name.
+            color_norm: Required normalization, or ``None`` for raw tiles.
+        Returns:
+            A finite float32 ``(N, D)`` matrix, or ``None`` on a cache miss.
+            Missing, incompatible or unreadable artifacts are cache misses.
+        Example:
+            >>> patches = processor._load_cached_patch_features(
+            ...     wsi, coords, spec, "titan", None
+            ... )
+        """
+        artifact_path = getattr(wsi, "artifact_path", None)
+        if artifact_path is None or not artifact_path.is_file():
+            return None
+
+        try:
+            combo_cfg = ComboConfig(
+                tile_px=tiling_spec["tile_px"],
+                tile_mpp=tiling_spec["tile_mpp"],
+                feature_extraction=patch_name,
+                color_norm=color_norm,
+            )
+            tiling_id = build_tiling_id(combo_cfg)
+            feature_name = build_feature_name(combo_cfg)
+            with FileHandleH5(artifact_path, mode="r") as artifact:
+                if not tiles_io.tiling_spec_matches(artifact, tiling_id, tiling_spec):
+                    return None
+                if not features_io.features_exist(
+                    artifact, tiling_id, feature_name, expected_rows=len(coords)
+                ):
+                    return None
+                # Equal row counts alone cannot establish spatial alignment.
+                if not np.array_equal(tiles_io.read_coords(artifact, tiling_id), coords):
+                    return None
+                features = features_io.read_features(artifact, tiling_id, feature_name)
+            if features.shape[1] == 0 or not np.isfinite(features).all():
+                return None
+        except (OSError, ValueError, KeyError, TypeError):
+            logger.warning(
+                "[LazySlide] Cannot reuse patch features from %s; encoding tiles.",
+                artifact_path,
+                exc_info=True,
+            )
+            return None
+
+        logger.info(
+            "[LazySlide] Reusing patch features from %s (%s/%s).",
+            artifact_path,
+            tiling_id,
+            feature_name,
+        )
+        return features
+
     def extract_features(
         self,
         wsi: WSI,
@@ -873,6 +944,8 @@ class LazySlideProcessor(SlideProcessorBase):
             A float32 matrix shaped ``(N, D)`` for patch requests or ``(1, D)``
             for explicit slide requests. Slide encoding consumes normalized
             patch embeddings and retains their original coordinate ordering.
+            Compatible patch features in the slide artifact are reused for
+            slide requests, avoiding tile encoding.
         Example:
             >>> features = processor.extract_features(wsi, coords, spec, request)
             >>> features.shape[0]  # request selects titan-slide
@@ -881,6 +954,7 @@ class LazySlideProcessor(SlideProcessorBase):
         model_name = request.selection.name
         params = dict(request.execution_params)
         slide_model = None
+        features_matrix = None
 
         coords = np.asarray(coords, dtype=np.int32)
         if coords.ndim != 2 or coords.shape[1] != 5:
@@ -920,6 +994,9 @@ class LazySlideProcessor(SlideProcessorBase):
                 request.selection.model_name,
                 output_level=request.selection.output_level,
             )
+            features_matrix = self._load_cached_patch_features(
+                wsi, coords, tiling_spec, patch_name, params.get("color_norm")
+            )
             slide_model = MODEL_REGISTRY[slide_name]()
             # A shared wrapper (e.g. TITAN) can encode both stages without reloading.
             model = (
@@ -936,25 +1013,26 @@ class LazySlideProcessor(SlideProcessorBase):
             {k: v for k, v in params.items() if k != "device"},
         )
 
-        # ---- Run feature extraction ----
-        zs.tl.feature_extraction(
-            wsi=wsi.obj, model=model, model_name=model_name, **params
-        )
-
-        key = f"{model_name}_tiles"
-        if key not in wsi.obj:
-            raise RuntimeError(
-                f"[LazySlide] Feature extraction finished but '{key}' not found on WSI."
+        # ---- Encode tiles only when compatible patch features are unavailable ----
+        if features_matrix is None:
+            zs.tl.feature_extraction(
+                wsi=wsi.obj, model=model, model_name=model_name, **params
             )
 
-        feats = wsi.obj[key]  # AnnData
-        X = feats.X
+            key = f"{model_name}_tiles"
+            if key not in wsi.obj:
+                raise RuntimeError(
+                    f"[LazySlide] Feature extraction finished but '{key}' not found on WSI."
+                )
 
-        # Convert sparse-like matrices to dense without importing scipy (predictable + minimal deps).
-        if hasattr(X, "toarray"):
-            X = X.toarray()
+            feats = wsi.obj[key]  # AnnData
+            X = feats.X
 
-        features_matrix = np.asarray(X, dtype=np.float32)
+            # Convert sparse-like matrices without introducing a scipy dependency.
+            if hasattr(X, "toarray"):
+                X = X.toarray()
+
+            features_matrix = np.asarray(X, dtype=np.float32)
         if features_matrix.ndim != 2:
             raise ValueError(
                 f"[LazySlide] Expected 2D feature matrix, got shape {features_matrix.shape}."

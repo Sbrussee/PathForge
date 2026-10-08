@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 import torch
 
+from pathforge.core.experiments.combo_ids import build_feature_name, build_tiling_id
+from pathforge.core.experiments.combinations import ComboConfig
 from pathforge.core.feature_extractors.selection import FeatureExtractorSelection
+from pathforge.core.io.slide_artifacts import features as features_io
+from pathforge.core.io.slide_artifacts import tiles as tiles_io
+from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.core.io.slide_artifacts.layout import DEFAULT_LAYOUT
 from pathforge.core.slide_processing.base import FeatureExtractionRequest
 
 
@@ -171,3 +177,145 @@ def test_slide_encoding_obeys_explicit_level_without_suffix(embedding_backend):
     output = processor.extract_features(wsi, coords, {"tile_px": 4}, request)
     assert output.shape == (1, 3)
     assert len(calls["slide"]) == 1
+
+
+@pytest.fixture
+def cached_patch_artifact(embedding_backend, tmp_path):
+    """Store distinct patch vectors so reuse is distinguishable from encoding."""
+    processor, wsi, coords, model, calls = embedding_backend
+    wsi.artifact_path = tmp_path / "slide.h5"
+    spec = {"tile_px": 4, "tile_mpp": 0.5, "stride_px": 4, "coord_space": "level0"}
+    combo = ComboConfig(tile_px=4, tile_mpp=0.5, feature_extraction="example")
+    patches = np.arange(9, dtype=np.float32).reshape(3, 3)
+    with FileHandleH5(wsi.artifact_path, mode="a") as artifact:
+        tiles_io.write_coords(artifact, build_tiling_id(combo), coords)
+        tiles_io.write_tiling_spec(artifact, build_tiling_id(combo), spec)
+        features_io.write_features(
+            artifact, build_tiling_id(combo), build_feature_name(combo), patches
+        )
+    return processor, wsi, coords, model, calls, spec, combo, patches
+
+
+@pytest.mark.parametrize("name", ["example-slide", "separate-slide", "example"])
+@pytest.mark.parametrize("color_norm", [None, "macenko"])
+@pytest.mark.parametrize("rows", [1, 3])
+def test_slide_aggregation_reuses_saved_patch_features(
+    cached_patch_artifact, monkeypatch, name, color_norm, rows
+):
+    processor, wsi, coords, model, calls, spec, combo, patches = cached_patch_artifact
+    # Separate slide encoders must look up their vision encoder's storage name.
+    combo.feature_extraction = "example_patch" if name == "separate-slide" else "example"
+    combo.color_norm = color_norm
+    coords, patches = coords[:rows], patches[:rows]
+    with FileHandleH5(wsi.artifact_path, mode="a") as artifact:
+        tiles_io.write_coords(artifact, build_tiling_id(combo), coords)
+        features_io.write_features(
+            artifact, build_tiling_id(combo), build_feature_name(combo), patches
+        )
+    request = FeatureExtractionRequest(
+        FeatureExtractorSelection(name, "processor-native", "slide"),
+        {"device": "cpu", "amp": False, "color_norm": color_norm},
+    )
+    from pathforge.core.slide_processing.lazyslide import processor as backend
+
+    def unexpected_extraction(**kwargs):
+        pytest.fail("Cached patch features must skip tile extraction")
+
+    monkeypatch.setattr(backend.zs.tl, "feature_extraction", unexpected_extraction)
+    output = processor.extract_features(wsi, coords, spec, request)
+    np.testing.assert_array_equal(output, patches.mean(axis=0, keepdims=True))
+    embeddings, positions, tile_size = calls["slide"][0]
+    np.testing.assert_array_equal(embeddings[0], patches)
+    np.testing.assert_array_equal(positions[0], coords[:, :2])
+    assert calls["dataset"] == []
+    assert calls["construct"] == 1
+    assert output.dtype == np.float32
+    assert tile_size == 32
+    # The read-only cache lookup preserves the saved patch matrix.
+    with FileHandleH5(wsi.artifact_path, mode="r") as artifact:
+        np.testing.assert_array_equal(
+            features_io.read_features(
+                artifact, build_tiling_id(combo), build_feature_name(combo)
+            ),
+            patches,
+        )
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    [
+        "missing",
+        "unreadable",
+        "normalization",
+        "resolution",
+        "stride",
+        "order",
+        "coordinates",
+        "rows",
+        "nonfinite",
+        "empty_dimensions",
+        "incomplete",
+        "missing_coords",
+        "missing_spec",
+        "missing_resolution",
+    ],
+)
+def test_incompatible_patch_cache_falls_back_to_encoding(cached_patch_artifact, mismatch):
+    processor, wsi, coords, model, calls, spec, combo, patches = cached_patch_artifact
+    color_norm = "macenko" if mismatch == "normalization" else None
+    if mismatch == "missing":
+        wsi.artifact_path = wsi.artifact_path.with_name("missing.h5")
+    elif mismatch == "unreadable":
+        wsi.artifact_path.write_bytes(b"not an H5 artifact")
+    elif mismatch == "resolution":
+        spec = {**spec, "tile_mpp": 1.0}
+    elif mismatch == "stride":
+        spec = {**spec, "stride_px": 8}
+    elif mismatch == "order":
+        coords = coords[::-1].copy()
+    elif mismatch == "coordinates":
+        coords = coords.copy()
+        coords[0, 0] += 1
+    elif mismatch == "missing_resolution":
+        spec = {key: value for key, value in spec.items() if key != "tile_mpp"}
+    else:
+        with FileHandleH5(wsi.artifact_path, mode="a") as artifact:
+            tiling_id = build_tiling_id(combo)
+            feature_name = build_feature_name(combo)
+            if mismatch == "rows":
+                features_io.write_features(artifact, tiling_id, feature_name, patches[:1])
+            elif mismatch == "nonfinite":
+                patches[0, 0] = np.nan
+                features_io.write_features(artifact, tiling_id, feature_name, patches)
+            elif mismatch == "empty_dimensions":
+                features_io.write_features(artifact, tiling_id, feature_name, patches[:, :0])
+            elif mismatch == "incomplete":
+                dataset = artifact.h5[
+                    DEFAULT_LAYOUT.features_dataset(tiling_id, feature_name)
+                ]
+                dataset.attrs["status"] = "writing"
+            elif mismatch == "missing_coords":
+                del artifact.h5[DEFAULT_LAYOUT.coords_dataset(tiling_id)]
+            elif mismatch == "missing_spec":
+                del artifact.h5[DEFAULT_LAYOUT.tiling_spec_dataset(tiling_id)]
+    request = FeatureExtractionRequest(
+        FeatureExtractorSelection("example-slide", "processor-native", "slide"),
+        {"device": "cpu", "amp": False, "color_norm": color_norm},
+    )
+    output = processor.extract_features(wsi, coords, spec, request)
+    assert calls["dataset"] == [color_norm]
+    assert len(calls["slide"]) == 1
+    assert output.shape == (1, 3)
+
+
+def test_patch_requests_continue_to_encode_tiles(cached_patch_artifact):
+    processor, wsi, coords, model, calls, spec, combo, patches = cached_patch_artifact
+    request = FeatureExtractionRequest(
+        FeatureExtractorSelection("example", "processor-native", "patch"),
+        {"device": "cpu", "amp": False},
+    )
+    output = processor.extract_features(wsi, coords, spec, request)
+    assert calls["dataset"] == [None]
+    assert calls["slide"] == []
+    assert output.shape == patches.shape
+    assert not np.array_equal(output, patches)

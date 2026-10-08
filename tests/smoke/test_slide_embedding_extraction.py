@@ -116,6 +116,8 @@ def test_slide_embedding_policy_and_cache_on_sample_wsi(monkeypatch, tmp_path):
                 rtol=1e-6, atol=1e-7,
             )
         batches = ImageEncoder.batches
+        # Only the patch run encodes images; the slide run reuses its H5 matrix.
+        assert batches == (matrices[0].shape[0] + 15) // 16
         assert SlideEncoder.calls == 1
         with capture_smoke_metrics(tmp_path / "metrics", step_name="slide_embedding_cache_reuse"):
             policy.execute()
