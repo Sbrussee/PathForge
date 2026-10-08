@@ -116,7 +116,7 @@ def plan_representations(
                         patient_id=group.patient_id,
                         case_id=group.case_id,
                         metadata=dict(group.metadata),
-                        annotations_df=group.annotations_df,
+                        annotations_df=getattr(group, "annotations_df", None),
                     )
                     request = SlideRepresentationRequest(key, dataset, sample)
                     present = False

@@ -18,8 +18,9 @@ def test_slide_embedding_policy_and_cache_on_sample_wsi(monkeypatch, tmp_path):
     from pathforge.core.experiments.base import Experiment
     from pathforge.core.experiments.combinations import ComboConfig
     from pathforge.core.experiments.combo_ids import build_feature_name, build_tiling_id
+    from pathforge.core.io.slide_artifacts import features as features_io
+    from pathforge.core.io.slide_artifacts import tiles as tiles_io
     from pathforge.core.io.slide_artifacts.base import FileHandleH5
-    from pathforge.core.io.slide_artifacts import features as features_io, tiles as tiles_io
     from pathforge.core.slide_processing.lazyslide import catalog
     from pathforge.policy.feature_extraction import FeatureExtractionPolicy
     from pathforge.utils.test_samples import download_gtex_slides
@@ -109,7 +110,11 @@ def test_slide_embedding_policy_and_cache_on_sample_wsi(monkeypatch, tmp_path):
                 matrices.append(matrix)
             assert matrices[0].shape[0] == tiles_io.coords_num_rows(artifact, tiling_id)
             assert matrices[1].shape == (1, 3)
-            np.testing.assert_allclose(matrices[1], matrices[0].mean(axis=0, keepdims=True))
+            # Torch and NumPy use different reduction orders for float32 means.
+            np.testing.assert_allclose(
+                matrices[1], matrices[0].mean(axis=0, keepdims=True),
+                rtol=1e-6, atol=1e-7,
+            )
         batches = ImageEncoder.batches
         assert SlideEncoder.calls == 1
         with capture_smoke_metrics(tmp_path / "metrics", step_name="slide_embedding_cache_reuse"):

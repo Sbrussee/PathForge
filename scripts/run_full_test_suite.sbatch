@@ -94,10 +94,11 @@ run_pytest() {
     2>&1 | tee "${LOG_DIR}/${name}.log"; then
     echo "[$(date --iso-8601=seconds)] ${name} tests passed"
     return 0
+  else
+    local status=$?
+    FAILED_SUITES+=("${name} (exit ${status})")
   fi
 
-  local status=$?
-  FAILED_SUITES+=("${name} (exit ${status})")
   echo "[$(date --iso-8601=seconds)] ${name} tests failed; continuing with remaining suites" >&2
   return 0
 }

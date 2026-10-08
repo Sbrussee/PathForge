@@ -197,3 +197,23 @@ def test_plan_carries_physical_slide_annotation_snapshot(tmp_path):
         assert rows[request.sample.sample_id]["fallback_mpp"] == (
             0.25 if request.sample.sample_id == "S1" else 0.5
         )
+
+
+def test_plan_accepts_legacy_sample_without_annotation_snapshot(tmp_path):
+    legacy = SimpleNamespace(
+        sample_id="S1",
+        slide_ids=["S1"],
+        artifact_paths=[tmp_path / "S1.h5"],
+        patient_id="P1",
+        case_id=None,
+        category="tumor",
+        metadata={"dataset": "dataset"},
+    )
+    plan = workflow.plan_representations(
+        datasets_by_use={"reference": [Dataset(tmp_path, [legacy])]},
+        representation_id="rep",
+    )
+    request = next(iter(plan.missing.values()))
+    assert request.sample.annotations_df is None
+    assert request.sample.slide_ids == ["S1"]
+    assert request.sample.metadata == {"dataset": "dataset"}

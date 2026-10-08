@@ -1,9 +1,26 @@
 # Plan: shared annotation-based WSI construction
 
-Status: implemented. Constructor, RGB, SISH, visualization, and annotation
-snapshot regression bodies passed direct runtime checks. Pytest and Ruff could
-not run on this host: neither is installed, and package-server DNS resolution
-failed, including after an approved network retry.
+Status: implemented and checked with pytest in the repository's `.venv`.
+The focused WSI/processor suite passed 72 tests. Full-suite job 25733172
+found four integration failures caused by assuming legacy samples expose
+`annotations_df`; that compatibility issue is now fixed and covered by a
+regression test. The planner and slide-retrieval integration suite passed
+39 tests after the fix. Six other full-suite failures were reproduced on the
+parent commit. The precomputed SISH smoke fixture now uses canonical `BagSample`
+members with category and patient metadata, and its smoke test passes. The
+embedding smoke comparison now allows float32 reduction rounding; it passes
+against the saved failed-run artifact (maximum difference 3.58e-7). Its origin
+relative to the parent commit remains unclassified because that baseline run
+was blocked by network access. A complete smoke rerun is still required.
+The smoke batch script accepts `PATHFORGE_TEST_SCOPE=all-smoke` and uses the
+repository's `.venv`. The full-suite script now records actual failure exit
+codes. Shell syntax and failure-status handling were checked. The new Ruff
+import-order finding was fixed; existing findings remain elsewhere.
+
+The branch was fast-forwarded to remote commit `8033920` (SISH quality extraction)
+after the user fetched it. Local fixes were preserved, including import formatting
+in the overlapping SISH regression test. The combined RGB/SISH, planner, retrieval
+integration, and precomputed SISH smoke checks passed all 77 tests after the update.
 
 ## Problem and scope
 

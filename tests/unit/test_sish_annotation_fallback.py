@@ -9,7 +9,10 @@ from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.slide_processing.lazyslide import LazySlideProcessor
 from pathforge.slide_retrieval.representation_strategies import histogram_rgb
 from pathforge.slide_retrieval.representation_strategies.strategies import sish_rgb
-from pathforge.slide_retrieval.search_strategies.strategies.sish import sish_precompute, sish_vqvae_descriptors
+from pathforge.slide_retrieval.search_strategies.strategies.sish import (
+    sish_precompute,
+    sish_vqvae_descriptors,
+)
 
 
 def test_sish_annotation_fallback_reaches_all_three_source_read_paths(tmp_path, monkeypatch):

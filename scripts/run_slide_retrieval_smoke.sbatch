@@ -5,7 +5,8 @@
 #
 # Every cache, temporary workspace, report, and Slurm log is stored below this
 # repository's dynamically resolved project root. Do not override them with $HOME.
-# Set ``PATHFORGE_TEST_SCOPE=smoke`` to run only the three GPU smoke tests.
+# Set PATHFORGE_TEST_SCOPE=smoke for the four retrieval smoke test files,
+# or PATHFORGE_TEST_SCOPE=all-smoke for the complete repository smoke suite.
 #SBATCH --job-name=pathforge-slide-retrieval-smoke
 #SBATCH --output=test_logs/slurm-pathforge-slide-retrieval-smoke-%j.out
 #SBATCH --error=test_logs/slurm-pathforge-slide-retrieval-smoke-%j.err
@@ -71,8 +72,9 @@ RETRIEVAL_TESTS=(
 case "${TEST_SCOPE}" in
   retrieval) TESTS=("${RETRIEVAL_TESTS[@]}") ;;
   smoke) TESTS=("${SMOKE_TESTS[@]}") ;;
+  all-smoke) TESTS=(-m smoke tests/smoke) ;;
   *)
-    echo "PATHFORGE_TEST_SCOPE must be 'retrieval' or 'smoke', got: ${TEST_SCOPE}" >&2
+    echo "PATHFORGE_TEST_SCOPE must be 'retrieval', 'smoke', or 'all-smoke', got: ${TEST_SCOPE}" >&2
     exit 2
     ;;
 esac
@@ -83,7 +85,7 @@ echo "Smoke cache: ${PATHFORGE_SMOKE_CACHE}"
 echo "Report directory: ${PATHFORGE_SMOKE_REPORT_DIR}"
 echo "Run directory: ${RUN_DIR}"
 
-uv run python -m pytest \
+"${PROJECT_ROOT}/.venv/bin/python" -m pytest \
   "${TESTS[@]}" \
   -vv --tb=short \
   --basetemp "${RUN_DIR}/pytest-tmp" \

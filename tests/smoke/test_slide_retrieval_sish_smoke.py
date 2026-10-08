@@ -8,15 +8,13 @@ the optional VQ-VAE and codebook assets.
 
 from __future__ import annotations
 
-from tests.retrieval_cache_fakes import stub_representation_cache
-
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from pathforge.core.datasets.bag_dataset import SlideRetrievalBagDataset
+from pathforge.core.datasets.bag_dataset import BagSample, SlideRetrievalBagDataset
 from pathforge.core.experiments.combinations import ComboConfig
 from pathforge.core.experiments.combo_ids import build_tiling_id
 from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
@@ -24,13 +22,7 @@ from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
 from pathforge.slide_retrieval.types import RetrievalItemMetadata
-
-
-class _Sample:
-    """Minimal slide-retrieval sample used when representations are pre-cached."""
-
-    def __init__(self, sample_id: str) -> None:
-        self.sample_id = sample_id
+from tests.retrieval_cache_fakes import stub_representation_cache
 
 
 class _PrecomputedSISHBagDataset(SlideRetrievalBagDataset):
@@ -40,13 +32,22 @@ class _PrecomputedSISHBagDataset(SlideRetrievalBagDataset):
         self._name = name
         self.tiling_id = tiling_id
         self.aggregation_level = "slide"
-        self._samples = [_Sample(sample_id) for sample_id in sample_ids]
+        self._samples = [
+            BagSample(
+                sample_id=sample_id,
+                slide_ids=[sample_id],
+                artifact_paths=[Path(f"{sample_id}.h5")],
+                category="tumor",
+                patient_id=sample_id,
+            )
+            for sample_id in sample_ids
+        ]
 
     @property
     def num_bags(self) -> int:
         return len(self._samples)
 
-    def get_sample(self, index: int) -> _Sample:
+    def get_sample(self, index: int) -> BagSample:
         return self._samples[index]
 
     def get_feature_level(self) -> str:
