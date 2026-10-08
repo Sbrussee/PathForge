@@ -652,7 +652,7 @@ def test_incompatible_feature_level_returns_skipped_status(
     ("reference_level", "query_level"),
     [("patch", "slide"), ("slide", "patch")],
 )
-def test_mixed_input_families_skip_before_strategy_materialization(
+def test_mixed_input_families_are_rejected_before_strategy_materialization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     reference_level: str,
@@ -665,7 +665,7 @@ def test_mixed_input_families_skip_before_strategy_materialization(
 
     monkeypatch.setattr(mod, "build_representation_strategy", fail_if_called)
 
-    with pytest.raises(ValueError, match="Inconsistent original-feature families"):
+    with pytest.raises(ValueError, match="mixed patch and slide feature inputs"):
         _make_task(tmp_path).execute(
             combo_cfg=_make_combo(),
             datasets_by_use={
