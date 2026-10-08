@@ -12,6 +12,8 @@ These tests exercise more complex scenarios than the basic benchmark smoke test:
 
 from __future__ import annotations
 
+from tests.retrieval_cache_fakes import stub_representation_cache
+
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -37,7 +39,6 @@ from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
 from pathforge.slide_retrieval.representation_strategies.types import (
     RetrievalRepresentation,
 )
-from pathforge.slide_retrieval.search_strategies.types import SearchHit, SearchResult
 from ._smoke_dataset import attach_smoke_outputs, capture_smoke_metrics
 from .conftest import RetrievalDatasets
 
@@ -196,9 +197,7 @@ def test_smoke_multi_combo_grid_produces_separate_run_dirs(
             )
         return reps, None
 
-    monkeypatch.setattr(
-        SlideRetrievalTask, "_collect_existing_representations", _real_feature_cache
-    )
+    stub_representation_cache(monkeypatch, _real_feature_cache)
 
     datasets = {
         "reference": [retrieval_wsi_datasets.reference],
@@ -276,9 +275,7 @@ def test_smoke_query_reference_self_retrieval(
             )
         return reps, None
 
-    monkeypatch.setattr(
-        SlideRetrievalTask, "_collect_existing_representations", _distinct_real_cache
-    )
+    stub_representation_cache(monkeypatch, _distinct_real_cache)
 
     pool_dataset = retrieval_wsi_datasets.reference  # reuse 10-slide dataset as pool
     pool_ids = {
@@ -357,9 +354,7 @@ def test_smoke_representation_cache_reuse_across_executions(
     compute_log: list[str] = []
     counting_strategy = _CountingRepresentationStrategy(compute_log)
 
-    monkeypatch.setattr(
-        SlideRetrievalTask, "_collect_existing_representations", _full_cache
-    )
+    stub_representation_cache(monkeypatch, _full_cache)
     monkeypatch.setattr(
         mod, "build_representation_strategy", lambda _n, **kw: counting_strategy
     )
@@ -399,9 +394,7 @@ def test_smoke_failed_representation_materialisation_raises(
         missing = Subset(bag_dataset, list(range(bag_dataset.num_bags)))
         return [], missing
 
-    monkeypatch.setattr(
-        SlideRetrievalTask, "_collect_existing_representations", _crash_cache
-    )
+    stub_representation_cache(monkeypatch, _crash_cache)
     monkeypatch.setattr(mod, "atomic_slide_artifact_write", MagicMock())
     monkeypatch.setattr(mod, "save_slide_retrieval_representation", MagicMock())
     monkeypatch.setattr(
@@ -432,9 +425,7 @@ def test_smoke_unsupported_dataset_use_raises(
     retrieval_wsi_datasets: RetrievalDatasets,
 ) -> None:
     _register_retrieval_strategies()
-    monkeypatch.setattr(
-        SlideRetrievalTask, "_collect_existing_representations", _full_cache
-    )
+    stub_representation_cache(monkeypatch, _full_cache)
 
     task = _make_task(tmp_path)
 
@@ -464,9 +455,7 @@ def test_smoke_no_reference_representations_raises(
     def _empty_cache(self, *, bag_dataset, **kwargs):
         return [], None
 
-    monkeypatch.setattr(
-        SlideRetrievalTask, "_collect_existing_representations", _empty_cache
-    )
+    stub_representation_cache(monkeypatch, _empty_cache)
     monkeypatch.setattr(mod, "atomic_slide_artifact_write", MagicMock())
     monkeypatch.setattr(mod, "save_slide_retrieval_representation", MagicMock())
     monkeypatch.setattr(
@@ -528,9 +517,7 @@ def test_smoke_manifest_and_csv_are_well_formed(
             )
         return reps, None
 
-    monkeypatch.setattr(
-        SlideRetrievalTask, "_collect_existing_representations", _real_feature_cache
-    )
+    stub_representation_cache(monkeypatch, _real_feature_cache)
 
     task = _make_task(tmp_path)
 

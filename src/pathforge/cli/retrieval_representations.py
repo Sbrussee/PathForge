@@ -14,6 +14,11 @@ from ..core.experiments.combo_ids import build_feature_name, build_tiling_id
 from ..core.features.utils import find_slides_with_missing_features
 from ..core.tasks.slide_retrieval import SlideRetrievalTask
 from ..policy.benchmarking import BenchmarkingPolicy
+from ..slide_retrieval.input_inspection import inspect_retrieval_inputs
+from ..slide_retrieval.representation_workflow import (
+    create_representations,
+    plan_representations,
+)
 from ..slide_retrieval.representation_strategies.registry import (
     build_representation_strategy,
 )
@@ -24,13 +29,15 @@ from ..utils.constants import DATASET_COL, SLIDE_ID_COL
 from .common import LOG_LEVEL_CHOICES, configure_logging
 
 logger = logging.getLogger(__name__)
+
+
 def _materialize_representations_for_combo(
     *,
     task: SlideRetrievalTask,
     combo_cfg: ComboConfig,
     datasets_by_use: dict[str, list[Any]],
 ) -> dict[str, Any]:
-    """Run only stage 1+2 of SlideRetrievalTask for one combo."""
+    """Inspect one combo and create missing slide caches without loading hits."""
     tiling_id = build_tiling_id(combo_cfg)
     aggregation_level = str(task.cfg.experiment.aggregation_level)
     task._validate_dataset_context(
@@ -42,58 +49,73 @@ def _materialize_representations_for_combo(
     exclusion_level = task._resolve_exclusion_level()
     representation_name = str(combo_cfg.get("retrieval_representation"))
     search_strategy_name = str(combo_cfg.get("search_strategy"))
-    combination_is_valid, reason = task._validate_combination_compatibility(
-        datasets_by_use=datasets_by_use,
+    # Inspect cache presence first; existing embeddings are never loaded here.
+    representation_cache_params = task._representation_cache_params_from_config(
         representation_name=representation_name,
-        search_strategy_name=search_strategy_name,
-        aggregation_level=aggregation_level,
-        exclusion_level=exclusion_level,
-    )
-    if not combination_is_valid:
-        logger.warning("[SlideRetrieval] Skipping combo: %s", reason)
-        return {"status": "skipped_incompatible_combo", "reason": reason}
-
-    representation_strategy = build_representation_strategy(
-        representation_name,
-        params=combo_cfg.get_hyperparams("retrieval_representation"),
-        bag_id=tiling_id,
-        config=getattr(task.experiment, "cfg", None),
-    )
-    prepare_for_combo = getattr(representation_strategy, "prepare_for_combo", None)
-    if callable(prepare_for_combo):
-        prepare_for_combo(
-            combo_cfg=combo_cfg,
-            feature_name=feature_name,
-            tiling_id=tiling_id,
-        )
-    representation_cache_params = task._representation_cache_params(
-        representation_strategy
+        combo_cfg=combo_cfg,
     )
     representation_id = build_retrieval_representation_id(
         feature_extraction=feature_name,
         retrieval_representation=representation_name,
         params=representation_cache_params,
     )
-
-    representations_by_use = task._materialize_and_aggregate_representations(
+    plan = plan_representations(
         datasets_by_use=datasets_by_use,
-        representation_strategy=representation_strategy,
         representation_id=representation_id,
-        combo_cfg=combo_cfg,
-        aggregation_level=aggregation_level,
-        exclusion_level=exclusion_level,
-        representation_cache_params=representation_cache_params,
-    )
-    total_created_count = sum(
-        len(representations) for representations in representations_by_use.values()
     )
 
+    # Create only cache misses, without assembling groups or running search.
+    created = {}
+    if plan.missing:
+        inspection = inspect_retrieval_inputs(
+            task._physical_artifact_paths(datasets_by_use),
+            tiling_id=tiling_id,
+            extractor_name=feature_name,
+        )
+        combination_is_valid, reason = task._validate_combination_compatibility(
+            feature_level=inspection.feature_level,
+            representation_name=representation_name,
+            search_strategy_name=search_strategy_name,
+            aggregation_level=aggregation_level,
+            exclusion_level=exclusion_level,
+        )
+        if not combination_is_valid:
+            logger.warning("[SlideRetrieval] Skipping combo: %s", reason)
+            return {"status": "skipped_incompatible_combo", "reason": reason}
+
+        representation_strategy = build_representation_strategy(
+            representation_name,
+            params=combo_cfg.get_hyperparams("retrieval_representation"),
+            bag_id=tiling_id,
+            config=getattr(task.experiment, "cfg", None),
+        )
+        prepare_for_combo = getattr(representation_strategy, "prepare_for_combo", None)
+        if callable(prepare_for_combo):
+            prepare_for_combo(
+                combo_cfg=combo_cfg,
+                feature_name=feature_name,
+                tiling_id=tiling_id,
+            )
+        created = create_representations(
+            plan.missing,
+            representation_strategy=representation_strategy,
+            combo_cfg=combo_cfg,
+            representation_cache_params=representation_cache_params,
+            feature_level=inspection.feature_level,
+        )
+
+    logger.info(
+        "[SlideRetrieval] Representation precompute | cached=%d, planned_new=%d, created=%d",
+        len(plan.existing),
+        len(plan.missing),
+        len(created),
+    )
     return {
         "status": "representations_ready",
         "representation_id": representation_id,
-        "num_cached": 0,
-        "num_planned_new": total_created_count,
-        "num_created": total_created_count,
+        "num_cached": len(plan.existing),
+        "num_planned_new": len(plan.missing),
+        "num_created": len(created),
         "num_skipped_missing_descriptors": 0,
     }
 
@@ -114,6 +136,7 @@ def _filter_annotations_with_existing_features(
         if allowed_uses is not None and ds_cfg.used_for not in allowed_uses:
             continue
 
+        # Check the source features required by this combo, not representation caches.
         missing_slide_ids = find_slides_with_missing_features(
             ds_cfg=ds_cfg,
             annotations_df=annotations_df,
@@ -134,6 +157,7 @@ def _filter_annotations_with_existing_features(
                 ds_cfg.name,
                 dropped_rows,
             )
+            # Keep slides with existing features; missing features are never extracted here.
             filtered_annotations = filtered_annotations.loc[~drop_mask].copy()
 
     return filtered_annotations
@@ -158,6 +182,7 @@ def _run_representation_precompute(
         logger.warning("[Benchmark] No benchmark combinations found.")
         return {"status": "no_combos", "num_runs": 0}
 
+    # Selectors sharing the same feature bag reuse one filtered dataset setup.
     combinations_by_bag_id = policy._group_combos_by_bag_source(combinations)
     annotations_df = policy.experiment.load_annotations()
     num_runs = 0
@@ -171,6 +196,7 @@ def _run_representation_precompute(
         bag_source_combo = combinations_for_bag_id[0]
         logger.info("[Benchmark] Representation-only bag group | bag_id=%s", bag_id)
 
+        # Only slides whose required source features exist enter representation building.
         bag_annotations_df = _filter_annotations_with_existing_features(
             policy=policy,
             combo_cfg=bag_source_combo,
@@ -183,6 +209,7 @@ def _run_representation_precompute(
         )
         datasets_by_use = policy.group_bag_datasets_by_use(bag_datasets)
         policy._validate_dataset_uses(datasets_by_use=datasets_by_use)
+        # Create missing slide caches for each selector using this feature bag.
         for full_combo_cfg in combinations_for_bag_id:
             _materialize_representations_for_combo(
                 task=task,

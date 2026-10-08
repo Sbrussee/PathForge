@@ -8,6 +8,8 @@ the optional VQ-VAE and codebook assets.
 
 from __future__ import annotations
 
+from tests.retrieval_cache_fakes import stub_representation_cache
+
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -147,9 +149,7 @@ def test_smoke_slide_retrieval_sish_uses_precomputed_indices(
         del self, representation_id, aggregation_level, exclusion_level
         return representations[bag_dataset._name], None
 
-    monkeypatch.setattr(
-        SlideRetrievalTask, "_collect_existing_representations", _precomputed_cache
-    )
+    stub_representation_cache(monkeypatch, _precomputed_cache)
 
     sish_dir = tmp_path / "sish"
     cfg = SimpleNamespace(

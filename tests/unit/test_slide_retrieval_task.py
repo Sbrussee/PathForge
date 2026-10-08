@@ -336,7 +336,10 @@ def _execute_with_inspected_feature_level(
     task = _make_task(tmp_path)
     task._validate_dataset_context = lambda **_: None  # type: ignore[method-assign]
     task._representation_cache_params_from_config = lambda **_: {}  # type: ignore[method-assign]
-    task._collect_patch_cache = lambda **_: ({}, False)  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        slide_retrieval_task_module, "plan_representations",
+        lambda **_: SimpleNamespace(existing={}, missing={"slide-a": object()}),
+    )
     task._physical_artifact_paths = lambda _: []  # type: ignore[method-assign]
     monkeypatch.setattr(
         slide_retrieval_task_module,
@@ -359,7 +362,10 @@ def test_slide_input_is_skipped_without_constructing_a_patch_strategy(
     task = _make_task(tmp_path)
     task._validate_dataset_context = lambda **_: None  # type: ignore[method-assign]
     task._representation_cache_params_from_config = lambda **_: {}  # type: ignore[method-assign]
-    task._collect_patch_cache = lambda **_: ({}, False)  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        slide_retrieval_task_module, "plan_representations",
+        lambda **_: SimpleNamespace(existing={}, missing={"slide-a": object()}),
+    )
     task._physical_artifact_paths = lambda _: []  # type: ignore[method-assign]
     monkeypatch.setattr(
         slide_retrieval_task_module,
@@ -414,32 +420,6 @@ def test_registered_family_mismatch_skips_without_building_a_strategy(
 
     assert result["status"] == "skipped_incompatible_combo"
     assert result["reason"]
-
-
-def test_patch_cache_probe_does_not_load_original_feature_bags(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    task = _make_task(tmp_path)
-    dataset = _FakeSlideRetrievalBagDataset(
-        tiling_id="256px_0.5mpp", aggregation_level="slide", num_bags=1
-    )
-    monkeypatch.setattr(
-        slide_retrieval_task_module, "SlideRetrievalBagDataset", _FakeSlideRetrievalBagDataset
-    )
-    task._collect_existing_representations = lambda **_: (  # type: ignore[method-assign]
-        [RetrievalRepresentation(sample_id="cached", data=[1.0])],
-        None,
-    )
-
-    cached, complete = task._collect_patch_cache(
-        datasets_by_use={"reference": [dataset]},
-        representation_id="rep",
-        aggregation_level="slide",
-        exclusion_level="none",
-    )
-
-    assert complete
-    assert [item.sample_id for item in cached["reference"]] == ["cached"]
 
 
 def test_execute_requires_retrieval_dataset_type(
@@ -525,16 +505,14 @@ def test_execute_raises_when_representation_creation_failed(
         "pathforge.core.tasks.slide_retrieval.SlideRetrievalBagDataset",
         _FakeSlideRetrievalBagDataset,
     )
-    task._collect_existing_representations = lambda **_: (  # type: ignore[method-assign]
-        [RetrievalRepresentation(sample_id="ref", data=[1.0])],
-        [],
+    task._physical_artifact_paths = lambda _: []  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        slide_retrieval_task_module, "plan_representations",
+        lambda **_: SimpleNamespace(existing={}, missing={"slide-a": object()}),
     )
-    task.compute_retrieval_representations = lambda **_: (  # type: ignore[method-assign]
-        [RetrievalRepresentation(sample_id="qry", data=[2.0])],
-        {"slide-a": "traceback text"},
-    )
-    task._materialize_and_aggregate_representations = lambda **_: (  # type: ignore[method-assign]
-        (_ for _ in ()).throw(RuntimeError("slide-a: traceback text"))
+    monkeypatch.setattr(
+        slide_retrieval_task_module, "create_representations",
+        lambda *_, **__: (_ for _ in ()).throw(RuntimeError("slide-a: traceback text")),
     )
 
     with pytest.raises(RuntimeError, match="slide-a"):

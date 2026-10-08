@@ -4,8 +4,60 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import numpy as np
+import pytest
 
 import pathforge.cli.retrieval_representations as retrieval_repr_cli
+from pathforge.slide_retrieval import representation_workflow as representation_workflow
+from pathforge.slide_retrieval.representation_strategies.types import RetrievalRepresentation
+from tests.unit.test_representation_workflow import Dataset, sample, save_cached
+
+
+def test_precompute_creates_only_missing_slides_and_reuses_complete_cache(tmp_path, monkeypatch):
+    save_cached(tmp_path, "cached", [[1.0, 2.0]])
+    dataset = Dataset(tmp_path, [sample(tmp_path, "patient", ["missing", "cached"])])
+    task = SimpleNamespace(
+        cfg=SimpleNamespace(experiment=SimpleNamespace(aggregation_level="patient")),
+        experiment=SimpleNamespace(cfg=None),
+        _validate_dataset_context=lambda **_: None,
+        _resolve_exclusion_level=lambda: "patient",
+        _representation_cache_params_from_config=lambda **_: {},
+        _validate_combination_compatibility=lambda **_: (True, ""),
+        _physical_artifact_paths=lambda _: [],
+    )
+    combo = SimpleNamespace(get=lambda key: key, get_hyperparams=lambda _: {})
+    calls = []
+
+    class Strategy:
+        def load_sample(self, **_):
+            return {}
+
+        def run(self, *, sample, **_):
+            calls.append(sample.sample_id)
+            return RetrievalRepresentation(sample_id=sample.sample_id, data=np.array([[3.0, 4.0]]))
+
+    monkeypatch.setattr(retrieval_repr_cli, "build_tiling_id", lambda _: "tiles")
+    monkeypatch.setattr(retrieval_repr_cli, "build_feature_name", lambda _: "features")
+    monkeypatch.setattr(retrieval_repr_cli, "build_retrieval_representation_id", lambda **_: "rep")
+    monkeypatch.setattr(retrieval_repr_cli, "inspect_retrieval_inputs", lambda *_, **__: SimpleNamespace(feature_level="patch"))
+    monkeypatch.setattr(retrieval_repr_cli, "build_representation_strategy", lambda *_, **__: Strategy())
+    monkeypatch.setattr(representation_workflow, "load_slide_retrieval_representation", lambda **_: pytest.fail("precompute loaded cached arrays"))
+    monkeypatch.setattr(representation_workflow, "aggregate_slide_representations", lambda **_: pytest.fail("precompute aggregated representations"))
+
+    output = retrieval_repr_cli._materialize_representations_for_combo(
+        task=task, combo_cfg=combo, datasets_by_use={"reference": [dataset], "query": [dataset]},
+    )
+    assert calls == ["missing"]
+    assert output["num_cached"] == output["num_planned_new"] == output["num_created"] == 1
+
+    monkeypatch.setattr(retrieval_repr_cli, "inspect_retrieval_inputs", lambda *_, **__: pytest.fail("complete cache inspected source artifacts"))
+    monkeypatch.setattr(retrieval_repr_cli, "build_representation_strategy", lambda *_, **__: pytest.fail("complete cache constructed a strategy"))
+    output = retrieval_repr_cli._materialize_representations_for_combo(
+        task=task, combo_cfg=combo, datasets_by_use={"reference": [dataset]},
+    )
+    assert output["num_cached"] == 2
+    assert output["num_planned_new"] == output["num_created"] == 0
+    assert calls == ["missing"]
 
 
 def test_main_executes_representation_precompute_runner(

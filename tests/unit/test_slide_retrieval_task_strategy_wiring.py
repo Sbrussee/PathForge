@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.retrieval_cache_fakes import stub_representation_cache, stub_representation_creation
+
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -116,18 +118,18 @@ def test_execute_passes_only_generic_context_to_strategy_builders(
         "SlideRetrievalBagDataset",
         _FakeBagDataset,
     )
-    monkeypatch.setattr(
-        SlideRetrievalTask,
-        "_collect_existing_representations",
-        lambda self, **kwargs: (
-            [
-                RetrievalRepresentation(
-                    sample_id=kwargs["bag_dataset"].sample_id,
-                    data=[[3.0, 4.0]],
-                )
-            ],
-            None,
+    stub_representation_cache(monkeypatch, lambda self, **kwargs: ([], [0]))
+    stub_representation_creation(
+        monkeypatch,
+        lambda self, *, sample, **_: RetrievalRepresentation(
+            sample_id=sample.sample_id, data=[[3.0, 4.0]], feature_level="patch"
         ),
+    )
+    task._physical_artifact_paths = lambda _: []
+    monkeypatch.setattr(
+        slide_retrieval_task_module,
+        "inspect_retrieval_inputs",
+        lambda *_, **__: SimpleNamespace(feature_level="patch"),
     )
 
     combo_cfg = ComboConfig(

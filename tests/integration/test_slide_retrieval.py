@@ -27,15 +27,20 @@ Coverage matrix:
 
 from __future__ import annotations
 
+from tests.retrieval_cache_fakes import stub_representation_cache, stub_representation_creation
+
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+import numpy as np
 
 from pathforge.core.datasets.bag_dataset import SlideRetrievalBagDataset, SlideRetrievalDatasetItem
 from pathforge.core.experiments.combinations import ComboConfig
 from pathforge.core.io.h5.base import FileHandleH5
+from pathforge.core.io.slide_artifacts.features import write_features
+from pathforge.core.io.slide_artifacts.tiles import write_coords
 from pathforge.core.tasks.slide_retrieval import SlideRetrievalTask
 from pathforge.slide_retrieval.representation_strategies.types import RetrievalRepresentation
 from pathforge.slide_retrieval.search_strategies.types import SearchHit, SearchResult
@@ -128,7 +133,7 @@ class _FakeRepresentationStrategy:
     def hyperparam_values(self) -> dict[str, object]:
         return dict(self._params)
 
-    def load_sample(self, sample):
+    def load_sample(self, **_):
         return {}
 
     def run(self, *, sample, **kwargs) -> RetrievalRepresentation:
@@ -184,8 +189,8 @@ def _make_combo(
     *,
     tiling_id: str = "256px_0.5mpp",
     feature_extraction: str = "uni",
-    representation: str = "mean_pooling",
-    search_strategy: str = "cosine_knn",
+    representation: str = "splice-features",
+    search_strategy: str = "yottixel",
 ) -> ComboConfig:
     tile_px, rest = tiling_id.split("px_")
     tile_mpp = rest.replace("mpp", "")
@@ -221,6 +226,13 @@ def _make_dataset(
         )
         for i, sid in enumerate(sample_ids)
     ]
+    # Supply real source shapes for cache-miss inspection in the task pipeline.
+    for sample in samples:
+        sample.artifact_paths = [tmp_path / "artifacts" / f"{sample.sample_id}.h5"]
+        rows = 1 if feature_level == "slide" else 2
+        with FileHandleH5(sample.artifact_paths[0], mode="a") as artifact:
+            write_features(artifact, tiling_id, "uni", np.ones((rows, feature_dimension)))
+            write_coords(artifact, tiling_id, np.zeros((2, 5), dtype=np.int32))
     return _FakeSlideRetrievalBagDataset(
         name=name,
         tiling_id=tiling_id,
@@ -267,7 +279,7 @@ def test_reference_query_split_produces_results(
     monkeypatch.setattr(mod, "get_representation_strategy_supported_feature_levels", lambda _n: frozenset({"patch"}))
     monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
     monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
-    monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _full_cache)
+    stub_representation_cache(monkeypatch, _full_cache)
 
     task = _make_task(tmp_path)
     result = task.execute(
@@ -298,7 +310,7 @@ def test_query_reference_included_in_both_sets(
     monkeypatch.setattr(mod, "get_representation_strategy_supported_feature_levels", lambda _n: frozenset({"patch"}))
     monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
     monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
-    monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _full_cache)
+    stub_representation_cache(monkeypatch, _full_cache)
 
     task = _make_task(tmp_path)
     result = task.execute(
@@ -327,7 +339,7 @@ def test_exclusion_level_none_assigns_no_exclusion_key(
     monkeypatch.setattr(mod, "get_representation_strategy_supported_feature_levels", lambda _n: frozenset({"patch"}))
     monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
     monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
-    monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _full_cache)
+    stub_representation_cache(monkeypatch, _full_cache)
 
     task = _make_task(tmp_path, exclusion_level="none")
     task.execute(
@@ -431,7 +443,7 @@ def test_cached_representations_are_not_recomputed(
     monkeypatch.setattr(mod, "get_representation_strategy_supported_feature_levels", lambda _n: frozenset({"patch"}))
     monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
     monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
-    monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _full_cache)
+    stub_representation_cache(monkeypatch, _full_cache)
 
     task = _make_task(tmp_path)
     task.execute(
@@ -463,14 +475,10 @@ def test_missing_representations_are_materialized(
     monkeypatch.setattr(mod, "get_representation_strategy_supported_feature_levels", lambda _n: frozenset({"patch"}))
     monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
     monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
-    monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _no_cache)
-    monkeypatch.setattr(
-        SlideRetrievalTask,
-        "_load_or_create_slide_representation",
-        lambda self, *, sample, representation_strategy, **kwargs: representation_strategy.run(
+    stub_representation_cache(monkeypatch, _no_cache)
+    stub_representation_creation(monkeypatch, lambda self, *, sample, representation_strategy, **kwargs: representation_strategy.run(
             sample=sample
-        ),
-    )
+        ))
     monkeypatch.setattr(mod, "atomic_slide_artifact_write", MagicMock())
     monkeypatch.setattr(mod, "save_slide_retrieval_representation", MagicMock())
 
@@ -521,8 +529,9 @@ def test_execute_caches_physical_slides_outside_feature_artifacts(
         *query_sample.artifact_paths,
     ]
     for source_artifact in source_artifacts:
-        with FileHandleH5(source_artifact, mode="a"):
-            pass
+        with FileHandleH5(source_artifact, mode="a") as artifact:
+            write_features(artifact, "256px_0.5mpp", "uni", np.ones((2, 2)))
+            write_coords(artifact, "256px_0.5mpp", np.zeros((2, 5), dtype=np.int32))
 
     class _PhysicalSlideStrategy(_FakeRepresentationStrategy):
         def load_sample(self, **_) -> dict[str, object]:
@@ -592,14 +601,10 @@ def test_missing_representation_wraps_creation_error(
         "get_search_strategy_supported_representation_kinds",
         lambda _n: frozenset({"patch_vector"}),
     )
-    monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _no_cache)
-    monkeypatch.setattr(
-        SlideRetrievalTask,
-        "_load_or_create_slide_representation",
-        lambda self, *, sample, representation_strategy, **kwargs: representation_strategy.run(
+    stub_representation_cache(monkeypatch, _no_cache)
+    stub_representation_creation(monkeypatch, lambda self, *, sample, representation_strategy, **kwargs: representation_strategy.run(
             sample=sample
-        ),
-    )
+        ))
 
     with pytest.raises(
         RuntimeError,
@@ -660,31 +665,28 @@ def test_mixed_input_families_skip_before_strategy_materialization(
 
     monkeypatch.setattr(mod, "build_representation_strategy", fail_if_called)
 
-    result = _make_task(tmp_path).execute(
-        combo_cfg=_make_combo(),
-        datasets_by_use={
-            "reference": [
-                _make_dataset(
-                    tmp_path,
-                    name="reference",
-                    sample_ids=["reference-1"],
-                    feature_level=reference_level,
-                )
-            ],
-            "query": [
-                _make_dataset(
-                    tmp_path,
-                    name="query",
-                    sample_ids=["query-1"],
-                    feature_level=query_level,
-                )
-            ],
-        },
-    )
-
-    assert result["status"] == "skipped_incompatible_combo"
-    assert "Inconsistent feature levels" in result["reason"]
-
+    with pytest.raises(ValueError, match="Inconsistent original-feature families"):
+        _make_task(tmp_path).execute(
+            combo_cfg=_make_combo(),
+            datasets_by_use={
+                "reference": [
+                    _make_dataset(
+                        tmp_path,
+                        name="reference",
+                        sample_ids=["reference-1"],
+                        feature_level=reference_level,
+                    )
+                ],
+                "query": [
+                    _make_dataset(
+                        tmp_path,
+                        name="query",
+                        sample_ids=["query-1"],
+                        feature_level=query_level,
+                    )
+                ],
+            },
+        )
 
 # ---------------------------------------------------------------------------
 # Validation errors
@@ -769,7 +771,7 @@ def test_multiple_reference_datasets_are_merged(
     monkeypatch.setattr(mod, "get_representation_strategy_supported_feature_levels", lambda _n: frozenset({"patch"}))
     monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
     monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
-    monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _full_cache)
+    stub_representation_cache(monkeypatch, _full_cache)
 
     task = _make_task(tmp_path)
     result = task.execute(
@@ -807,7 +809,7 @@ def test_manifest_contains_required_fields(
     )
     monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
     monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
-    monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _full_cache)
+    stub_representation_cache(monkeypatch, _full_cache)
 
     task = _make_task(tmp_path)
     result = task.execute(
@@ -856,7 +858,7 @@ def test_results_xlsx_has_correct_schema(
     monkeypatch.setattr(mod, "get_representation_strategy_supported_feature_levels", lambda _n: frozenset({"patch"}))
     monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
     monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
-    monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _full_cache)
+    stub_representation_cache(monkeypatch, _full_cache)
 
     task = _make_task(tmp_path)
     result = task.execute(
@@ -896,7 +898,7 @@ def test_run_directory_hash_is_deterministic(
         monkeypatch.setattr(mod, "get_representation_strategy_supported_feature_levels", lambda _n: frozenset({"patch"}))
         monkeypatch.setattr(mod, "get_representation_strategy_output_kind", lambda _n: "patch_vector")
         monkeypatch.setattr(mod, "get_search_strategy_supported_representation_kinds", lambda _n: frozenset({"patch_vector"}))
-        monkeypatch.setattr(SlideRetrievalTask, "_collect_existing_representations", _full_cache)
+        stub_representation_cache(monkeypatch, _full_cache)
 
         task = _make_task(base)
         result = task.execute(

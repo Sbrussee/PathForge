@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.retrieval_cache_fakes import stub_representation_cache
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -113,10 +115,7 @@ def test_smoke_slide_retrieval_benchmark_reuses_cached_representation_and_writes
         lambda _name, **kwargs: _FakeSearchStrategy(**kwargs),
     )
     monkeypatch.setattr(slide_retrieval_task_module, "SlideRetrievalBagDataset", _FakeBagDataset)
-    monkeypatch.setattr(
-        SlideRetrievalTask,
-        "_collect_existing_representations",
-        lambda self, **kwargs: (
+    stub_representation_cache(monkeypatch, lambda self, **kwargs: (
             [
                 RetrievalRepresentation(
                     sample_id=kwargs["bag_dataset"].get_sample(0).sample_id,
@@ -124,8 +123,7 @@ def test_smoke_slide_retrieval_benchmark_reuses_cached_representation_and_writes
                 )
             ],
             None,
-        ),
-    )
+        ))
 
     combo_cfg = ComboConfig(
         tile_px=256,

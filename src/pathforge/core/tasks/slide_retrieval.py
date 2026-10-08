@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, ClassVar
 
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from pathforge.core.datasets.bag_dataset import (
@@ -18,15 +18,18 @@ from pathforge.core.datasets.bag_dataset import (
 from pathforge.core.experiments.combinations import ComboConfig
 from pathforge.core.experiments.combo_ids import build_feature_name, build_tiling_id
 from pathforge.core.io.slide_artifacts.atomic import atomic_slide_artifact_write
-from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.tasks.base import TaskBase
 from pathforge.core.tasks.registry import register_task
-from pathforge.slide_retrieval.aggregation import aggregate_slide_representations
 from pathforge.slide_retrieval.input_inspection import inspect_retrieval_inputs
+from pathforge.slide_retrieval.representation_workflow import (
+    assemble_representations,
+    create_representations,
+    load_representations,
+    plan_representations,
+)
 from pathforge.slide_retrieval.io import (
     build_slide_retrieval_inference_output_root,
     build_slide_retrieval_output_root,
-    load_slide_retrieval_representation,
     save_slide_retrieval_representation,
     write_slide_retrieval_manifest,
     write_slide_retrieval_results_xlsx,
@@ -150,26 +153,16 @@ class SlideRetrievalTask(TaskBase):
             retrieval_representation=representation_name,
             params=representation_cache_params,
         )
-        cached_by_use, cache_is_complete = self._collect_patch_cache(
+        # Plan physical-slide cache hits and misses without loading feature arrays.
+        plan = plan_representations(
             datasets_by_use=datasets_by_use,
             representation_id=representation_id,
-            aggregation_level=aggregation_level,
-            exclusion_level=exclusion_level,
         )
         representation_strategy: Any | None = None
-        if cache_is_complete:
-            cached_feature_levels = {
-                representation.feature_level
-                for representations in cached_by_use.values()
-                for representation in representations
-            }
-            feature_level = (
-                cached_feature_levels.pop()
-                if len(cached_feature_levels) == 1
-                else "patch"
-            )
-            representations_by_use = cached_by_use
-        else:
+        created = {}
+
+        # Only missing slides need source inspection and a representation strategy.
+        if plan.missing:
             inspection = inspect_retrieval_inputs(
                 self._physical_artifact_paths(datasets_by_use),
                 tiling_id=tiling_id,
@@ -201,18 +194,32 @@ class SlideRetrievalTask(TaskBase):
             )
             prepare_for_combo = getattr(representation_strategy, "prepare_for_combo", None)
             if callable(prepare_for_combo):
-                prepare_for_combo(combo_cfg=combo_cfg, feature_name=feature_name, tiling_id=tiling_id)
-            representations_by_use = self._materialize_and_aggregate_representations(
-                datasets_by_use=datasets_by_use,
+                prepare_for_combo(
+                    combo_cfg=combo_cfg,
+                    feature_name=feature_name,
+                    tiling_id=tiling_id,
+                )
+            created = create_representations(
+                plan.missing,
                 representation_strategy=representation_strategy,
-                representation_id=representation_id,
                 combo_cfg=combo_cfg,
-                aggregation_level=aggregation_level,
-                exclusion_level=exclusion_level,
                 representation_cache_params=representation_cache_params,
                 feature_level=feature_level,
             )
 
+        # Load cache hits once; fully cached runs need no original feature artifacts.
+        loaded = load_representations(plan.existing)
+        if not plan.missing:
+            cached_feature_levels = {
+                representation.feature_level for representation in loaded.values()
+            }
+            feature_level = (
+                cached_feature_levels.pop()
+                if len(cached_feature_levels) == 1
+                else "patch"
+            )
+
+        # Validate the resolved feature family before aggregation and search.
         combination_is_valid, reason = self._validate_combination_compatibility(
             feature_level=feature_level,
             representation_name=representation_name,
@@ -223,7 +230,17 @@ class SlideRetrievalTask(TaskBase):
         if not combination_is_valid:
             raise ValueError(reason)
 
-        # Convert per-use buckets into final search roles.
+        # Combine slide representations into the requested slide/case/patient items.
+        representations_by_use = assemble_representations(
+            plan,
+            loaded=loaded,
+            created=created,
+            aggregation_level=aggregation_level,
+            exclusion_level=exclusion_level,
+            build_exclusion_key=self._build_exclusion_key,
+        )
+
+        # Assign assembled items to reference and query roles for search.
         logger.info("[SlideRetrieval] Stage 3/3: running search strategy")
         reference_representations, query_representations = (
             self._split_representations_by_use(
@@ -360,44 +377,14 @@ class SlideRetrievalTask(TaskBase):
         datasets_by_use: dict[str, list[BagDataset]],
     ) -> list[Path]:
         """Return each physical source artifact used by this retrieval run."""
-        return [
-            artifact_path
-            for datasets in datasets_by_use.values()
-            for dataset in datasets
-            for index in range(dataset.num_bags)
-            for sample in [dataset.get_sample(index)]
-            for artifact_path in sample.artifact_paths
-        ]
-
-    def _collect_patch_cache(
-        self,
-        *,
-        datasets_by_use: dict[str, list[BagDataset]],
-        representation_id: str,
-        aggregation_level: str,
-        exclusion_level: ExclusionLevel,
-    ) -> tuple[dict[str, list[RetrievalRepresentation]], bool]:
-        """Probe the patch cache before inspecting original feature artifacts."""
-        cached_by_use: dict[str, list[RetrievalRepresentation]] = {}
-        complete = True
-        for use, datasets in datasets_by_use.items():
-            representations: list[RetrievalRepresentation] = []
+        artifact_paths: list[Path] = []
+        # Walk role datasets and their logical groups to gather source slide paths.
+        for datasets in datasets_by_use.values():
             for dataset in datasets:
-                if not isinstance(dataset, SlideRetrievalBagDataset):
-                    raise TypeError(
-                        "slide_retrieval requires SlideRetrievalBagDataset instances. "
-                        f"Got {type(dataset).__name__}."
-                    )
-                cached, missing = self._collect_existing_representations(
-                    bag_dataset=dataset,
-                    representation_id=representation_id,
-                    aggregation_level=aggregation_level,
-                    exclusion_level=exclusion_level,
-                )
-                representations.extend(cached)
-                complete = complete and missing is None
-            cached_by_use[use] = representations
-        return cached_by_use, complete
+                for index in range(dataset.num_bags):
+                    sample = dataset.get_sample(index)
+                    artifact_paths.extend(sample.artifact_paths)
+        return artifact_paths
 
     def _resolve_representation_loader_workers(
         self,
@@ -475,6 +462,7 @@ class SlideRetrievalTask(TaskBase):
                 executor.submit(search_fn, search_item): index
                 for index, search_item in enumerate(search_items)
             }
+            # Collect completed queries while preserving their original order.
             for future in tqdm(
                 as_completed(future_to_index),
                 total=len(future_to_index),
@@ -534,265 +522,6 @@ class SlideRetrievalTask(TaskBase):
                 "aggregation_level. "
                 f"Expected {aggregation_level!r}, got {sorted(aggregation_levels)}."
             )
-
-    def _materialize_and_aggregate_representations(
-        self,
-        *,
-        datasets_by_use: dict[str, list[BagDataset]],
-        representation_strategy: Any,
-        representation_id: str,
-        combo_cfg: ComboConfig,
-        aggregation_level: str,
-        exclusion_level: ExclusionLevel,
-        representation_cache_params: dict[str, Any],
-        feature_level: str,
-    ) -> dict[str, list[RetrievalRepresentation]]:
-        """Build each physical slide once, then aggregate logical retrieval items.
-
-        Each physical slide has a dedicated retrieval cache. Grouped case and
-        patient items are assembled only after those slide-local selections
-        have been loaded, so selectors can never see a concatenated raw bag.
-        """
-        cache: dict[tuple[str, str], RetrievalRepresentation] = {}
-        by_use: dict[str, list[RetrievalRepresentation]] = {}
-        for use, datasets in datasets_by_use.items():
-            if use not in _VALID_RETRIEVAL_USES:
-                raise ValueError(f"Unsupported retrieval dataset use {use!r}.")
-            output = by_use.setdefault(use, [])
-            for dataset in datasets:
-                if not isinstance(dataset, SlideRetrievalBagDataset):
-                    raise TypeError(
-                        "slide_retrieval requires SlideRetrievalBagDataset instances. "
-                        f"Got {type(dataset).__name__}."
-                    )
-
-                # The standalone representation CLI stores the final logical
-                # retrieval item under ``artifacts_dir/slide_retrieval``.
-                # Consult that shared cache before opening physical-slide
-                # artifacts, so precomputation is reused by benchmark runs.
-                cached_representations, missing_subset = (
-                    self._collect_existing_representations(
-                        bag_dataset=dataset,
-                        representation_id=representation_id,
-                        aggregation_level=aggregation_level,
-                        exclusion_level=exclusion_level,
-                    )
-                )
-                if missing_subset is None:
-                    output.extend(cached_representations)
-                    continue
-
-                cached_by_sample_id = {
-                    representation.sample_id: representation
-                    for representation in cached_representations
-                }
-                for index in range(dataset.num_bags):
-                    group = dataset.get_sample(index)
-                    cached_representation = cached_by_sample_id.get(group.sample_id)
-                    if cached_representation is not None:
-                        output.append(cached_representation)
-                        continue
-
-                    slides: list[RetrievalRepresentation] = []
-                    for slide_id, artifact_path in zip(
-                        group.slide_ids, group.artifact_paths
-                    ):
-                        key = (str(Path(artifact_path).resolve()), str(slide_id))
-                        if key not in cache:
-                            slide_sample = BagSample(
-                                sample_id=str(slide_id),
-                                slide_ids=[str(slide_id)],
-                                artifact_paths=[Path(artifact_path)],
-                                category=group.category,
-                                patient_id=group.patient_id,
-                                case_id=group.case_id,
-                                metadata=dict(group.metadata),
-                            )
-                            try:
-                                cache[key] = self._load_or_create_slide_representation(
-                                    dataset=dataset,
-                                    sample=slide_sample,
-                                    representation_strategy=representation_strategy,
-                                    representation_id=representation_id,
-                                    combo_cfg=combo_cfg,
-                                    representation_cache_params=representation_cache_params,
-                                    feature_level=feature_level,
-                                )
-                            except Exception as exc:
-                                raise RuntimeError(
-                                    "Slide retrieval representation creation failed "
-                                    f"for sample {slide_sample.sample_id!r}: {exc}"
-                                ) from exc
-                        slides.append(cache[key])
-                    if aggregation_level == "slide":
-                        slide_representation = slides[0]
-                        # Never mutate the cached object: a slide can belong
-                        # to more than one use and runtime identities differ.
-                        representation = RetrievalRepresentation(
-                            sample_id=group.sample_id,
-                            data=slide_representation.data,
-                            representation_type=slide_representation.representation_type,
-                            feature_level=slide_representation.feature_level,
-                            additional_data=dict(slide_representation.additional_data),
-                        )
-                        representation.metadata.category = group.category
-                        representation.metadata.patient_id = group.patient_id
-                        representation.metadata.case_id = group.case_id
-                    else:
-                        representation = aggregate_slide_representations(
-                            sample_id=group.sample_id,
-                            member_slide_ids=list(group.slide_ids),
-                            slide_representations=slides,
-                            category=group.category,
-                            patient_id=group.patient_id,
-                            case_id=group.case_id,
-                        )
-                    representation.exclusion_key = self._build_exclusion_key(
-                        sample=group,
-                        aggregation_level=aggregation_level,
-                        exclusion_level=exclusion_level,
-                    )
-                    representation.additional_data = {
-                        **representation.additional_data,
-                        "dataset_name": dataset.name,
-                        "source_slide_ids": list(group.slide_ids),
-                    }
-                    output.append(representation)
-        return by_use
-
-    def _load_or_create_slide_representation(
-        self,
-        *,
-        dataset: SlideRetrievalBagDataset,
-        sample: BagSample,
-        representation_strategy: Any,
-        representation_id: str,
-        combo_cfg: ComboConfig,
-        representation_cache_params: dict[str, Any],
-        feature_level: str,
-    ) -> RetrievalRepresentation:
-        """Load or create one slide-local representation in its retrieval artifact."""
-        artifact_path = build_retrieval_representation_artifact_path(
-            artifacts_dir=dataset.artifacts_dir,
-            slide_id=sample.sample_id,
-        )
-        source_artifact_path = sample.artifact_paths[0]
-        cached = None
-        if artifact_path.is_file():
-            with FileHandleH5(artifact_path, mode="r") as artifact:
-                cached = load_slide_retrieval_representation(
-                    retrieval_artifact=artifact,
-                    tile_id=dataset.tiling_id,
-                    representation_id=representation_id,
-                    entry_id=None,
-                )
-        if cached is not None:
-            return cached
-
-        # The adapter deliberately exposes a bag consisting of this one slide.
-        # Custom strategy loaders receive the same single-slide sample.
-        class _SingleSlideDataset:
-            tiling_id = dataset.tiling_id
-            extractor_name = dataset.extractor_name
-
-            def load_bag(self, _: int) -> Any:
-                return dataset._load_slide_bag(source_artifact_path)
-
-        inputs = representation_strategy.load_sample(
-            index=0, sample=sample, base_dataset=_SingleSlideDataset()
-        )
-        representation = representation_strategy.run(
-            sample=sample, bag_dataset=dataset, combo_cfg=combo_cfg, **inputs
-        )
-        representation.sample_id = sample.sample_id
-        representation.feature_level = feature_level
-        with atomic_slide_artifact_write(artifact_path) as artifact:
-            save_slide_retrieval_representation(
-                retrieval_artifact=artifact,
-                tile_id=dataset.tiling_id,
-                representation_id=representation_id,
-                entry_id=None,
-                representation=representation,
-                params=representation_cache_params,
-            )
-        return representation
-
-    def _collect_existing_representations(
-        self,
-        *,
-        bag_dataset: SlideRetrievalBagDataset,
-        representation_id: str,
-        aggregation_level: str,
-        exclusion_level: ExclusionLevel,
-    ) -> tuple[
-        list[RetrievalRepresentation],
-        Subset[SlideRetrievalBagDataset] | None,
-    ]:
-        """
-        Load cached representations and return a subset of missing samples.
-
-        Inputs:
-        - `bag_dataset`: retrieval dataset for one configured source dataset.
-        - `representation_id`: retrieval representation artifact key.
-        - `aggregation_level`: active experiment aggregation level.
-        - `exclusion_level`: configured exclusion key level.
-
-        Returns:
-        - tuple:
-          - `existing_representations`: cached representations already present.
-          - `missing_subset`: subset with uncached sample indices, or `None` when
-            all samples were available.
-        """
-        existing_representations: list[RetrievalRepresentation] = []
-        missing_indices: list[int] = []
-
-        # Try loading each sample from cache and track only missing indices.
-        for index in range(bag_dataset.num_bags):
-            sample = bag_dataset.get_sample(index)
-            # Build the per-sample cache address in the retrieval artifact store.
-            artifact_path = build_retrieval_representation_artifact_path(
-                artifacts_dir=bag_dataset.artifacts_dir,
-                slide_id=sample.sample_id,
-            )
-            entry_id = build_retrieval_representation_entry_id(
-                sorted(sample.slide_ids),
-                aggregation_level=aggregation_level,
-            )
-            if artifact_path.exists():
-                with FileHandleH5(artifact_path, mode="r") as retrieval_artifact:
-                    cached_representation = load_slide_retrieval_representation(
-                        retrieval_artifact=retrieval_artifact,
-                        tile_id=bag_dataset.tiling_id,
-                        representation_id=representation_id,
-                        entry_id=entry_id,
-                    )
-            else:
-                cached_representation = None
-            if cached_representation is None:
-                missing_indices.append(index)
-                continue
-
-            # Re-attach runtime metadata that is not persisted in the same shape.
-            cached_representation.metadata.category = sample.category
-            cached_representation.metadata.patient_id = sample.patient_id
-            cached_representation.metadata.case_id = sample.case_id
-            cached_representation.exclusion_key = self._build_exclusion_key(
-                sample=sample,
-                aggregation_level=aggregation_level,
-                exclusion_level=exclusion_level,
-            )
-            cached_representation.additional_data = {
-                **cached_representation.additional_data,
-                "dataset_name": bag_dataset.name,
-                "source_slide_ids": list(sample.slide_ids),
-            }
-            existing_representations.append(cached_representation)
-
-        # Return both cache hits and a subset view for materialization misses.
-        missing_subset = (
-            Subset(bag_dataset, missing_indices) if missing_indices else None
-        )
-        return existing_representations, missing_subset
 
     def compute_retrieval_representations(
         self,
@@ -879,6 +608,7 @@ class SlideRetrievalTask(TaskBase):
 
         # Materialize each retrieval batch concurrently with one thread per batch item.
         with ThreadPoolExecutor(max_workers=max(1, batch_thread_workers)) as executor:
+            # Process batches of requested samples and preserve order within each batch.
             for retrieval_batch in retrieval_loader:
                 results_by_index: list[RetrievalRepresentation | None] = [None] * len(
                     retrieval_batch
@@ -890,6 +620,7 @@ class SlideRetrievalTask(TaskBase):
                     )
                     for index, dataset_item in enumerate(retrieval_batch)
                 }
+                # Collect each sample result or failure before advancing to the next batch.
                 for future in tqdm(
                     as_completed(future_to_item),
                     total=len(future_to_item),
