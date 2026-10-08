@@ -7,6 +7,7 @@ import torch
 from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
 from pathforge.core.slide_processing.lazyslide import LazySlideProcessor
+from pathforge.slide_retrieval.representation_strategies import histogram_rgb
 from pathforge.slide_retrieval.representation_strategies.strategies import sish_rgb
 from pathforge.slide_retrieval.search_strategies.strategies.sish import sish_precompute, sish_vqvae_descriptors
 
@@ -55,11 +56,17 @@ def test_sish_annotation_fallback_reaches_all_three_source_read_paths(tmp_path, 
     specs = precompute._build_patch_specs(sample=sample, bag_id=bag_id, full_coords=coords, selected_indices=np.array([0]))
     np.testing.assert_array_equal(precompute._encode_selected_patch_specs(patch_specs=specs), [17])
 
-    monkeypatch.setattr(sish_rgb, "_build_slide_processor", lambda **kwargs: processor)
+    monkeypatch.setattr(histogram_rgb, "_build_slide_processor", lambda **kwargs: processor)
     monkeypatch.setattr(processor, "read_patch_region", lambda wsi, **kwargs: crop(wsi=wsi))
     strategy = sish_rgb.SISHRGB(params={"n_clusters": 1}, config=cfg)
     monkeypatch.setattr(sish_rgb, "load_sish_trash_classifier", lambda **kwargs: SimpleNamespace(predict=lambda rows: np.zeros(len(rows), dtype=int)))
-    result = strategy.run(np.ones((1, 4), dtype=np.float32), sample=sample, coords=coords, histogram_rgb=np.ones((1, 768)), slide_lengths=[1], tiling_id=bag_id)
+    descriptors = histogram_rgb.resolve_sample_patch_rgb_descriptors(
+        sample=sample, bag_id=bag_id, config=cfg, include_quality=True
+    )
+    result = strategy.run(
+        np.ones((1, 4), dtype=np.float32), sample=sample, coords=coords,
+        **descriptors, slide_lengths=[1], tiling_id=bag_id,
+    )
     assert result.data.shape == (1, 4)
     assert len(opened) == len(closed) == 3
     assert all(obj.properties.mpp == 0.25 for obj in opened)

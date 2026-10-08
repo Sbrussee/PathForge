@@ -227,6 +227,30 @@ key for each selected patch, uses predecessor/successor index traversal to find
 candidates, and filters those candidates by Hamming distance before aggregating
 them to slide rankings.
 
+Precompute RGB histograms and SISH quality descriptors for each slide:
+
+```bash
+pathforge retrieval histogram-rgb \
+  --config retrieval.yaml \
+  --dataset ReferenceSet \
+  --slide-id SLIDE_001
+```
+
+Use ``--bag-id 256px_0.5mpp`` to select a tiling; otherwise the command uses
+the configured tilings. Each tile is read once to cache ``histogram_rgb``
+with 768 columns and ``sish_quality`` with 129 columns (128 LBP histogram bins
+followed by its white-pixel fraction). No classifier or VQ-VAE weights are
+needed to create these caches. With both caches present, ``sish_rgb`` can
+filter and select existing embeddings without access to the source WSI; its
+trash-classifier file is still required. RGB-only caches from earlier runs
+remain usable by Yottixel, but SISH requires a one-time quality-cache upgrade
+while the source slide is available. Missing caches are created on demand.
+
+When a colour group's spatial sampling count floors to zero, ``sish_rgb``
+retains every patch in that group, following the released SISH fallback.
+For other groups it selects existing tiles nearest the spatial centres;
+upstream SISH instead reads new crops at those centres.
+
 This preserves the central SISH indexing and search workflow. PathForge differs
 from the original method in one important respect: its Hamming companion is
 packed from the selected foundation-model feature row, whereas upstream SISH

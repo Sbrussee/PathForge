@@ -3,30 +3,22 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 from typing import Any
 
-import cv2 as cv
 import numpy as np
-from skimage.feature import local_binary_pattern
 from sklearn.cluster import KMeans
 
 from pathforge.core.datasets.bag_dataset import BagDataset, BagSample
-from pathforge.core.datasets.wsi_dataset import WSI
 from pathforge.core.io.slide_artifacts import features as features_io
 from pathforge.core.io.slide_artifacts import tiles as tiles_io
 from pathforge.core.io.slide_artifacts.base import FileHandleH5
-from pathforge.slide_retrieval.annotations import resolve_sample_annotations
 from pathforge.slide_retrieval.hyperparams import HyperParam
 from pathforge.slide_retrieval.representation_strategies.base import (
     BaseRetrievalRepresentationStrategy,
 )
 from pathforge.slide_retrieval.representation_strategies.histogram_rgb import (
-    resolve_sample_patch_histogram_rgb,
-)
-from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
-    _build_slide_processor,
-    _resolve_sample_slide_paths,
+    SISH_QUALITY_DIM,
+    resolve_sample_patch_rgb_descriptors,
 )
 from pathforge.slide_retrieval.representation_strategies.registry import (
     register_representation_strategy,
@@ -54,6 +46,8 @@ class SISHRGB(BaseRetrievalRepresentationStrategy):
     def hyperparam_values(self) -> dict[str, Any]:
         """Include the trash-classifier content identity in representation caching."""
         values = super().hyperparam_values()
+        # Prevent reuse of mosaics generated with the former minimum-one fallback.
+        values["small_group_policy"] = "retain_all"
         from pathforge.slide_retrieval.search_strategies.strategies.sish.sish_assets import (
             resolve_sish_asset_path,
         )
@@ -71,7 +65,12 @@ class SISHRGB(BaseRetrievalRepresentationStrategy):
     def load_sample(
         self, *, index: int, sample: BagSample, base_dataset: BagDataset
     ) -> dict[str, Any]:
-        """Load row-aligned features, coordinates, and cached-or-created histograms."""
+        """Load feature, coordinate, RGB, and quality rows; reuse valid caches.
+
+        RGB rows have shape ``(N, 768)`` and quality rows ``(N, 129)``.
+        Example: ``payload = strategy.load_sample(index=0, sample=sample,
+        base_dataset=dataset)``. A complete cache requires no source WSI.
+        """
         del index
         bag_id = str(base_dataset.tiling_id)
         features: list[np.ndarray] = []
@@ -91,8 +90,9 @@ class SISHRGB(BaseRetrievalRepresentationStrategy):
         return {
             "bag": np.concatenate(features, axis=0),
             "coords": np.concatenate(coords, axis=0),
-            "histogram_rgb": resolve_sample_patch_histogram_rgb(
-                sample=sample, bag_id=bag_id, config=self.extra.get("config")
+            **resolve_sample_patch_rgb_descriptors(
+                sample=sample, bag_id=bag_id, config=self.extra.get("config"),
+                include_quality=True,
             ),
             "slide_lengths": lengths,
             "tiling_id": bag_id,
@@ -101,59 +101,54 @@ class SISHRGB(BaseRetrievalRepresentationStrategy):
     def run(
         self, bag: np.ndarray, sample: BagSample | None = None, **kwargs: Any
     ) -> RetrievalRepresentation:
-        """Return selected existing patch embeddings for one retrieval sample."""
+        """Filter cached quality descriptors and select existing patch embeddings.
+
+        Args:
+            bag: Foundation-model feature matrix with shape ``(N, D)``.
+            sample: Sample identifying the output retrieval item.
+            **kwargs: Row-aligned ``coords: (N, 5)``, ``histogram_rgb: (N,768)``,
+                ``sish_quality: (N,129)``, per-slide ``slide_lengths``, and
+                canonical ``tiling_id``. No source WSI is used by this method.
+
+        Returns:
+            Selected feature rows ``(K, D)``, indices, and coordinates.
+
+        Example:
+            >>> payload = strategy.load_sample(
+            ...     index=0, sample=sample, base_dataset=dataset
+            ... )
+            >>> representation = strategy.run(sample=sample, **payload)
+        """
         if sample is None:
             raise ValueError("sample is required for sish_rgb.")
         features = self.as_numpy_feature_matrix(bag)
         coords = np.asarray(kwargs["coords"], dtype=np.int32)
         histograms = np.asarray(kwargs["histogram_rgb"], dtype=np.float32)
+        quality = np.asarray(kwargs["sish_quality"], dtype=np.float32)
         lengths = [int(item) for item in kwargs["slide_lengths"]]
+        if quality.shape != (len(features), SISH_QUALITY_DIM):
+            raise ValueError("SISH quality descriptors must have shape (N, 129).")
+        if any(length < 0 for length in lengths) or sum(lengths) != len(features):
+            raise ValueError("SISH slide lengths must cover every feature row.")
         if len(features) != len(coords) or len(features) != len(histograms):
             raise ValueError(
                 "SISH RGB feature, coordinate, and histogram rows must match."
             )
         classifier = load_sish_trash_classifier(config=self.extra.get("config"))
-        slide_paths = _resolve_sample_slide_paths(
-            sample=sample, config=self.extra.get("config")
-        )
-        processor = _build_slide_processor(config=self.extra.get("config"))
-        annotation_rows = resolve_sample_annotations(
-            sample=sample, config=self.extra.get("config")
-        )
         selected: list[int] = []
         labels = np.full(len(features), -1, dtype=np.int32)
         offset = 0
-        try:
-            for slide_id, artifact_path, length in zip(
-                sample.slide_ids, sample.artifact_paths, lengths, strict=True
-            ):
-                indices = np.arange(offset, offset + length, dtype=np.int32)
-                path = slide_paths.get(str(slide_id))
-                if path is None or not path.is_file():
-                    raise FileNotFoundError(
-                        f"SISH RGB trash filtering requires source slide '{slide_id}'."
-                    )
-                keep = self._retained_rows(
-                    slide_id=str(slide_id),
-                    slide_path=path,
-                    artifact_path=Path(artifact_path),
-                    coords=coords[indices],
-                    processor=processor,
-                    classifier=classifier,
-                    annotation_row=annotation_rows[str(slide_id)],
+        for length in lengths:
+            indices = np.arange(offset, offset + length, dtype=np.int32)
+            keep = self._retained_rows(quality=quality[indices], classifier=classifier)
+            kept = indices[keep]
+            if len(kept):
+                picked, local_labels = self._select_slide(
+                    histograms[kept], coords[kept, :2]
                 )
-                kept = indices[keep]
-                if len(kept):
-                    picked, local_labels = self._select_slide(
-                        histograms[kept], coords[kept, :2]
-                    )
-                    labels[kept] = local_labels
-                    selected.extend(kept[picked].tolist())
-                offset += length
-        finally:
-            close = getattr(processor, "close", None)
-            if callable(close):
-                close()
+                labels[kept] = local_labels
+                selected.extend(kept[picked].tolist())
+            offset += length
         selected_array = np.asarray(selected, dtype=np.int32)
         return RetrievalRepresentation(
             sample_id=sample.sample_id,
@@ -167,49 +162,19 @@ class SISHRGB(BaseRetrievalRepresentationStrategy):
         )
 
     def _retained_rows(
-        self,
-        *,
-        slide_id: str,
-        slide_path: Path,
-        artifact_path: Path,
-        coords: np.ndarray,
-        processor: Any,
-        classifier: Any,
-        annotation_row: dict[str, Any] | None = None,
+        self, *, quality: np.ndarray, classifier: Any
     ) -> np.ndarray:
-        wsi = WSI.from_annotation(
-            annotation_row if annotation_row is not None else {"slide": slide_id},
-            slide_path=slide_path,
-            artifact_path=artifact_path,
-        )
-        processor.load_wsi(wsi)
-        lbp_rows: list[np.ndarray] = []
-        candidates: list[int] = []
-        try:
-            for index, row in enumerate(coords):
-                x, y, width, height, level = (int(value) for value in row)
-                patch = np.asarray(
-                    processor.read_patch_region(
-                        wsi, x=x, y=y, width=width, height=height, level=level
-                    ),
-                    dtype=np.uint8,
-                )
-                grey = cv.resize(cv.cvtColor(patch, cv.COLOR_RGB2GRAY), (256, 256))
-                if float(np.mean(grey > 235)) > 0.9:
-                    continue
-                lbp = local_binary_pattern(grey, 8, 1, "ror")
-                lbp_rows.append(
-                    np.histogram(lbp, density=True, bins=128, range=(0, 128))[0]
-                )
-                candidates.append(index)
-        finally:
-            processor.close_wsi(wsi)
-        keep = np.zeros(len(coords), dtype=bool)
-        if candidates:
-            predictions = np.asarray(
-                classifier.predict(np.asarray(lbp_rows, dtype=np.float32))
-            )
-            keep[np.asarray(candidates, dtype=np.int32)[predictions == 0]] = True
+        """Filter cached ``(N,129)`` quality rows into a tissue mask ``(N,)``.
+
+        Columns 0–127 contain LBP histogram bins; column 128 is the white
+        fraction. Only nonwhite patches are classified, with label 0 retained.
+        Example: ``keep = strategy._retained_rows(quality=rows, classifier=clf)``.
+        """
+        keep = np.zeros(len(quality), dtype=bool)
+        candidates = np.flatnonzero(quality[:, 128] <= 0.9)
+        if candidates.size:
+            predictions = np.asarray(classifier.predict(quality[candidates, :128]))
+            keep[candidates[predictions == 0]] = True
         return keep
 
     def _select_slide(
@@ -223,7 +188,11 @@ class SISHRGB(BaseRetrievalRepresentationStrategy):
         selected: list[int] = []
         for group in range(model.n_clusters):
             members = np.flatnonzero(labels == group)
-            count = max(1, int(float(self.sample_rate) * len(members)))
+            count = int(float(self.sample_rate) * len(members))
+            if count == 0:
+                # SISH retains the entire group when its sampling count is zero.
+                selected.extend(members.tolist())
+                continue
             spatial = KMeans(n_clusters=count, random_state=int(self.random_state)).fit(
                 coords[members]
             )

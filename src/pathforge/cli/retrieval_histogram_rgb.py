@@ -1,4 +1,4 @@
-"""CLI for materializing row-aligned SISH RGB histograms."""
+"""CLI for materializing RGB histograms and SISH quality descriptors."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathforge.cli.common import configure_logging, resolve_config_path
 from pathforge.cli.retrieval_mean_rgb import _find_dataset_config, _resolve_bag_ids
 from pathforge.config.config import Config
 from pathforge.slide_retrieval.representation_strategies.histogram_rgb import (
-    resolve_sample_patch_histogram_rgb,
+    resolve_sample_patch_rgb_descriptors,
 )
 
 _CONFIG_OPTION = typer.Option(..., "--config")
@@ -33,7 +33,12 @@ def run_histogram_rgb(
     artifact_path: Path | None = None,
     log_level: str = "INFO",
 ) -> int:
-    """Create or verify ``histogram_rgb`` descriptors for one slide and bag IDs."""
+    """Cache RGB ``(N,768)`` and quality ``(N,129)`` rows for one slide's tilings.
+
+    Returns exit code zero after cache creation or validation. Example:
+    ``run_histogram_rgb(config=Path("retrieval.yaml"), dataset="ReferenceSet",
+    slide_id="slide-1")``. The source WSI is read only for missing descriptors.
+    """
     configure_logging(log_level)
     cfg = Config.from_yaml(resolve_config_path(config))
     dataset_cfg = _find_dataset_config(cfg, str(dataset))
@@ -56,7 +61,9 @@ def run_histogram_rgb(
         metadata={"dataset": str(dataset)},
     )
     for bag_id in _resolve_bag_ids(cfg, bag_ids):
-        resolve_sample_patch_histogram_rgb(sample=sample, bag_id=bag_id, config=cfg)
+        resolve_sample_patch_rgb_descriptors(
+            sample=sample, bag_id=bag_id, config=cfg, include_quality=True
+        )
     return 0
 
 
@@ -69,7 +76,7 @@ def run_command(
     artifact_path: Path | None = _ARTIFACT_OPTION,
     log_level: str = _LOG_OPTION,
 ) -> None:
-    """Precompute SISH ``histogram_rgb`` descriptors."""
+    """Precompute RGB, LBP, and white-fraction caches for one slide."""
     raise SystemExit(
         run_histogram_rgb(
             config=config,
