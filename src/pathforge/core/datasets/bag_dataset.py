@@ -1,32 +1,30 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from dataclasses import field
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-from typing import Callable
-from typing import Literal
-from typing import Optional
+from typing import Any, Literal
 
 import pandas as pd
 import torch
 
 from pathforge.config.config import DatasetEntry
-from pathforge.core.datasets.bag_schema import BagBatch
-from pathforge.core.datasets.bag_schema import as_bag_batch
+from pathforge.core.datasets.bag_schema import BagBatch, as_bag_batch
 from pathforge.core.datasets.base import BagDatasetBase
 from pathforge.core.experiments.combinations import ComboConfig
-from pathforge.core.experiments.combo_ids import build_feature_name
-from pathforge.core.experiments.combo_ids import build_tiling_id
+from pathforge.core.experiments.combo_ids import build_feature_name, build_tiling_id
 from pathforge.core.io.slide_artifacts import features as features_io
 from pathforge.core.io.slide_artifacts import tiles as tiles_io
-from pathforge.core.io.slide_artifacts.base import FileHandleH5
-from pathforge.utils.constants import AGGREGATION_LEVELS
-from pathforge.utils.constants import CASE_ID_COL
-from pathforge.utils.constants import CATEGORY_COL
-from pathforge.utils.constants import DATASET_COL
-from pathforge.utils.constants import PATIENT_ID_COL
-from pathforge.utils.constants import SLIDE_ID_COL
+from pathforge.core.io.slide_artifacts.base import FileHandleH5, get_dataset
+from pathforge.core.io.slide_artifacts.layout import DEFAULT_LAYOUT
+from pathforge.utils.constants import (
+    AGGREGATION_LEVELS,
+    CASE_ID_COL,
+    CATEGORY_COL,
+    DATASET_COL,
+    PATIENT_ID_COL,
+    SLIDE_ID_COL,
+)
 
 AggregationLevel = Literal[tuple(AGGREGATION_LEVELS)]
 FeatureLevel = Literal["patch", "slide", "unknown", "invalid"]
@@ -40,8 +38,8 @@ class BagSample:
     slide_ids: list[str]
     artifact_paths: list[Path]
     category: Any
-    patient_id: Optional[str] = None
-    case_id: Optional[str] = None
+    patient_id: str | None = None
+    case_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     annotations_df: pd.DataFrame | None = field(
         default=None, kw_only=True, repr=False, compare=False
@@ -89,6 +87,7 @@ class BagDataset(BagDatasetBase):
         self._name = ""
         self._feature_level: FeatureLevel = "unknown"
         self._feature_level_reason = "Feature level inference was not run."
+        self._feature_dimensions: set[int] = set()
         self.samples: list[BagSample] = []
         self.annotations = pd.DataFrame()
         self.artifacts_dir: Path | None = None
@@ -176,6 +175,15 @@ class BagDataset(BagDatasetBase):
 
     def get_feature_level_reason(self) -> str:
         return self._feature_level_reason
+
+    def get_feature_dimensions(self) -> frozenset[int]:
+        """Return vector widths across all physical slides, without loading bags.
+
+        Widths are the D axis of each artifact's (N, D) feature matrix. Empty
+        datasets return an empty set. For example, artifacts with shapes
+        (1, 8) and (2, 16) yield frozenset({8, 16}).
+        """
+        return frozenset(self._feature_dimensions)
 
     def load_bag(self, index: int) -> torch.Tensor:
         sample = self.samples[index]
@@ -437,10 +445,10 @@ class BagDataset(BagDatasetBase):
     def _resolve_single_value(
         self,
         group_df: pd.DataFrame,
-        column: Optional[str],
+        column: str | None,
         *,
         missing_column_error: bool = False,
-        cast: Optional[type] = None,
+        cast: type | None = None,
     ) -> Any:
         if column is None:
             return None
@@ -520,13 +528,19 @@ class BagDataset(BagDatasetBase):
                         f"extractor='{self.extractor_name}'."
                     )
 
-    def _infer_feature_level(
-        self, max_slides_to_check: int = 10
-    ) -> tuple[FeatureLevel, str]:
+    def _infer_feature_level(self) -> tuple[FeatureLevel, str]:
+        """Inspect all unique artifact shapes to classify the dataset's inputs.
+
+        Single-row features default to slide input; a single-row artifact with
+        one coordinate is ambiguous and can also belong to a patch dataset.
+        Multiple rows must align with coordinates. For example, ten (1, D)
+        artifacts with one coordinate followed by (2, D) with two coordinates
+        resolve to patch input. Feature matrices are never materialized here.
+        """
         checked_paths: set[Path] = set()
-        inferred_level: FeatureLevel | None = None
-        inferred_from_path: Path | None = None
-        checked_count = 0
+        levels: set[str] = set()
+        invalid_reason: str | None = None
+        self._feature_dimensions.clear()
 
         for sample in self.samples:
             for artifact_path in sample.artifact_paths:
@@ -534,62 +548,55 @@ class BagDataset(BagDatasetBase):
                     continue
                 checked_paths.add(artifact_path)
                 with FileHandleH5(artifact_path, mode="r") as slide_artifact:
-                    current_level = features_io.infer_feature_level(
-                        slide_artifact,
-                        bag_id=self.tiling_id,
-                        extractor_name=self.extractor_name,
+                    feature_path = DEFAULT_LAYOUT.features_dataset(
+                        self.tiling_id, self.extractor_name
                     )
-                    try:
-                        feature_matrix = features_io.read_features(
-                            slide_artifact,
-                            bag_id=self.tiling_id,
-                            extractor_name=self.extractor_name,
+                    feature_dataset = get_dataset(slide_artifact.h5, feature_path)
+                    if feature_dataset is None:
+                        invalid_reason = (
+                            f"Missing feature dataset in '{artifact_path.name}'."
                         )
-                        n_features = int(feature_matrix.shape[0])
-                        n_patches = tiles_io.coords_num_rows(
-                            slide_artifact,
-                            bag_id=self.tiling_id,
-                        )
-                    except Exception as exc:
-                        detail = f"failed to inspect feature rows/patch rows: {exc}"
-                    else:
-                        detail = f"feature_rows={n_features}, patch_rows={n_patches}"
-                    checked_count += 1
-
-                if current_level == "invalid":
-                    return (
-                        "invalid",
-                        f"Dataset '{self.name}' artifact '{artifact_path.name}' has invalid feature structure ({detail}).",
-                    )
-                if current_level == "unknown":
-                    if checked_count >= max_slides_to_check:
-                        return (
-                            inferred_level or "unknown",
-                            f"Dataset '{self.name}' remained ambiguous after {checked_count} checked artifact(s); latest artifact '{artifact_path.name}' had {detail}.",
-                        )
-                    continue
-                if inferred_level is None:
-                    inferred_level = current_level
-                    inferred_from_path = artifact_path
-                elif inferred_level != current_level:
-                    return (
-                        "invalid",
-                        f"Dataset '{self.name}' has inconsistent feature levels: first non-ambiguous artifact '{inferred_from_path.name if inferred_from_path else 'unknown'}' inferred '{inferred_level}', but '{artifact_path.name}' inferred '{current_level}' ({detail}).",
-                    )
-                if checked_count >= max_slides_to_check:
-                    return (
-                        inferred_level,
-                        f"Dataset '{self.name}' inferred feature level '{inferred_level}' after {checked_count} checked artifact(s).",
+                        continue
+                    n_features, dimension = map(int, feature_dataset.shape)
+                    self._feature_dimensions.add(dimension)
+                    n_patches = tiles_io.coords_num_rows(
+                        slide_artifact, bag_id=self.tiling_id
                     )
 
-        if inferred_level is not None:
+                detail = f"feature_rows={n_features}, patch_rows={n_patches}"
+                if n_features <= 0 or n_patches <= 0 or dimension <= 0:
+                    invalid_reason = (
+                        f"Dataset '{self.name}' artifact '{artifact_path.name}' "
+                        f"has empty features or coordinates ({detail}, dimension={dimension})."
+                    )
+                elif n_features == 1:
+                    # One feature and one coordinate cannot disambiguate the family.
+                    if n_patches > 1:
+                        levels.add("slide")
+                elif n_features == n_patches:
+                    levels.add("patch")
+                else:
+                    invalid_reason = (
+                        f"Dataset '{self.name}' artifact '{artifact_path.name}' "
+                        f"feature rows do not align with patch coordinates ({detail})."
+                    )
+
+        if invalid_reason is not None:
+            return "invalid", invalid_reason
+        if len(levels) > 1:
             return (
-                inferred_level,
-                f"Dataset '{self.name}' inferred feature level '{inferred_level}' from checked artifacts.",
+                "invalid",
+                f"Dataset '{self.name}' has inconsistent patch and slide feature levels.",
             )
+        if not checked_paths:
+            return "unknown", f"Dataset '{self.name}' has no feature artifacts."
+        level: FeatureLevel = "patch" if "patch" in levels else "slide"
         return (
-            "unknown",
-            f"Dataset '{self.name}' only had ambiguous artifacts where feature_rows == patch_rows == 1 across {checked_count} checked artifact(s).",
+            level,
+            (
+                f"Dataset '{self.name}' inferred feature level '{level}' "
+                f"from all {len(checked_paths)} physical-slide artifact(s)."
+            ),
         )
 
     def _load_slide_bag(self, artifact_path: Path) -> torch.Tensor:

@@ -156,6 +156,41 @@ def test_bag_dataset_reports_dimensions_from_all_physical_slide_artifacts(
     assert dataset.get_feature_dimensions() == frozenset({8, 16})
 
 
+def test_bag_dataset_reports_no_dimensions_when_empty(tmp_path: Path) -> None:
+    dataset = _dataset(tmp_path, [], {})
+    assert dataset.get_feature_dimensions() == frozenset()
+    assert dataset.get_feature_level() == "unknown"
+
+
+def test_bag_dataset_inspection_does_not_read_feature_matrices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pathforge.core.io.slide_artifacts import features as artifact_features
+
+    def reject_matrix_read(*args, **kwargs):
+        raise AssertionError("Feature inspection must read shapes only.")
+
+    monkeypatch.setattr(artifact_features, "read_features", reject_matrix_read)
+    dataset = _dataset(
+        tmp_path,
+        [{"slide": "S1", "category": 0}, {"slide": "S2", "category": 1}],
+        {"S1": torch.ones(1, 8), "S2": torch.ones(2, 16)},
+    )
+    assert dataset.get_feature_level() == "patch"
+    assert dataset.get_feature_dimensions() == frozenset({8, 16})
+
+
+def test_bag_dataset_rejects_mixed_unambiguous_feature_levels(tmp_path: Path) -> None:
+    dataset = _dataset(
+        tmp_path,
+        [{"slide": "S1", "category": 0}, {"slide": "S2", "category": 1}],
+        {"S1": torch.ones(1, 8), "S2": torch.ones(2, 8)},
+        coord_row_counts={"S1": 4, "S2": 2},
+    )
+    assert dataset.get_feature_level() == "invalid"
+    assert "inconsistent" in dataset.get_feature_level_reason()
+
+
 def test_bag_dataset_uses_variable_bag_size_by_default(tmp_path: Path) -> None:
     original = torch.arange(15, dtype=torch.float32).reshape(5, 3)
     dataset = _dataset(tmp_path, [{"slide": "S1", "category": 0}], {"S1": original})

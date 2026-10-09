@@ -70,11 +70,43 @@ def test_doc_files_exist() -> None:
     assert DOC_FILES, "Expected README.md and docs/ files to scan"
 
 
+def _referenced_console_scripts(text: str) -> set[str]:
+    """Find console-script references in prose and examples, excluding URLs.
+
+    For example, `pathforge-features --help` references pathforge-features;
+    https://img.shields.io/badge/bio.tools-pathforge-blue.svg references none.
+    """
+    without_urls = re.sub(r"https?://[^\s]+", "", text)
+    return set(CONSOLE_SCRIPT_RE.findall(without_urls)) - {"pathforge"}
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Run `pathforge-features --help`.", {"pathforge-features"}),
+        ("uv run pathforge-unknown --help", {"pathforge-unknown"}),
+        (
+            (
+                "[![bio.tools](https://img.shields.io/badge/bio.tools-pathforge-blue.svg)]"
+                "(https://bio.tools/pathforge)"
+            ),
+            set(),
+        ),
+        (
+            "See https://example.org/pathforge-blue then run `pathforge-evaluate`.",
+            {"pathforge-evaluate"},
+        ),
+    ],
+)
+def test_console_script_references_ignore_urls(text: str, expected: set[str]) -> None:
+    assert _referenced_console_scripts(text) == expected
+
+
 def test_documented_console_scripts_are_declared() -> None:
     declared = _declared_console_scripts()
     offenders: dict[str, set[str]] = {}
     for path, text in _doc_texts().items():
-        referenced = set(CONSOLE_SCRIPT_RE.findall(text)) - {"pathforge"}
+        referenced = _referenced_console_scripts(text)
         unknown = {name for name in referenced if name not in declared}
         if unknown:
             offenders[str(path.relative_to(REPO_ROOT))] = unknown
@@ -133,9 +165,12 @@ def _console_script_help(script: str) -> str:
     module_name, callable_name = target.split(":", maxsplit=1)
     callback = getattr(importlib.import_module(module_name), callable_name)
     output = io.StringIO()
-    with redirect_stdout(output), redirect_stderr(output):
-        with pytest.raises(SystemExit) as exit_info:
-            callback(["--help"])
+    with (
+        redirect_stdout(output),
+        redirect_stderr(output),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        callback(["--help"])
     assert exit_info.value.code == 0
     return output.getvalue()
 
@@ -186,13 +221,15 @@ def test_documented_cli_options_exist() -> None:
                 label = f"{path.relative_to(REPO_ROOT)} :: {' '.join(key)}"
                 offenders.setdefault(label, []).extend(unknown)
 
-    assert not offenders, f"Docs use options not exposed by the shown command: {offenders}"
+    assert not offenders, (
+        f"Docs use options not exposed by the shown command: {offenders}"
+    )
 
 
 def _yaml_code_blocks(text: str) -> list[str]:
     """Extract YAML code blocks from Markdown fences and RST ``code-block`` directives."""
     blocks: list[str] = []
-    for match in re.finditer(r"```ya?ml\n(.*?)```", text, re.S):
+    for match in re.finditer(r"```ya?ml\n(.*?)```", text, re.DOTALL):
         blocks.append(match.group(1))
 
     lines = text.splitlines()
