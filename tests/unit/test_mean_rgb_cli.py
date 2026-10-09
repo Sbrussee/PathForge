@@ -9,6 +9,12 @@ import pytest
 import pathforge.cli.retrieval_mean_rgb as mean_rgb_cli
 
 
+@pytest.fixture(autouse=True)
+def stub_tile_preparation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Existing argument tests isolate descriptor dispatch from tile preparation."""
+    monkeypatch.setattr(mean_rgb_cli, "_ensure_sample_tiles", lambda **kwargs: None)
+
+
 def _fake_cfg(*, dataset_name: str, artifacts_dir: Path) -> SimpleNamespace:
     class _BenchmarkParams:
         def get_values(self, field_name: str) -> list[object]:

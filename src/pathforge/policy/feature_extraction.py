@@ -167,6 +167,68 @@ class FeatureExtractionPolicy(PolicyBase):
             run_configs=run_configs,
         )
 
+    def ensure_tiles(
+        self, dataset: WSIDataset, wsi: WSI, combo_cfg: ComboConfig
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        """Load or create and persist tiles without extracting features.
+
+        Inputs are the dataset's ROI context, slide paths/metadata, and a combo
+        containing tile_px and tile_mpp. Returns int32 coordinates shaped
+        ``(N,5)`` and their tiling specification, including for empty tilings.
+        Existing matching tiles require no source slide reads.
+
+        Example: ``coords, spec = policy.ensure_tiles(dataset, wsi, combo_cfg)``.
+        """
+        tiling_id = build_tiling_id(combo_cfg)
+        expected_spec = {
+            "tile_px": int(combo_cfg.tile_px),
+            "tile_mpp": float(combo_cfg.tile_mpp),
+            "stride_px": int(combo_cfg.tile_px),
+            "coord_space": "level0",
+        }
+        if wsi.artifact_path.is_file():
+            with FileHandleH5(wsi.artifact_path, mode="r") as artifact:
+                if tiles_io.coords_exist(artifact, tiling_id) and tiles_io.tiling_spec_matches(
+                    artifact, tiling_id, expected_spec
+                ):
+                    return (
+                        tiles_io.read_coords(artifact, tiling_id),
+                        tiles_io.read_tiling_spec(artifact, tiling_id),
+                    )
+
+        processor = self._build_processor()
+        try:
+            processor.load_wsi(wsi)
+            processor.get_base_mpp(wsi)
+            pending = _PendingArtifactWrites()
+            coords, spec = self._resolve_tiles(
+                dataset=dataset,
+                wsi=wsi,
+                artifact_path=wsi.artifact_path,
+                tiling_id=tiling_id,
+                expected_tiling_spec=expected_spec,
+                slide_processor=processor,
+                segmentation_config=self._build_seg_config(),
+                tiling_config=self._build_tile_config(combo_cfg),
+                pending_writes=pending,
+            )
+            if pending.has_updates():
+                with atomic_slide_artifact_write(wsi.artifact_path) as artifact:
+                    self._write_pending_artifact_updates(
+                        slide_artifact=artifact,
+                        tiling_id=tiling_id,
+                        extractor_name="",
+                        pending_writes=pending,
+                    )
+            return coords, spec
+        finally:
+            try:
+                processor.close_wsi(wsi)
+            finally:
+                close = getattr(processor, "close", None)
+                if callable(close):
+                    close()
+
     def _execute_wsi(
         self,
         *,

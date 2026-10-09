@@ -8,7 +8,11 @@ from types import SimpleNamespace
 import typer
 
 from pathforge.cli.common import configure_logging, resolve_config_path
-from pathforge.cli.retrieval_mean_rgb import _find_dataset_config, _resolve_bag_ids
+from pathforge.cli.retrieval_mean_rgb import (
+    _ensure_sample_tiles,
+    _find_dataset_config,
+    _resolve_bag_ids,
+)
 from pathforge.config.config import Config
 from pathforge.slide_retrieval.representation_strategies.histogram_rgb import (
     resolve_sample_patch_rgb_descriptors,
@@ -37,7 +41,7 @@ def run_histogram_rgb(
 
     Returns exit code zero after cache creation or validation. Example:
     ``run_histogram_rgb(config=Path("retrieval.yaml"), dataset="ReferenceSet",
-    slide_id="slide-1")``. The source WSI is read only for missing descriptors.
+    slide_id="slide-1")``. The source WSI is read for missing tiles or descriptors.
     """
     configure_logging(log_level)
     cfg = Config.from_yaml(resolve_config_path(config))
@@ -47,10 +51,6 @@ def run_histogram_rgb(
         if artifact_path
         else Path(dataset_cfg.artifacts_dir).expanduser().resolve() / f"{slide_id}.h5"
     )
-    if not artifact.is_file():
-        raise FileNotFoundError(
-            f"Slide artifact file not found for slide_id='{slide_id}': {artifact}"
-        )
     source = Path(input_path).expanduser().resolve() if input_path else None
     if source is not None and not source.is_file():
         raise FileNotFoundError(f"Input slide not found: {source}")
@@ -61,6 +61,7 @@ def run_histogram_rgb(
         metadata={"dataset": str(dataset)},
     )
     for bag_id in _resolve_bag_ids(cfg, bag_ids):
+        _ensure_sample_tiles(sample=sample, bag_id=bag_id, config=cfg, dataset_cfg=dataset_cfg)
         resolve_sample_patch_rgb_descriptors(
             sample=sample, bag_id=bag_id, config=cfg, include_quality=True
         )

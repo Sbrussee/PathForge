@@ -3,17 +3,81 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import typer
 
-from pathforge.config.config import Config, DatasetEntry
 from pathforge.cli.common import LOG_LEVEL_CHOICES, configure_logging, resolve_config_path
+from pathforge.config.config import Config, DatasetEntry
+from pathforge.core.datasets.wsi_dataset import WSI
 from pathforge.core.experiments.combo_ids import build_tiling_id
 from pathforge.core.experiments.combinations import ComboConfig
-from pathforge.slide_retrieval.representation_strategies.mean_rgb import resolve_sample_patch_mean_rgb
+from pathforge.core.io.slide_artifacts import tiles as tiles_io
+from pathforge.core.io.slide_artifacts.base import FileHandleH5
+from pathforge.policy.feature_extraction import FeatureExtractionPolicy
+from pathforge.slide_retrieval.annotations import resolve_sample_annotations
+from pathforge.slide_retrieval.representation_strategies.mean_rgb import (
+    _resolve_sample_slide_paths,
+    resolve_sample_patch_mean_rgb,
+)
 
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_sample_tiles(
+    *, sample: Any, bag_id: str, config: Config, dataset_cfg: DatasetEntry
+) -> None:
+    """Ensure a single slide's canonical tiling is persisted before RGB reads.
+
+    The policy returns coordinates shaped ``(N,5)`` and a specification; this
+    CLI discards them because descriptor resolvers read the persisted artifact.
+    Example: ``_ensure_sample_tiles(sample=s, bag_id="256px_0.5mpp",
+    config=cfg, dataset_cfg=ds)``.
+    """
+    try:
+        pixels, resolution = bag_id.split("px_")
+        combo = ComboConfig(
+            tile_px=int(pixels), tile_mpp=float(resolution.removesuffix("mpp"))
+        )
+        if combo.tile_px <= 0 or combo.tile_mpp <= 0 or build_tiling_id(combo) != bag_id:
+            raise ValueError
+    except (ValueError, TypeError) as error:
+        raise ValueError(f"Invalid canonical tiling ID: '{bag_id}'.") from error
+
+    slide_id = sample.slide_ids[0]
+    artifact = Path(sample.artifact_paths[0])
+    # Cached runs should not require source discovery or annotation metadata.
+    cached = False
+    if artifact.is_file():
+        with FileHandleH5(artifact, mode="r") as handle:
+            cached = tiles_io.coords_exist(handle, bag_id) and tiles_io.tiling_spec_matches(
+                handle,
+                bag_id,
+                {
+                    "tile_px": combo.tile_px,
+                    "tile_mpp": combo.tile_mpp,
+                    "stride_px": combo.tile_px,
+                    "coord_space": "level0",
+                },
+            )
+    source = Path(dataset_cfg.slides_dir).expanduser().resolve() / slide_id
+    row = {"slide": slide_id}
+    if not cached:
+        source = _resolve_sample_slide_paths(sample=sample, config=config)[slide_id]
+        if source is None or not source.is_file():
+            raise FileNotFoundError(
+                f"Missing tiles and no source slide is available for slide '{slide_id}' "
+                f"at tiling_id='{bag_id}'."
+            )
+        row = resolve_sample_annotations(sample=sample, config=config)[slide_id]
+    wsi = WSI.from_annotation(row, slide_path=source, artifact_path=artifact)
+    roi_root = dataset_cfg.tissue_annotations_dir
+    dataset = SimpleNamespace(
+        tissue_annotations_dir=Path(roi_root).expanduser().resolve() if roi_root else None
+    )
+    policy = FeatureExtractionPolicy(SimpleNamespace(cfg=config))
+    policy.ensure_tiles(dataset=dataset, wsi=wsi, combo_cfg=combo)
 
 
 def _find_dataset_config(cfg: Config, dataset_name: str) -> DatasetEntry:
@@ -65,7 +129,7 @@ def run_mean_rgb(
     artifact_path: Path | None = None,
     log_level: str = "INFO",
 ) -> int:
-    """Precompute mean-RGB slide-retrieval descriptors for one YAML config."""
+    """Ensure tiles exist, then precompute mean-RGB descriptors for one slide."""
     configure_logging(log_level)
 
     config_path = resolve_config_path(config)
@@ -87,10 +151,6 @@ def run_mean_rgb(
         if artifact_path is not None
         else Path(dataset_cfg.artifacts_dir).expanduser().resolve() / f"{slide_id}.h5"
     )
-    if not artifact_path.is_file():
-        raise FileNotFoundError(
-            f"Slide artifact file not found for slide_id='{slide_id}': {artifact_path}"
-        )
 
     bag_ids = _resolve_bag_ids(cfg, explicit_bag_ids=bag_ids)
     if not bag_ids:
@@ -115,6 +175,7 @@ def run_mean_rgb(
         metadata={"dataset": str(dataset)},
     )
     for bag_id in bag_ids:
+        _ensure_sample_tiles(sample=sample, bag_id=bag_id, config=cfg, dataset_cfg=dataset_cfg)
         mean_rgb = resolve_sample_patch_mean_rgb(sample=sample, bag_id=bag_id, config=cfg)
         logger.info(
             "Resolved mean_rgb for bag_id='%s' with shape=%s",
